@@ -60,12 +60,12 @@ export default function POSPage() {
   }, [cashSession]);
 
   return (
-    <div className="flex h-screen bg-gray-100 overflow-hidden">
+    <div className="flex h-screen bg-slate-100 overflow-hidden">
 
       {/* ── Sidebar de navegación ── */}
-      <nav className="w-14 bg-white border-r border-gray-200 flex flex-col items-center py-3 gap-2 shrink-0">
-        <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center mb-2">
-          <span className="text-white text-xs font-bold">F</span>
+      <nav className="w-14 bg-white border-r border-gray-100 flex flex-col items-center py-3 gap-1.5 shrink-0 shadow-sm z-10">
+        <div className="w-9 h-9 bg-brand-600 rounded-xl flex items-center justify-center mb-2 shadow-md shadow-brand-700/30">
+          <span className="text-white text-sm font-bold">F</span>
         </div>
 
         {[
@@ -74,22 +74,24 @@ export default function POSPage() {
           { icon: BarChart3,    label: 'Dashboard',   active: false, href: '/dashboard' },
         ].map(({ icon: Icon, label, active, href }) => (
           <a key={label} href={href}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-              active ? 'bg-brand-50 text-brand-600' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+              active
+                ? 'bg-brand-50 text-brand-700 shadow-sm ring-1 ring-brand-100'
+                : 'text-gray-400 hover:bg-gray-50 hover:text-gray-700'
             }`}
             title={label}>
-            <Icon size={20} />
+            <Icon size={19} />
           </a>
         ))}
 
         {/* Botón IA con badge */}
         <button
           onClick={() => setShowAIPanel(!showAIPanel)}
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-purple-50 hover:text-purple-600 relative"
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-purple-50 hover:text-purple-600 transition-all relative"
           title="Agente IA">
-          <Zap size={20} />
+          <Zap size={19} />
           {proposals.length > 0 && (
-            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-medium">
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold shadow-sm">
               {proposals.length}
             </span>
           )}
@@ -98,18 +100,18 @@ export default function POSPage() {
         <div className="flex-1" />
 
         {/* Estado de conexión */}
-        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-          isOnline ? 'text-green-500' : 'text-red-400'
+        <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
+          isOnline ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'
         }`} title={isOnline ? 'En línea' : 'Sin conexión'}>
-          {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
+          {isOnline ? <Wifi size={13} /> : <WifiOff size={13} />}
         </div>
 
         {/* Botón de usuario */}
         <button
           onClick={logout}
-          className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-red-50 hover:text-red-500"
+          className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400 hover:bg-red-50 hover:text-red-500 transition-all"
           title={`Salir (${user?.full_name})`}>
-          <LogOut size={18} />
+          <LogOut size={17} />
         </button>
       </nav>
 
@@ -286,19 +288,19 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
+    <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
 
       {/* ── Barra de búsqueda + categorías ── */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3 space-y-3">
+      <div className="bg-white border-b border-gray-100 px-4 py-3 space-y-3 shadow-sm">
         <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             ref={searchRef}
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Buscar producto o escanear código..."
-            className="w-full pl-9 pr-4 h-10 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+            className="w-full pl-9 pr-4 h-10 bg-slate-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-400 focus:border-brand-400 outline-none transition-all"
           />
           {search && (
             <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -311,8 +313,10 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
         <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-0.5">
           <button
             onClick={() => onCategoryChange(null)}
-            className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              !activeCategory ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
+              !activeCategory
+                ? 'bg-brand-600 text-white shadow-sm shadow-brand-700/25'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}>
             Todos
           </button>
@@ -320,8 +324,10 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
             <button
               key={cat.id}
               onClick={() => onCategoryChange(cat.id)}
-              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                activeCategory === cat.id ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                activeCategory === cat.id
+                  ? 'bg-brand-600 text-white shadow-sm shadow-brand-700/25'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
               style={activeCategory === cat.id ? {} : { borderColor: cat.color }}>
               {cat.name}
@@ -355,8 +361,8 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
                   className={`
                     relative bg-white rounded-2xl p-3 text-left border transition-all duration-150
                     ${isOut
-                      ? 'opacity-50 cursor-not-allowed border-gray-100'
-                      : 'border-gray-200 hover:border-brand-300 hover:shadow-md active:scale-95 cursor-pointer'
+                      ? 'opacity-40 cursor-not-allowed border-gray-100'
+                      : 'border-gray-200 shadow-sm hover:border-brand-300 hover:shadow-lg hover:-translate-y-0.5 active:scale-95 active:shadow-sm cursor-pointer'
                     }
                   `}>
 
@@ -371,7 +377,7 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
                   )}
 
                   {/* Imagen o placeholder */}
-                  <div className="w-full aspect-square rounded-xl bg-gray-50 flex items-center justify-center mb-2 overflow-hidden">
+                  <div className="w-full aspect-square rounded-xl bg-gradient-to-br from-slate-50 to-gray-100 flex items-center justify-center mb-2 overflow-hidden">
                     {product.image_url ? (
                       <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
                     ) : (
@@ -381,11 +387,11 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
                     )}
                   </div>
 
-                  <p className="text-xs font-medium text-gray-800 leading-tight line-clamp-2 mb-1">
+                  <p className="text-xs font-semibold text-gray-900 leading-tight line-clamp-2 mb-1.5">
                     {product.name}
                   </p>
 
-                  <p className="text-sm font-semibold text-brand-600">
+                  <p className="text-sm font-bold text-brand-700">
                     {formatCOP(product.price_with_vat || product.price)}
                   </p>
 
@@ -420,13 +426,13 @@ function OrderPanel({ onPay, onCustomer, onDiscount }) {
   const isEmpty = items.length === 0;
 
   return (
-    <div className="w-[300px] xl:w-[320px] bg-white border-l border-gray-200 flex flex-col shrink-0">
+    <div className="w-[300px] xl:w-[320px] bg-white border-l border-gray-100 flex flex-col shrink-0 shadow-xl shadow-gray-300/20">
 
       {/* ── Header con info de caja ── */}
-      <div className="px-4 py-3 border-b border-gray-100">
+      <div className="px-4 py-3.5 border-b border-gray-100">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-gray-900">Nueva orden</p>
+            <p className="text-sm font-bold text-gray-900">Nueva orden</p>
             <p className="text-[11px] text-gray-400">
               {cashSession
                 ? `Caja abierta · ${new Date(cashSession.opened_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`
@@ -440,7 +446,7 @@ function OrderPanel({ onPay, onCustomer, onDiscount }) {
             onClick={onCustomer}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
               customerId
-                ? 'bg-brand-50 text-brand-700 border-brand-200'
+                ? 'bg-brand-50 text-brand-700 border-brand-200 shadow-sm'
                 : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
             }`}>
             <User size={13} />
@@ -460,7 +466,7 @@ function OrderPanel({ onPay, onCustomer, onDiscount }) {
           <div className="p-3 space-y-2">
             {items.map((item, idx) => (
               <div key={`${item.product_id}-${idx}`}
-                className="flex items-center gap-2 bg-gray-50 rounded-xl p-2.5 group">
+                className="flex items-center gap-2 bg-gray-50 rounded-xl p-2.5 group border border-gray-100/80">
 
                 {/* Nombre */}
                 <div className="flex-1 min-w-0">
@@ -521,9 +527,9 @@ function OrderPanel({ onPay, onCustomer, onDiscount }) {
               <span>- {formatCOP(totals.discount_amount)}</span>
             </div>
           )}
-          <div className="flex justify-between font-semibold text-gray-900 text-base pt-1 border-t border-gray-100">
+          <div className="flex justify-between font-bold text-gray-900 text-base pt-2 mt-0.5 border-t border-gray-200">
             <span>Total</span>
-            <span>{formatCOP(totals.total)}</span>
+            <span className="text-brand-700">{formatCOP(totals.total)}</span>
           </div>
         </div>
 
@@ -531,7 +537,7 @@ function OrderPanel({ onPay, onCustomer, onDiscount }) {
         <button
           onClick={onDiscount}
           disabled={isEmpty}
-          className="w-full flex items-center justify-center gap-1.5 py-2 border border-dashed border-gray-300 rounded-xl text-xs text-gray-500 hover:border-brand-300 hover:text-brand-600 disabled:opacity-40 transition-colors">
+          className="w-full flex items-center justify-center gap-1.5 py-2.5 border border-dashed border-gray-300 rounded-xl text-xs text-gray-500 hover:border-brand-400 hover:text-brand-600 hover:bg-brand-50/50 disabled:opacity-40 transition-all">
           <Percent size={12} />
           Aplicar descuento
         </button>
@@ -540,7 +546,7 @@ function OrderPanel({ onPay, onCustomer, onDiscount }) {
         <button
           onClick={onPay}
           disabled={isEmpty || !cashSession || isProcessing}
-          className="w-full h-12 bg-brand-600 hover:bg-brand-700 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-base rounded-2xl flex items-center justify-center gap-2 transition-all">
+          className="w-full h-12 bg-brand-600 hover:bg-brand-700 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-base rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-brand-600/25 hover:shadow-brand-700/30">
           {isProcessing ? (
             <RefreshCw size={18} className="animate-spin" />
           ) : (
@@ -615,8 +621,8 @@ function PaymentModal({ onClose }) {
     return (
       <Modal onClose={onClose} size="sm">
         <div className="flex flex-col items-center py-8 gap-4">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-            <CheckCircle2 size={32} className="text-green-500" />
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center shadow-lg shadow-green-200">
+            <CheckCircle2 size={32} className="text-green-600" />
           </div>
           <p className="text-lg font-semibold text-gray-900">¡Cobro exitoso!</p>
           {method === 'cash' && change > 0 && (
@@ -639,8 +645,8 @@ function PaymentModal({ onClose }) {
       <div className="p-5 space-y-5">
 
         {/* Total a cobrar */}
-        <div className="bg-gray-50 rounded-2xl p-4 text-center">
-          <p className="text-sm text-gray-500 mb-1">Total a cobrar</p>
+        <div className="bg-gradient-to-br from-brand-50 to-emerald-50 rounded-2xl p-4 text-center border border-brand-100">
+          <p className="text-[11px] font-semibold text-brand-600 mb-1 uppercase tracking-wide">Total a cobrar</p>
           <p className="text-3xl font-bold text-gray-900">{formatCOP(total)}</p>
         </div>
 
@@ -720,7 +726,7 @@ function PaymentModal({ onClose }) {
         <button
           onClick={handleConfirm}
           disabled={isProcessing || (method === 'cash' && !cashSufficient && cashAmt > 0)}
-          className="w-full h-12 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-semibold rounded-2xl flex items-center justify-center gap-2 transition-colors">
+          className="w-full h-12 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-brand-600/25">
           {isProcessing ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
           {isProcessing ? 'Procesando...' : `Confirmar cobro · ${formatCOP(total)}`}
         </button>
@@ -943,7 +949,7 @@ function DiscountModal({ onClose }) {
         <button
           onClick={handleApply}
           disabled={!value || !reason}
-          className="w-full h-11 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-semibold rounded-xl transition-colors">
+          className="w-full h-11 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-md shadow-brand-600/20">
           Aplicar descuento
         </button>
       </div>
@@ -1010,7 +1016,7 @@ function CashSessionModal({ onClose, branchId }) {
         <button
           onClick={openSession}
           disabled={loading}
-          className="w-full h-12 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-2xl flex items-center justify-center gap-2 transition-colors">
+          className="w-full h-12 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-brand-600/25">
           {loading ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
           {loading ? 'Abriendo...' : 'Abrir caja y empezar'}
         </button>
@@ -1036,8 +1042,8 @@ function AIProposalsPanel({ proposals, onClose, branchId }) {
   };
 
   return (
-    <div className="fixed inset-y-0 right-0 w-80 bg-white shadow-2xl border-l border-gray-200 z-40 flex flex-col">
-      <div className="flex items-center justify-between p-4 border-b border-gray-100">
+    <div className="fixed inset-y-0 right-0 w-80 bg-white shadow-2xl border-l border-gray-100 z-40 flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3.5 border-b border-gray-100 bg-purple-50/30">
         <div className="flex items-center gap-2">
           <Zap size={18} className="text-purple-600" />
           <span className="font-semibold text-gray-900">Agente IA</span>
@@ -1061,7 +1067,7 @@ function AIProposalsPanel({ proposals, onClose, branchId }) {
         ) : proposals.map(p => {
           const meta = typeLabels[p.proposal_type] || { label: p.proposal_type, emoji: '🤖' };
           return (
-            <div key={p.id} className="bg-gray-50 rounded-2xl p-3 space-y-2.5">
+            <div key={p.id} className="bg-white rounded-2xl p-3 space-y-2.5 border border-gray-100 shadow-sm">
               <div className="flex items-start gap-2">
                 <span className="text-xl shrink-0">{meta.emoji}</span>
                 <div className="flex-1 min-w-0">
@@ -1085,7 +1091,7 @@ function AIProposalsPanel({ proposals, onClose, branchId }) {
                 <button
                   onClick={() => approve(p.id)}
                   disabled={isApproving}
-                  className="flex-1 h-8 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition-colors">
+                  className="flex-1 h-8 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1 transition-all shadow-sm shadow-brand-700/20">
                   <CheckCircle2 size={12} />
                   Aprobar
                 </button>
@@ -1120,7 +1126,7 @@ function Modal({ children, title, onClose, hideClose = false, size = 'md' }) {
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={e => { if (e.target === e.currentTarget && !hideClose) onClose?.(); }}>
-      <div className={`bg-white rounded-3xl shadow-2xl w-full ${sizeMap[size]} overflow-hidden`}>
+      <div className={`bg-white rounded-3xl shadow-2xl shadow-gray-900/15 w-full ${sizeMap[size]} overflow-hidden ring-1 ring-gray-200/60`}>
         {title && (
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900">{title}</h2>
