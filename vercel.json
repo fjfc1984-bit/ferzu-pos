@@ -7,11 +7,6 @@
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ],
-  "env": {
-    "VITE_SUPABASE_URL":      "@ferzu_supabase_url",
-    "VITE_SUPABASE_ANON_KEY": "@ferzu_supabase_anon_key",
-    "VITE_API_URL":           "@ferzu_api_url"
-  },
   "headers": [
     {
       "source": "/(.*)",
