@@ -1,0 +1,1138 @@
+// =============================================================================
+// FERZU POS — PANTALLA DE COBRO COMPLETA
+// Archivo: src/pages/POSPage.jsx (y subcomponentes)
+// Stack: React 18 + Tailwind CSS + Lucide Icons
+// =============================================================================
+// CONTENIDO:
+//   Sección 1: POSPage.jsx          — Página principal del POS
+//   Sección 2: ProductGrid.jsx      — Grilla de productos con búsqueda/barcode
+//   Sección 3: OrderPanel.jsx       — Panel derecho de la orden activa
+//   Sección 4: PaymentModal.jsx     — Modal de cobro multi-método
+//   Sección 5: CustomerSearch.jsx   — Búsqueda y asignación de cliente
+//   Sección 6: DiscountModal.jsx    — Modal de descuento con aprobación
+//   Sección 7: CashSessionModal.jsx — Modal de apertura/cierre de caja
+// =============================================================================
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECCIÓN 1: POSPage.jsx
+// src/pages/POSPage.jsx
+// ─────────────────────────────────────────────────────────────────────────────
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  ShoppingCart, Search, Zap, User, ChevronDown,
+  Package, BarChart3, LogOut, Wifi, WifiOff,
+  Clock, AlertCircle, CheckCircle2, X, Plus, Minus,
+  Percent, DollarSign, CreditCard, Smartphone,
+  Printer, RefreshCw, Settings, ChevronRight
+} from 'lucide-react';
+import { usePOS }          from '../context/POSContext.jsx';
+import { useAuth }         from '../context/AuthContext.jsx';
+import { useSyncContext }  from '../context/SyncContext.jsx';
+import { useAIProposals }  from '../hooks/useAIProposals.js';
+import { formatCOP }       from '../lib/math.js';
+import { cashAPI }         from '../lib/api.js';
+import toast               from 'react-hot-toast';
+
+// Sub-componentes (definidos en secciones siguientes)
+// import ProductGrid        from '../components/pos/ProductGrid.jsx';
+// import OrderPanel         from '../components/pos/OrderPanel.jsx';
+// import PaymentModal       from '../components/pos/PaymentModal.jsx';
+// import CustomerSearch     from '../components/pos/CustomerSearch.jsx';
+// import CashSessionModal   from '../components/pos/CashSessionModal.jsx';
+
+export default function POSPage() {
+  const { user, logout, organizationId }  = useAuth();
+  const { cashSession, branchId, dispatch } = usePOS();
+  const { isOnline, pendingCount }          = useSyncContext();
+  const { proposals }                       = useAIProposals(branchId);
+
+  const [showCustomer,  setShowCustomer]  = useState(false);
+  const [showPayment,   setShowPayment]   = useState(false);
+  const [showDiscount,  setShowDiscount]  = useState(false);
+  const [showCashModal, setShowCashModal] = useState(false);
+  const [showAIPanel,   setShowAIPanel]   = useState(false);
+  const [activeCategory, setActiveCategory] = useState(null);
+
+  // Si no hay caja abierta al cargar, mostrar modal de apertura
+  useEffect(() => {
+    if (!cashSession) setShowCashModal(true);
+  }, [cashSession]);
+
+  return (
+    <div className="flex h-screen bg-gray-100 overflow-hidden">
+
+      {/* ── Sidebar de navegación ── */}
+      <nav className="w-14 bg-white border-r border-gray-200 flex flex-col items-center py-3 gap-2 shrink-0">
+        <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center mb-2">
+          <span className="text-white text-xs font-bold">F</span>
+        </div>
+
+        {[
+          { icon: ShoppingCart, label: 'Caja',        active: true,  href: '/pos' },
+          { icon: Package,      label: 'Inventario',  active: false, href: '/inventory' },
+          { icon: BarChart3,    label: 'Dashboard',   active: false, href: '/dashboard' },
+        ].map(({ icon: Icon, label, active, href }) => (
+          <a key={label} href={href}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
+              active ? 'bg-brand-50 text-brand-600' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'
+            }`}
+            title={label}>
+            <Icon size={20} />
+          </a>
+        ))}
+
+        {/* Botón IA con badge */}
+        <button
+          onClick={() => setShowAIPanel(!showAIPanel)}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-purple-50 hover:text-purple-600 relative"
+          title="Agente IA">
+          <Zap size={20} />
+          {proposals.length > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-medium">
+              {proposals.length}
+            </span>
+          )}
+        </button>
+
+        <div className="flex-1" />
+
+        {/* Estado de conexión */}
+        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+          isOnline ? 'text-green-500' : 'text-red-400'
+        }`} title={isOnline ? 'En línea' : 'Sin conexión'}>
+          {isOnline ? <Wifi size={14} /> : <WifiOff size={14} />}
+        </div>
+
+        {/* Botón de usuario */}
+        <button
+          onClick={logout}
+          className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-red-50 hover:text-red-500"
+          title={`Salir (${user?.full_name})`}>
+          <LogOut size={18} />
+        </button>
+      </nav>
+
+      {/* ── Área principal ── */}
+      <div className="flex flex-1 overflow-hidden">
+        <ProductGrid
+          activeCategory={activeCategory}
+          onCategoryChange={setActiveCategory}
+          organizationId={organizationId}
+          branchId={branchId}
+        />
+
+        <OrderPanel
+          onPay={()      => setShowPayment(true)}
+          onCustomer={() => setShowCustomer(true)}
+          onDiscount={() => setShowDiscount(true)}
+        />
+      </div>
+
+      {/* ── Header de caja ── */}
+      {cashSession && (
+        <div className="absolute top-0 left-14 right-0 h-0">
+          {/* Invisible: la info de caja está en OrderPanel */}
+        </div>
+      )}
+
+      {/* ── Modales ── */}
+      {showCashModal && (
+        <CashSessionModal
+          onClose={() => setShowCashModal(false)}
+          branchId={branchId}
+        />
+      )}
+
+      {showPayment && (
+        <PaymentModal onClose={() => setShowPayment(false)} />
+      )}
+
+      {showCustomer && (
+        <CustomerSearch
+          onClose={() => setShowCustomer(false)}
+          organizationId={organizationId}
+        />
+      )}
+
+      {showDiscount && (
+        <DiscountModal onClose={() => setShowDiscount(false)} />
+      )}
+
+      {/* ── Panel IA lateral ── */}
+      {showAIPanel && (
+        <AIProposalsPanel
+          proposals={proposals}
+          onClose={() => setShowAIPanel(false)}
+          branchId={branchId}
+        />
+      )}
+
+      {/* ── Banner offline ── */}
+      {!isOnline && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white text-sm px-4 py-2 rounded-full flex items-center gap-2 shadow-lg z-50">
+          <WifiOff size={14} />
+          Sin conexión — ventas guardadas localmente
+          {pendingCount > 0 && <span className="bg-white text-red-600 rounded-full px-2 py-0.5 text-xs font-bold">{pendingCount}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECCIÓN 2: ProductGrid.jsx
+// src/components/pos/ProductGrid.jsx
+// ─────────────────────────────────────────────────────────────────────────────
+
+// export default function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchId })
+
+function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchId }) {
+  const { addItem }                = usePOS();
+  const [search, setSearch]        = useState('');
+  const [categories, setCategories]= useState([]);
+  const [products, setProducts]    = useState([]);
+  const [isLoading, setIsLoading]  = useState(false);
+  const searchRef                  = useRef(null);
+  const barcodeBuffer              = useRef('');
+  const barcodeTimer               = useRef(null);
+
+  // Cargar categorías
+  useEffect(() => {
+    loadCategories();
+    loadProducts();
+  }, [branchId, activeCategory]);
+
+  // Auto-focus en search
+  useEffect(() => {
+    searchRef.current?.focus();
+  }, []);
+
+  // Escáner de código de barras (el escáner actúa como teclado rápido)
+  useEffect(() => {
+    const handleKey = (e) => {
+      // Si el foco está en otro input, ignorar
+      if (e.target.tagName === 'INPUT' && e.target !== searchRef.current) return;
+
+      if (e.key === 'Enter' && barcodeBuffer.current.length >= 4) {
+        const barcode = barcodeBuffer.current;
+        barcodeBuffer.current = '';
+        handleBarcodeScanned(barcode);
+      } else if (e.key.length === 1) {
+        barcodeBuffer.current += e.key;
+        clearTimeout(barcodeTimer.current);
+        barcodeTimer.current = setTimeout(() => {
+          // Si pasan 100ms sin Enter, asumimos tipeo manual (no escáner)
+          if (barcodeBuffer.current.length < 4) barcodeBuffer.current = '';
+        }, 100);
+      }
+    };
+
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [products]);
+
+  async function loadCategories() {
+    const { data } = await import('../lib/api.js').then(m =>
+      m.default.get('/categories')
+    ).catch(() => ({ data: [] }));
+    setCategories(data || []);
+  }
+
+  async function loadProducts() {
+    setIsLoading(true);
+    try {
+      const { productsAPI } = await import('../lib/api.js');
+      const result = await productsAPI.list({
+        branch_id: branchId,
+        category_id: activeCategory || undefined,
+        search: search || undefined,
+        limit: 60,
+      });
+      setProducts(result.data || []);
+    } catch {
+      // Fallback a caché local
+      const { searchProductsLocally } = await import('../lib/db.js');
+      const local = await searchProductsLocally(search || '');
+      setProducts(local);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(loadProducts, 300);
+    return () => clearTimeout(timer);
+  }, [search, activeCategory]);
+
+  function handleBarcodeScanned(barcode) {
+    const product = products.find(p => p.barcode === barcode || p.sku === barcode);
+    if (product) {
+      addItem(product);
+      toast.success(`${product.name} agregado`, { duration: 1500 });
+    } else {
+      toast.error(`Código ${barcode} no encontrado`, { duration: 2000 });
+    }
+  }
+
+  const stockStatus = (product) => {
+    if (!product.track_inventory) return null;
+    const qty = product.current_stock ?? 0;
+    if (qty === 0)  return 'out';
+    if (qty <= (product.min_stock || 0)) return 'low';
+    return 'ok';
+  };
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
+
+      {/* ── Barra de búsqueda + categorías ── */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3 space-y-3">
+        <div className="relative">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            ref={searchRef}
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar producto o escanear código..."
+            className="w-full pl-9 pr-4 h-10 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* Tabs de categorías */}
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-0.5">
+          <button
+            onClick={() => onCategoryChange(null)}
+            className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              !activeCategory ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}>
+            Todos
+          </button>
+          {categories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => onCategoryChange(cat.id)}
+              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                activeCategory === cat.id ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+              style={activeCategory === cat.id ? {} : { borderColor: cat.color }}>
+              {cat.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Grilla de productos ── */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <RefreshCw size={24} className="text-gray-300 animate-spin" />
+          </div>
+        ) : products.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400">
+            <Package size={40} className="mb-3 opacity-40" />
+            <p className="text-sm">Sin resultados para "{search}"</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {products.map(product => {
+              const status = stockStatus(product);
+              const isOut  = status === 'out';
+
+              return (
+                <button
+                  key={product.id}
+                  onClick={() => !isOut && addItem(product)}
+                  disabled={isOut}
+                  className={`
+                    relative bg-white rounded-2xl p-3 text-left border transition-all duration-150
+                    ${isOut
+                      ? 'opacity-50 cursor-not-allowed border-gray-100'
+                      : 'border-gray-200 hover:border-brand-300 hover:shadow-md active:scale-95 cursor-pointer'
+                    }
+                  `}>
+
+                  {/* Badge de stock */}
+                  {status === 'low' && (
+                    <div className="absolute top-2 right-2 w-2 h-2 bg-amber-400 rounded-full" title="Stock bajo" />
+                  )}
+                  {status === 'out' && (
+                    <div className="absolute top-2 right-2 bg-red-100 text-red-600 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                      AGOTADO
+                    </div>
+                  )}
+
+                  {/* Imagen o placeholder */}
+                  <div className="w-full aspect-square rounded-xl bg-gray-50 flex items-center justify-center mb-2 overflow-hidden">
+                    {product.image_url ? (
+                      <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-3xl">
+                        {product.item_type === 'service' ? '⚙️' : '📦'}
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-xs font-medium text-gray-800 leading-tight line-clamp-2 mb-1">
+                    {product.name}
+                  </p>
+
+                  <p className="text-sm font-semibold text-brand-600">
+                    {formatCOP(product.price_with_vat || product.price)}
+                  </p>
+
+                  {product.track_inventory && product.current_stock !== null && (
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      Stock: {product.current_stock} {product.unit_of_measure}
+                    </p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECCIÓN 3: OrderPanel.jsx
+// src/components/pos/OrderPanel.jsx
+// ─────────────────────────────────────────────────────────────────────────────
+
+function OrderPanel({ onPay, onCustomer, onDiscount }) {
+  const {
+    items, totals, customerId, cashSession,
+    updateQty, removeItem, isProcessing
+  } = usePOS();
+  const { isOnline } = useSyncContext();
+
+  const isEmpty = items.length === 0;
+
+  return (
+    <div className="w-[300px] xl:w-[320px] bg-white border-l border-gray-200 flex flex-col shrink-0">
+
+      {/* ── Header con info de caja ── */}
+      <div className="px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Nueva orden</p>
+            <p className="text-[11px] text-gray-400">
+              {cashSession
+                ? `Caja abierta · ${new Date(cashSession.opened_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`
+                : <span className="text-amber-500">Sin caja activa</span>
+              }
+            </p>
+          </div>
+
+          {/* Botón cliente */}
+          <button
+            onClick={onCustomer}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              customerId
+                ? 'bg-brand-50 text-brand-700 border-brand-200'
+                : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
+            }`}>
+            <User size={13} />
+            {customerId ? 'Cliente' : '+ Cliente'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Items de la orden ── */}
+      <div className="flex-1 overflow-y-auto scrollbar-hide">
+        {isEmpty ? (
+          <div className="flex flex-col items-center justify-center h-full text-gray-300 gap-2">
+            <ShoppingCart size={36} />
+            <p className="text-sm">Agrega productos</p>
+          </div>
+        ) : (
+          <div className="p-3 space-y-2">
+            {items.map((item, idx) => (
+              <div key={`${item.product_id}-${idx}`}
+                className="flex items-center gap-2 bg-gray-50 rounded-xl p-2.5 group">
+
+                {/* Nombre */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-gray-900 truncate">{item.product_name}</p>
+                  <p className="text-[11px] text-gray-400">{formatCOP(item.unit_price)} c/u</p>
+                </div>
+
+                {/* Controles de cantidad */}
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => updateQty(item.product_id, item.quantity - 1)}
+                    className="w-6 h-6 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors">
+                    <Minus size={10} />
+                  </button>
+                  <span className="text-xs font-semibold w-5 text-center">{item.quantity}</span>
+                  <button
+                    onClick={() => updateQty(item.product_id, item.quantity + 1)}
+                    className="w-6 h-6 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-green-50 hover:text-green-500 hover:border-green-200 transition-colors">
+                    <Plus size={10} />
+                  </button>
+                </div>
+
+                {/* Total del ítem */}
+                <div className="text-right">
+                  <p className="text-xs font-semibold text-gray-900">
+                    {formatCOP(item.unit_price * item.quantity)}
+                  </p>
+                  <button
+                    onClick={() => removeItem(item.product_id)}
+                    className="text-[10px] text-gray-300 hover:text-red-400 transition-colors">
+                    quitar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Footer con totales y botón de cobro ── */}
+      <div className="border-t border-gray-100 p-4 space-y-3">
+
+        {/* Totales */}
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-xs text-gray-500">
+            <span>Subtotal</span>
+            <span>{formatCOP(totals.subtotal)}</span>
+          </div>
+          {totals.tax_total > 0 && (
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>IVA</span>
+              <span>{formatCOP(totals.tax_total)}</span>
+            </div>
+          )}
+          {totals.discount_amount > 0 && (
+            <div className="flex justify-between text-xs text-green-600">
+              <span>Descuento</span>
+              <span>- {formatCOP(totals.discount_amount)}</span>
+            </div>
+          )}
+          <div className="flex justify-between font-semibold text-gray-900 text-base pt-1 border-t border-gray-100">
+            <span>Total</span>
+            <span>{formatCOP(totals.total)}</span>
+          </div>
+        </div>
+
+        {/* Botón descuento */}
+        <button
+          onClick={onDiscount}
+          disabled={isEmpty}
+          className="w-full flex items-center justify-center gap-1.5 py-2 border border-dashed border-gray-300 rounded-xl text-xs text-gray-500 hover:border-brand-300 hover:text-brand-600 disabled:opacity-40 transition-colors">
+          <Percent size={12} />
+          Aplicar descuento
+        </button>
+
+        {/* Botón COBRAR */}
+        <button
+          onClick={onPay}
+          disabled={isEmpty || !cashSession || isProcessing}
+          className="w-full h-12 bg-brand-600 hover:bg-brand-700 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-base rounded-2xl flex items-center justify-center gap-2 transition-all">
+          {isProcessing ? (
+            <RefreshCw size={18} className="animate-spin" />
+          ) : (
+            <>
+              <CheckCircle2 size={18} />
+              Cobrar {!isEmpty && formatCOP(totals.total)}
+            </>
+          )}
+        </button>
+
+        {!isOnline && !isEmpty && (
+          <p className="text-[10px] text-amber-600 text-center">
+            Sin internet — la venta se guardará localmente
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECCIÓN 4: PaymentModal.jsx
+// src/components/pos/PaymentModal.jsx
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PaymentModal({ onClose }) {
+  const { totals, processPayment, isProcessing } = usePOS();
+  const [method,       setMethod]       = useState('cash');
+  const [cashReceived, setCashReceived] = useState('');
+  const [step,         setStep]         = useState('select'); // 'select' | 'confirm' | 'done'
+  const cashInputRef = useRef(null);
+
+  const total        = totals.total;
+  const cashAmt      = Number(cashReceived) || 0;
+  const change       = method === 'cash' ? Math.max(0, cashAmt - total) : 0;
+  const cashSufficient = method !== 'cash' || cashAmt >= total;
+
+  // Auto-focus en el input de efectivo
+  useEffect(() => {
+    if (method === 'cash') setTimeout(() => cashInputRef.current?.focus(), 100);
+  }, [method]);
+
+  const PAYMENT_METHODS = [
+    { id: 'cash',        label: 'Efectivo',      icon: DollarSign,   color: 'green' },
+    { id: 'card_debit',  label: 'Tarjeta débito', icon: CreditCard,   color: 'blue' },
+    { id: 'card_credit', label: 'Tarjeta crédito',icon: CreditCard,   color: 'purple' },
+    { id: 'nequi',       label: 'Nequi',          icon: Smartphone,   color: 'pink' },
+    { id: 'daviplata',   label: 'Daviplata',      icon: Smartphone,   color: 'orange' },
+    { id: 'transfer',    label: 'Transferencia',  icon: ChevronRight, color: 'gray' },
+  ];
+
+  const colorMap = {
+    green:  'bg-green-50 border-green-200 text-green-700',
+    blue:   'bg-blue-50 border-blue-200 text-blue-700',
+    purple: 'bg-purple-50 border-purple-200 text-purple-700',
+    pink:   'bg-pink-50 border-pink-200 text-pink-700',
+    orange: 'bg-orange-50 border-orange-200 text-orange-700',
+    gray:   'bg-gray-50 border-gray-200 text-gray-700',
+  };
+
+  async function handleConfirm() {
+    try {
+      await processPayment(method, method === 'cash' ? cashAmt : total);
+      setStep('done');
+      setTimeout(() => { onClose(); }, 2000);
+    } catch {}
+  }
+
+  // ── Paso: DONE ──
+  if (step === 'done') {
+    return (
+      <Modal onClose={onClose} size="sm">
+        <div className="flex flex-col items-center py-8 gap-4">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+            <CheckCircle2 size={32} className="text-green-500" />
+          </div>
+          <p className="text-lg font-semibold text-gray-900">¡Cobro exitoso!</p>
+          {method === 'cash' && change > 0 && (
+            <div className="bg-green-50 rounded-xl px-6 py-3 text-center">
+              <p className="text-sm text-gray-500">Vuelto</p>
+              <p className="text-2xl font-bold text-green-600">{formatCOP(change)}</p>
+            </div>
+          )}
+          <button onClick={onClose} className="text-sm text-gray-400 hover:text-gray-600">
+            <Printer size={14} className="inline mr-1" />
+            Imprimir recibo
+          </button>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal onClose={onClose} title="Cobrar orden">
+      <div className="p-5 space-y-5">
+
+        {/* Total a cobrar */}
+        <div className="bg-gray-50 rounded-2xl p-4 text-center">
+          <p className="text-sm text-gray-500 mb-1">Total a cobrar</p>
+          <p className="text-3xl font-bold text-gray-900">{formatCOP(total)}</p>
+        </div>
+
+        {/* Métodos de pago */}
+        <div>
+          <p className="text-xs font-medium text-gray-500 mb-2">Método de pago</p>
+          <div className="grid grid-cols-3 gap-2">
+            {PAYMENT_METHODS.map(({ id, label, icon: Icon, color }) => (
+              <button
+                key={id}
+                onClick={() => setMethod(id)}
+                className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs font-medium transition-all ${
+                  method === id
+                    ? colorMap[color] + ' border-2'
+                    : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}>
+                <Icon size={18} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Input de efectivo */}
+        {method === 'cash' && (
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1.5 block">
+              Efectivo recibido
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+              <input
+                ref={cashInputRef}
+                type="number"
+                value={cashReceived}
+                onChange={e => setCashReceived(e.target.value)}
+                onFocus={e => e.target.select()}
+                placeholder={total.toString()}
+                className="w-full pl-7 pr-4 h-12 border-2 border-gray-200 focus:border-brand-400 rounded-xl text-lg font-semibold outline-none text-right"
+              />
+            </div>
+
+            {/* Botones de denominaciones */}
+            <div className="flex gap-2 mt-2">
+              {[5000, 10000, 20000, 50000].map(denom => (
+                <button
+                  key={denom}
+                  onClick={() => setCashReceived(String(denom))}
+                  className="flex-1 py-1.5 text-[11px] bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 text-gray-600">
+                  ${(denom/1000).toFixed(0)}k
+                </button>
+              ))}
+              <button
+                onClick={() => setCashReceived(String(Math.ceil(total / 1000) * 1000))}
+                className="flex-1 py-1.5 text-[11px] bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 text-brand-700">
+                Exacto
+              </button>
+            </div>
+
+            {/* Vuelto en tiempo real */}
+            {cashAmt > 0 && (
+              <div className={`mt-3 rounded-xl p-3 flex justify-between items-center ${
+                cashSufficient ? 'bg-green-50' : 'bg-red-50'
+              }`}>
+                <span className="text-sm text-gray-600">
+                  {cashSufficient ? 'Vuelto' : 'Falta'}
+                </span>
+                <span className={`text-lg font-bold ${cashSufficient ? 'text-green-600' : 'text-red-500'}`}>
+                  {cashSufficient ? formatCOP(change) : formatCOP(total - cashAmt)}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Botón confirmar */}
+        <button
+          onClick={handleConfirm}
+          disabled={isProcessing || (method === 'cash' && !cashSufficient && cashAmt > 0)}
+          className="w-full h-12 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-semibold rounded-2xl flex items-center justify-center gap-2 transition-colors">
+          {isProcessing ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+          {isProcessing ? 'Procesando...' : `Confirmar cobro · ${formatCOP(total)}`}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECCIÓN 5: CustomerSearch.jsx
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CustomerSearch({ onClose, organizationId }) {
+  const { dispatch }         = usePOS();
+  const [query, setQuery]    = useState('');
+  const [results, setResults]= useState([]);
+  const [loading, setLoading]= useState(false);
+
+  useEffect(() => {
+    if (query.length < 2) { setResults([]); return; }
+    const timer = setTimeout(search, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  async function search() {
+    setLoading(true);
+    try {
+      const { default: api } = await import('../lib/api.js');
+      const { data } = await api.get('/customers', { params: { search: query, limit: 10 } });
+      setResults(data || []);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function selectCustomer(customer) {
+    const name = `${customer.first_name ?? ''} ${customer.last_name ?? ''}`.trim();
+    dispatch({ type: 'SET_CUSTOMER', payload: { id: customer.id, name } });
+    toast.success(`Cliente: ${name}`);
+    onClose();
+  }
+
+  return (
+    <Modal onClose={onClose} title="Seleccionar cliente">
+      <div className="p-4 space-y-4">
+        <input
+          autoFocus
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Nombre, teléfono o cédula..."
+          className="w-full h-10 border border-gray-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-brand-400"
+        />
+
+        <div className="space-y-2 max-h-64 overflow-y-auto">
+          {loading && <p className="text-sm text-center text-gray-400 py-4">Buscando...</p>}
+          {results.map(c => (
+            <button
+              key={c.id}
+              onClick={() => selectCustomer(c)}
+              className="w-full text-left flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 border border-gray-100">
+              <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 text-xs font-bold shrink-0">
+                {(c.first_name?.[0] || '?').toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900">
+                  {c.first_name} {c.last_name}
+                </p>
+                <p className="text-xs text-gray-400 truncate">
+                  {c.phone || c.email || c.document_number}
+                </p>
+              </div>
+              {c.segment === 'vip' && (
+                <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">VIP</span>
+              )}
+              <p className="text-xs text-gray-400 shrink-0">{formatCOP(c.total_spent || 0)}</p>
+            </button>
+          ))}
+          {!loading && query.length >= 2 && results.length === 0 && (
+            <div className="text-center py-6">
+              <p className="text-sm text-gray-400 mb-3">No se encontró el cliente</p>
+              <button className="text-sm text-brand-600 hover:underline">
+                + Crear nuevo cliente
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECCIÓN 6: DiscountModal.jsx
+// ─────────────────────────────────────────────────────────────────────────────
+
+function DiscountModal({ onClose }) {
+  const { setDiscount, totals } = usePOS();
+  const { isAdmin } = useAuth();
+  const [type,   setType]   = useState('percentage');
+  const [value,  setValue]  = useState('');
+  const [reason, setReason] = useState('');
+  const [pin,    setPin]    = useState('');
+  const [needPin, setNeedPin] = useState(false);
+
+  const maxDiscount = isAdmin ? 100 : 15; // Los cajeros solo pueden hasta 15%
+
+  function handleApply() {
+    const numVal = Number(value);
+    if (!numVal || numVal <= 0) { toast.error('Ingresa un valor de descuento'); return; }
+    if (type === 'percentage' && numVal > maxDiscount) {
+      if (!isAdmin) {
+        setNeedPin(true);
+        return;
+      }
+    }
+    if (!reason.trim()) { toast.error('Indica el motivo del descuento'); return; }
+
+    setDiscount({ type: type === 'percentage' ? 'pct' : 'fixed', value: numVal, reason });
+    toast.success(`Descuento de ${type === 'percentage' ? numVal + '%' : formatCOP(numVal)} aplicado`);
+    onClose();
+  }
+
+  const previewDiscount = type === 'percentage'
+    ? Math.round(totals.total * Number(value) / 100)
+    : Number(value);
+
+  return (
+    <Modal onClose={onClose} title="Aplicar descuento" size="sm">
+      <div className="p-5 space-y-4">
+        {/* Tipo de descuento */}
+        <div className="flex gap-2">
+          {[
+            { id: 'percentage', label: '% Porcentaje' },
+            { id: 'fixed',      label: '$ Valor fijo' },
+          ].map(t => (
+            <button
+              key={t.id}
+              onClick={() => { setType(t.id); setValue(''); }}
+              className={`flex-1 py-2 rounded-xl text-sm font-medium border transition-colors ${
+                type === t.id ? 'bg-brand-600 text-white border-brand-600' : 'bg-gray-50 text-gray-600 border-gray-200'
+              }`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Valor */}
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+            {type === 'percentage' ? '%' : '$'}
+          </span>
+          <input
+            autoFocus
+            type="number"
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            max={type === 'percentage' ? 100 : totals.total}
+            className="w-full pl-8 pr-4 h-11 border-2 border-gray-200 focus:border-brand-400 rounded-xl text-lg font-semibold text-right outline-none"
+            placeholder={type === 'percentage' ? '10' : '5000'}
+          />
+        </div>
+
+        {/* Porcentajes rápidos */}
+        {type === 'percentage' && (
+          <div className="flex gap-2">
+            {[5, 10, 15, 20].map(p => (
+              <button
+                key={p}
+                onClick={() => setValue(String(p))}
+                className={`flex-1 py-1.5 text-xs rounded-lg border transition-colors ${
+                  Number(value) === p ? 'bg-brand-100 border-brand-300 text-brand-700' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                } ${p > maxDiscount ? 'opacity-50' : ''}`}>
+                {p}%
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Preview del descuento */}
+        {value && Number(value) > 0 && (
+          <div className="bg-green-50 rounded-xl p-3 flex justify-between">
+            <span className="text-sm text-gray-600">Ahorro del cliente</span>
+            <span className="text-sm font-bold text-green-600">- {formatCOP(previewDiscount)}</span>
+          </div>
+        )}
+
+        {/* Motivo */}
+        <div>
+          <label className="text-xs font-medium text-gray-500 mb-1 block">Motivo (obligatorio)</label>
+          <select
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            className="w-full h-10 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-brand-400">
+            <option value="">Seleccionar motivo...</option>
+            <option>Cliente frecuente</option>
+            <option>Producto dañado / cerca de vencimiento</option>
+            <option>Promoción del día</option>
+            <option>Cortesía gerencia</option>
+            <option>Otro</option>
+          </select>
+        </div>
+
+        {needPin && (
+          <div className="bg-amber-50 rounded-xl p-3">
+            <p className="text-xs text-amber-700 mb-2">Descuento mayor al {maxDiscount}% — requiere PIN de gerencia</p>
+            <input
+              type="password"
+              maxLength={6}
+              value={pin}
+              onChange={e => setPin(e.target.value)}
+              placeholder="PIN gerencia"
+              className="w-full h-10 border border-amber-300 rounded-lg px-3 text-sm outline-none focus:ring-2 focus:ring-amber-400 text-center tracking-widest"
+            />
+          </div>
+        )}
+
+        <button
+          onClick={handleApply}
+          disabled={!value || !reason}
+          className="w-full h-11 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-semibold rounded-xl transition-colors">
+          Aplicar descuento
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECCIÓN 7: CashSessionModal.jsx
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CashSessionModal({ onClose, branchId }) {
+  const { dispatch }       = usePOS();
+  const { user }           = useAuth();
+  const [cash,    setCash] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function openSession() {
+    if (!branchId) { toast.error('Selecciona una sucursal primero'); return; }
+    setLoading(true);
+    try {
+      const session = await cashAPI.open({
+        branch_id:    branchId,
+        opening_cash: Number(cash) || 0,
+      });
+      dispatch({ type: 'SET_CASH_SESSION', payload: session });
+      toast.success('Caja abierta correctamente');
+      onClose();
+    } catch (err) {
+      toast.error(err?.error || 'Error al abrir caja');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Modal title="Abrir caja" hideClose>
+      <div className="p-6 space-y-5">
+        <div className="text-center">
+          <p className="text-sm text-gray-500">Cajero</p>
+          <p className="font-semibold text-gray-900">{user?.full_name}</p>
+          <p className="text-xs text-gray-400">{new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium text-gray-700 mb-2 block">
+            Efectivo inicial en caja
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+            <input
+              autoFocus
+              type="number"
+              value={cash}
+              onChange={e => setCash(e.target.value)}
+              placeholder="0"
+              className="w-full pl-7 pr-4 h-12 border-2 border-gray-200 focus:border-brand-400 rounded-xl text-xl font-bold text-right outline-none"
+            />
+          </div>
+          <p className="text-xs text-gray-400 mt-1">Cuenta el efectivo disponible y digita el monto</p>
+        </div>
+
+        <button
+          onClick={openSession}
+          disabled={loading}
+          className="w-full h-12 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-2xl flex items-center justify-center gap-2 transition-colors">
+          {loading ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+          {loading ? 'Abriendo...' : 'Abrir caja y empezar'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECCIÓN 8: Panel de Propuestas IA (sidebar)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function AIProposalsPanel({ proposals, onClose, branchId }) {
+  const { approve, reject, isApproving } = useAIProposals(branchId);
+
+  const typeLabels = {
+    inventory_entry: { label: 'Inventario',  color: 'blue',   emoji: '📦' },
+    purchase_order:  { label: 'Pedido',      color: 'amber',  emoji: '🛒' },
+    stock_adjustment:{ label: 'Ajuste',      color: 'red',    emoji: '⚠️' },
+    marketing_message:{ label: 'Marketing', color: 'green',  emoji: '📱' },
+    price_update:    { label: 'Precio',      color: 'purple', emoji: '💰' },
+  };
+
+  return (
+    <div className="fixed inset-y-0 right-0 w-80 bg-white shadow-2xl border-l border-gray-200 z-40 flex flex-col">
+      <div className="flex items-center justify-between p-4 border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <Zap size={18} className="text-purple-600" />
+          <span className="font-semibold text-gray-900">Agente IA</span>
+          {proposals.length > 0 && (
+            <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full font-medium">
+              {proposals.length}
+            </span>
+          )}
+        </div>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <X size={18} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+        {proposals.length === 0 ? (
+          <div className="text-center py-10 text-gray-300">
+            <Zap size={32} className="mx-auto mb-2 opacity-40" />
+            <p className="text-sm">Sin propuestas pendientes</p>
+          </div>
+        ) : proposals.map(p => {
+          const meta = typeLabels[p.proposal_type] || { label: p.proposal_type, emoji: '🤖' };
+          return (
+            <div key={p.id} className="bg-gray-50 rounded-2xl p-3 space-y-2.5">
+              <div className="flex items-start gap-2">
+                <span className="text-xl shrink-0">{meta.emoji}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-gray-900 leading-tight">{p.title}</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">{p.description}</p>
+                </div>
+              </div>
+
+              {/* Barra de confianza */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-1 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-brand-500"
+                    style={{ width: `${p.confidence_score}%` }}
+                  />
+                </div>
+                <span className="text-[10px] text-gray-400 shrink-0">{p.confidence_score}%</span>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => approve(p.id)}
+                  disabled={isApproving}
+                  className="flex-1 h-8 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition-colors">
+                  <CheckCircle2 size={12} />
+                  Aprobar
+                </button>
+                <button
+                  onClick={() => reject({ proposalId: p.id, reason: 'Rechazado manualmente' })}
+                  className="h-8 px-3 border border-gray-200 text-gray-500 text-xs rounded-xl hover:bg-gray-100 transition-colors">
+                  <X size={12} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPER: Modal base reutilizable
+// ─────────────────────────────────────────────────────────────────────────────
+
+function Modal({ children, title, onClose, hideClose = false, size = 'md' }) {
+  useEffect(() => {
+    const esc = (e) => { if (e.key === 'Escape' && !hideClose) onClose?.(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [hideClose, onClose]);
+
+  const sizeMap = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg' };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={e => { if (e.target === e.currentTarget && !hideClose) onClose?.(); }}>
+      <div className={`bg-white rounded-3xl shadow-2xl w-full ${sizeMap[size]} overflow-hidden`}>
+        {title && (
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900">{title}</h2>
+            {!hideClose && (
+              <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100">
+                <X size={16} />
+              </button>
+            )}
+          </div>
+        )}
+        {children}
+      </div>
+    </div>
+  );
+}

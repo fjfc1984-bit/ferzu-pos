@@ -1,0 +1,185 @@
+import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { Suspense, lazy } from 'react'
+
+// --- Providers (orden importa: Auth → Plan → POS → Sync) ---
+import { AuthProvider, useAuth } from './context/AuthContext'
+import { PlanProvider, ModuleGuard, AdaptiveNav, PricingPage, TrialBanner } from './components/ModuleGuard'
+import { POSProvider } from './context/POSContext'
+import { SyncProvider } from './context/SyncContext'
+import { OfflineBanner } from './components/OfflineBanner'
+
+// --- Auth pages (no lazy: se necesitan antes de autenticar) ---
+import { LoginPage }        from './pages/auth/LoginPage'
+import { OnboardingWizard } from './pages/auth/OnboardingWizard'
+import { BranchSelector }   from './pages/auth/BranchSelector'
+import { PINLockScreen }    from './pages/auth/PINLockScreen'
+
+// --- Feature pages (lazy para code splitting) ---
+// NOTA: páginas con "export default function" NO necesitan .then()
+// Solo CustomersPage usa "export function" (named export)
+const DashboardPage      = lazy(() => import('./pages/DashboardPage'))
+const POSPage            = lazy(() => import('./pages/POSPage'))
+const InventoryPage      = lazy(() => import('./pages/InventoryPage'))
+const BarbershopPage     = lazy(() => import('./pages/BarbershopPage'))
+const KitchenDisplayPage = lazy(() => import('./pages/KitchenDisplayPage'))
+const WorkshopPage       = lazy(() => import('./pages/WorkshopPage'))
+const MinimarketPage     = lazy(() => import('./pages/MinimarketPage'))
+const CustomersPage      = lazy(() => import('./pages/CustomersPage').then(m => ({ default: m.CustomersPage })))
+// CheckoutPage: tiene tanto named export como default export — usamos default
+const CheckoutPage       = lazy(() => import('./pages/CheckoutPage'))
+
+// ---------------------------------------------------------------------------
+// Fallback de carga mientras el chunk lazy se descarga
+// ---------------------------------------------------------------------------
+function PageSpinner() {
+  return (
+    <div className="flex-1 flex items-center justify-center h-full bg-gray-50">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-gray-500 font-medium">Cargando módulo…</p>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// ProtectedRoute — redirige a /login si no hay sesión activa
+// ---------------------------------------------------------------------------
+function ProtectedRoute() {
+  const { user, loading } = useAuth()
+  const location = useLocation()
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-950">
+        <div className="flex flex-col items-center gap-4">
+          <img src="/logo-ferzu.svg" alt="Ferzu" className="w-16 h-16 opacity-80" />
+          <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  return <Outlet />
+}
+
+// ---------------------------------------------------------------------------
+// AppShell — layout principal: sidebar + contenido (para todas las páginas
+//            EXCEPTO /pos que tiene su propio layout full-screen)
+// ---------------------------------------------------------------------------
+function AppShell() {
+  const { pinLocked } = useAuth()
+
+  if (pinLocked) {
+    return <PINLockScreen />
+  }
+
+  return (
+    <div className="flex h-screen bg-gray-100 overflow-hidden">
+      <AdaptiveNav />
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <TrialBanner />
+        <OfflineBanner />
+        <main className="flex-1 overflow-auto">
+          <Suspense fallback={<PageSpinner />}>
+            <Outlet />
+          </Suspense>
+        </main>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// POSShell — contenedor standalone para el terminal POS.
+// POSPage tiene su propio h-screen + sidebar interno, así que NO debe ir
+// dentro de AppShell (doble sidebar, doble layout).
+// Sí respeta el PIN lock y muestra el OfflineBanner.
+// ---------------------------------------------------------------------------
+function POSShell() {
+  const { pinLocked } = useAuth()
+
+  if (pinLocked) {
+    return <PINLockScreen />
+  }
+
+  return (
+    <>
+      <OfflineBanner />
+      <Outlet />
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// App — árbol de rutas completo
+// ---------------------------------------------------------------------------
+export default function App() {
+  return (
+    <AuthProvider>
+      <PlanProvider>
+        <POSProvider>
+          <SyncProvider>
+            <Routes>
+              {/* ====== Rutas públicas ====== */}
+              <Route path="/login"         element={<LoginPage />} />
+              <Route path="/onboarding"    element={<OnboardingWizard />} />
+              <Route path="/branch-select" element={<BranchSelector />} />
+              <Route path="/pricing"       element={<PricingPage />} />
+
+              {/* ====== POS — full-screen standalone (sin AppShell) ====== */}
+              <Route element={<ProtectedRoute />}>
+                <Route element={<POSShell />}>
+                  <Route path="/pos" element={
+                    <ModuleGuard moduleKey="pos">
+                      <Suspense fallback={<PageSpinner />}><POSPage /></Suspense>
+                    </ModuleGuard>
+                  } />
+                </Route>
+              </Route>
+
+              {/* ====== Rutas protegidas con AppShell (sidebar + nav) ====== */}
+              <Route element={<ProtectedRoute />}>
+                <Route element={<AppShell />}>
+
+                  <Route path="/dashboard"
+                    element={<ModuleGuard moduleKey="dashboard"><DashboardPage /></ModuleGuard>}
+                  />
+                  <Route path="/inventory"
+                    element={<ModuleGuard moduleKey="inventory"><InventoryPage /></ModuleGuard>}
+                  />
+                  <Route path="/customers"
+                    element={<ModuleGuard moduleKey="customers"><CustomersPage /></ModuleGuard>}
+                  />
+                  <Route path="/barbershop"
+                    element={<ModuleGuard moduleKey="barbershop"><BarbershopPage /></ModuleGuard>}
+                  />
+                  <Route path="/kitchen"
+                    element={<ModuleGuard moduleKey="kitchen"><KitchenDisplayPage /></ModuleGuard>}
+                  />
+                  <Route path="/workshop"
+                    element={<ModuleGuard moduleKey="workshop"><WorkshopPage /></ModuleGuard>}
+                  />
+                  <Route path="/minimarket"
+                    element={<ModuleGuard moduleKey="minimarket"><MinimarketPage /></ModuleGuard>}
+                  />
+                  <Route path="/checkout" element={<CheckoutPage />} />
+
+                  <Route index element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/"  element={<Navigate to="/dashboard" replace />} />
+                </Route>
+              </Route>
+
+              {/* Catch-all */}
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </SyncProvider>
+        </POSProvider>
+      </PlanProvider>
+    </AuthProvider>
+  )
+}

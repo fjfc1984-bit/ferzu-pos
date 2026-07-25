@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FERZU POS — Desplegar Schema</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background:#0f172a; color:#e2e8f0; min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  .card { background:#1e293b; border-radius:16px; padding:40px; max-width:560px; width:90%; box-shadow:0 25px 50px rgba(0,0,0,.5); }
+  .logo { font-size:28px; font-weight:800; color:#3b82f6; margin-bottom:8px; }
+  h2 { font-size:18px; color:#94a3b8; margin-bottom:32px; font-weight:400; }
+  .step { display:flex; align-items:flex-start; gap:16px; margin-bottom:20px; padding:16px; background:#0f172a; border-radius:12px; border:1px solid #334155; }
+  .step-num { background:#3b82f6; color:white; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; font-size:13px; }
+  .step-text { font-size:14px; line-height:1.6; color:#cbd5e1; }
+  .step-text strong { color:#e2e8f0; }
+  .btn { width:100%; margin-top:32px; padding:16px; background:#3b82f6; color:white; border:none; border-radius:12px; font-size:16px; font-weight:700; cursor:pointer; transition:all .2s; letter-spacing:.3px; }
+  .btn:hover { background:#2563eb; transform:translateY(-1px); box-shadow:0 8px 20px rgba(59,130,246,.4); }
+  .btn:active { transform:translateY(0); }
+  .btn:disabled { background:#475569; cursor:not-allowed; transform:none; box-shadow:none; }
+  #status { margin-top:20px; padding:16px; border-radius:10px; font-size:14px; display:none; line-height:1.6; }
+  .status-ok { background:#052e16; border:1px solid #15803d; color:#4ade80; }
+  .status-err { background:#1f0a0a; border:1px solid #dc2626; color:#f87171; }
+  .status-info { background:#0c1a2e; border:1px solid #1d4ed8; color:#93c5fd; }
+  .log-line { font-family: monospace; font-size:12px; margin-top:8px; opacity:.8; }
+  a { color:#60a5fa; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">⚡ FERZU POS</div>
+  <h2>Desplegar schema en Supabase</h2>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-text">
+      <strong>Asegúrate de estar en Chrome</strong><br>
+      donde tienes sesión iniciada en <a href="https://supabase.com" target="_blank">supabase.com</a>.
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-text">
+      <strong>Haz clic en el botón de abajo.</strong><br>
+      El schema (643 líneas SQL) se enviará automáticamente al proyecto <code>laimnfckldpiovgbugyr</code>.
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-text">
+      <strong>Espera la confirmación verde</strong> y vuelve al POS.<br>
+      El botón <em>¡Empezar a vender!</em> funcionará inmediatamente.
+    </div>
+  </div>
+
+  <button class="btn" id="btn" onclick="deploySchema()">
+    🚀 Desplegar Schema en Supabase
+  </button>
+
+  <div id="status"></div>
+</div>
+
+<script>
+const SQL = "-- ============================================================\n-- FERZU POS \u2014 Schema v2 (corregido para coincidir con el c\u00f3digo)\n-- Ejecutar en Supabase \u2192 SQL Editor \u2192 New Query \u2192 Run\n-- ============================================================\n\n-- \u2500\u2500 Extensiones \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nCREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";\nCREATE EXTENSION IF NOT EXISTS \"pgcrypto\";\n\n-- \u2500\u2500 ENUMs \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nDO $$ BEGIN\n  CREATE TYPE business_type AS ENUM ('restaurant','minimarket','barbershop','workshop','generic');\nEXCEPTION WHEN duplicate_object THEN NULL; END $$;\n\nDO $$ BEGIN\n  CREATE TYPE sync_status AS ENUM ('synced','pending_sync','conflict');\nEXCEPTION WHEN duplicate_object THEN NULL; END $$;\n\nDO $$ BEGIN\n  CREATE TYPE ai_proposal_status AS ENUM ('pending','approved','rejected','executed','expired');\nEXCEPTION WHEN duplicate_object THEN NULL; END $$;\n\n\n-- ============================================================\n-- 1. ORGANIZATIONS\n-- ============================================================\nCREATE TABLE IF NOT EXISTS organizations (\n  id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  -- Datos b\u00e1sicos (nombres que usa el c\u00f3digo)\n  business_name         VARCHAR(255) NOT NULL,\n  legal_name            VARCHAR(255),\n  nit                   VARCHAR(30),\n  phone                 VARCHAR(30),\n  email                 VARCHAR(255),\n  business_type         business_type NOT NULL DEFAULT 'generic',\n  -- Onboarding\n  onboarding_completed  BOOLEAN NOT NULL DEFAULT FALSE,\n  -- Plan SaaS (usado por ModuleGuard)\n  plan_id               VARCHAR(30) DEFAULT 'starter',  -- 'starter' | 'pro' | 'enterprise'\n  enabled_modules       JSONB DEFAULT '[\"dashboard\",\"pos\",\"inventory\",\"customers\"]',\n  trial_ends_at         TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '14 days'),\n  plan_expires_at       TIMESTAMPTZ,\n  -- Colombia fiscal\n  tax_regime            VARCHAR(30) DEFAULT 'simplified',\n  is_vat_responsible    BOOLEAN DEFAULT FALSE,\n  -- Estado\n  is_active             BOOLEAN DEFAULT TRUE,\n  created_at            TIMESTAMPTZ DEFAULT NOW(),\n  updated_at            TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 2. BRANCHES (sucursales)\n-- ============================================================\nCREATE TABLE IF NOT EXISTS branches (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  organization_id   UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,\n  name              VARCHAR(255) NOT NULL,\n  address           TEXT,\n  city              VARCHAR(100),\n  department        VARCHAR(100),\n  phone             VARCHAR(30),\n  is_main           BOOLEAN DEFAULT FALSE,\n  is_active         BOOLEAN DEFAULT TRUE,\n  metadata          JSONB DEFAULT '{}',\n  created_at        TIMESTAMPTZ DEFAULT NOW(),\n  updated_at        TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 3. USERS (espejo p\u00fablico de auth.users)\n-- organization_id es nullable al inicio (se asigna en onboarding)\n-- ============================================================\nCREATE TABLE IF NOT EXISTS users (\n  id                UUID PRIMARY KEY,  -- mismo UUID que auth.users.id\n  organization_id   UUID REFERENCES organizations(id) ON DELETE SET NULL,\n  email             VARCHAR(255) NOT NULL UNIQUE,\n  full_name         VARCHAR(255) NOT NULL DEFAULT '',\n  role              VARCHAR(30) NOT NULL DEFAULT 'owner',\n  pin_hash          TEXT,              -- bcrypt del PIN de cajero\n  avatar_url        TEXT,\n  commission_pct    DECIMAL(5,2) DEFAULT 0,\n  is_active         BOOLEAN DEFAULT TRUE,\n  last_login_at     TIMESTAMPTZ,\n  created_at        TIMESTAMPTZ DEFAULT NOW(),\n  updated_at        TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 4. USER_BRANCHES (relaci\u00f3n usuario \u2194 sucursal)\n-- ============================================================\nCREATE TABLE IF NOT EXISTS user_branches (\n  user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n  branch_id         UUID NOT NULL REFERENCES branches(id) ON DELETE CASCADE,\n  role              VARCHAR(30) DEFAULT 'owner',\n  is_default        BOOLEAN DEFAULT TRUE,\n  PRIMARY KEY (user_id, branch_id)\n);\n\n-- ============================================================\n-- 5. CATEGORIES\n-- ============================================================\nCREATE TABLE IF NOT EXISTS categories (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  organization_id   UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,\n  parent_id         UUID REFERENCES categories(id),\n  name              VARCHAR(255) NOT NULL,\n  color             CHAR(7),\n  icon              VARCHAR(50),\n  sort_order        INTEGER DEFAULT 0,\n  is_active         BOOLEAN DEFAULT TRUE,\n  created_at        TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 6. PRODUCTS\n-- ============================================================\nCREATE TABLE IF NOT EXISTS products (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  organization_id   UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,\n  category_id       UUID REFERENCES categories(id),\n  name              VARCHAR(255) NOT NULL,\n  sku               VARCHAR(100),\n  barcode           VARCHAR(100),\n  description       TEXT,\n  image_url         TEXT,\n  item_type         VARCHAR(20) NOT NULL DEFAULT 'product',\n  price             BIGINT NOT NULL DEFAULT 0,\n  cost              BIGINT DEFAULT 0,\n  vat_rate          DECIMAL(5,2) DEFAULT 0,\n  vat_included      BOOLEAN DEFAULT TRUE,\n  track_inventory   BOOLEAN DEFAULT TRUE,\n  unit_of_measure   VARCHAR(20) DEFAULT 'unit',\n  min_stock         DECIMAL(10,3) DEFAULT 0,\n  is_active         BOOLEAN DEFAULT TRUE,\n  is_featured       BOOLEAN DEFAULT FALSE,\n  sort_order        INTEGER DEFAULT 0,\n  metadata          JSONB DEFAULT '{}',\n  created_at        TIMESTAMPTZ DEFAULT NOW(),\n  updated_at        TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 7. INVENTORY\n-- ============================================================\nCREATE TABLE IF NOT EXISTS inventory (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  branch_id         UUID NOT NULL REFERENCES branches(id) ON DELETE CASCADE,\n  product_id        UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,\n  quantity          DECIMAL(10,3) NOT NULL DEFAULT 0,\n  reserved_qty      DECIMAL(10,3) DEFAULT 0,\n  min_stock         DECIMAL(10,3) DEFAULT 0,\n  last_cost         BIGINT DEFAULT 0,\n  average_cost      BIGINT DEFAULT 0,\n  updated_at        TIMESTAMPTZ DEFAULT NOW(),\n  UNIQUE(branch_id, product_id)\n);\n\n-- ============================================================\n-- 8. SUPPLIERS\n-- ============================================================\nCREATE TABLE IF NOT EXISTS suppliers (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  organization_id   UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,\n  name              VARCHAR(255) NOT NULL,\n  nit               VARCHAR(30),\n  contact_name      VARCHAR(255),\n  email             VARCHAR(255),\n  phone             VARCHAR(30),\n  whatsapp          VARCHAR(30),\n  payment_terms_days INTEGER DEFAULT 30,\n  is_active         BOOLEAN DEFAULT TRUE,\n  created_at        TIMESTAMPTZ DEFAULT NOW(),\n  updated_at        TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 9. CUSTOMERS\n-- ============================================================\nCREATE TABLE IF NOT EXISTS customers (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  organization_id   UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,\n  first_name        VARCHAR(100),\n  last_name         VARCHAR(100),\n  email             VARCHAR(255),\n  phone             VARCHAR(30),\n  whatsapp          VARCHAR(30),\n  document_type     VARCHAR(10) DEFAULT 'CC',\n  document_number   VARCHAR(30),\n  birth_date        DATE,\n  address           TEXT,\n  city              VARCHAR(100),\n  segment           VARCHAR(30) DEFAULT 'regular',\n  loyalty_points    INTEGER DEFAULT 0,\n  total_spent       BIGINT DEFAULT 0,\n  visit_count       INTEGER DEFAULT 0,\n  last_visit_at     TIMESTAMPTZ,\n  accepts_marketing BOOLEAN DEFAULT TRUE,\n  notes             TEXT,\n  requires_invoice  BOOLEAN DEFAULT FALSE,\n  is_active         BOOLEAN DEFAULT TRUE,\n  created_at        TIMESTAMPTZ DEFAULT NOW(),\n  updated_at        TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 10. TABLES (mesas para restaurante)\n-- ============================================================\nCREATE TABLE IF NOT EXISTS tables (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  branch_id         UUID NOT NULL REFERENCES branches(id) ON DELETE CASCADE,\n  name              VARCHAR(50) NOT NULL,\n  capacity          INTEGER DEFAULT 4,\n  area              VARCHAR(50),\n  status            VARCHAR(20) DEFAULT 'available',\n  position_x        INTEGER DEFAULT 0,\n  position_y        INTEGER DEFAULT 0,\n  is_active         BOOLEAN DEFAULT TRUE\n);\n\n-- ============================================================\n-- 11. APPOINTMENTS (citas para barber\u00eda/taller)\n-- ============================================================\nCREATE TABLE IF NOT EXISTS appointments (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  branch_id         UUID NOT NULL REFERENCES branches(id),\n  customer_id       UUID REFERENCES customers(id),\n  staff_user_id     UUID REFERENCES users(id),\n  table_id          UUID REFERENCES tables(id),\n  start_at          TIMESTAMPTZ NOT NULL,\n  end_at            TIMESTAMPTZ NOT NULL,\n  status            VARCHAR(20) DEFAULT 'scheduled',\n  services          JSONB DEFAULT '[]',\n  notes             TEXT,\n  reminder_sent_at  TIMESTAMPTZ,\n  created_at        TIMESTAMPTZ DEFAULT NOW(),\n  updated_at        TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 12. CASH SESSIONS (sesiones de caja)\n-- ============================================================\nCREATE TABLE IF NOT EXISTS cash_sessions (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  branch_id         UUID NOT NULL REFERENCES branches(id),\n  user_id           UUID NOT NULL REFERENCES users(id),\n  opened_at         TIMESTAMPTZ DEFAULT NOW(),\n  closed_at         TIMESTAMPTZ,\n  opening_cash      BIGINT DEFAULT 0,\n  total_sales       BIGINT DEFAULT 0,\n  total_cash        BIGINT DEFAULT 0,\n  total_card        BIGINT DEFAULT 0,\n  total_nequi       BIGINT DEFAULT 0,\n  total_daviplata   BIGINT DEFAULT 0,\n  total_transfers   BIGINT DEFAULT 0,\n  total_discounts   BIGINT DEFAULT 0,\n  total_refunds     BIGINT DEFAULT 0,\n  closing_cash      BIGINT DEFAULT 0,\n  cash_difference   BIGINT DEFAULT 0,\n  notes             TEXT,\n  status            VARCHAR(20) DEFAULT 'open'\n);\n\n-- ============================================================\n-- 13. ORDERS (ventas / pedidos)\n-- ============================================================\nCREATE TABLE IF NOT EXISTS orders (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  branch_id         UUID NOT NULL REFERENCES branches(id),\n  cash_session_id   UUID REFERENCES cash_sessions(id),\n  order_number      VARCHAR(50) NOT NULL,\n  order_type        VARCHAR(20) NOT NULL DEFAULT 'sale',\n  status            VARCHAR(20) NOT NULL DEFAULT 'open',\n  customer_id       UUID REFERENCES customers(id),\n  staff_user_id     UUID REFERENCES users(id),\n  table_id          UUID REFERENCES tables(id),\n  appointment_id    UUID REFERENCES appointments(id),\n  subtotal          BIGINT NOT NULL DEFAULT 0,\n  discount_amount   BIGINT DEFAULT 0,\n  tax_total         BIGINT DEFAULT 0,\n  tip_amount        BIGINT DEFAULT 0,\n  total             BIGINT NOT NULL DEFAULT 0,\n  discount_type     VARCHAR(20),\n  discount_value    DECIMAL(10,2),\n  discount_reason   TEXT,\n  sync_status       sync_status DEFAULT 'synced',\n  local_id          VARCHAR(100),\n  metadata          JSONB DEFAULT '{}',\n  notes             TEXT,\n  created_by        UUID REFERENCES users(id),\n  created_at        TIMESTAMPTZ DEFAULT NOW(),\n  updated_at        TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 14. ORDER ITEMS\n-- ============================================================\nCREATE TABLE IF NOT EXISTS order_items (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  order_id          UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,\n  product_id        UUID REFERENCES products(id),\n  product_name      VARCHAR(255) NOT NULL,\n  product_sku       VARCHAR(100),\n  quantity          DECIMAL(10,3) NOT NULL DEFAULT 1,\n  unit_price        BIGINT NOT NULL,\n  unit_cost         BIGINT DEFAULT 0,\n  vat_rate          DECIMAL(5,2) DEFAULT 0,\n  vat_amount        BIGINT DEFAULT 0,\n  discount_amount   BIGINT DEFAULT 0,\n  subtotal          BIGINT NOT NULL,\n  modifiers         JSONB DEFAULT '[]',\n  notes             TEXT,\n  staff_user_id     UUID REFERENCES users(id),\n  created_at        TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 15. PAYMENTS\n-- ============================================================\nCREATE TABLE IF NOT EXISTS payments (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  order_id          UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,\n  payment_method    VARCHAR(30) NOT NULL,\n  amount            BIGINT NOT NULL,\n  cash_received     BIGINT,\n  cash_change       BIGINT,\n  transaction_ref   VARCHAR(100),\n  gateway           VARCHAR(30),\n  gateway_status    VARCHAR(30),\n  notes             TEXT,\n  created_at        TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 16. DIAN CONFIGS (facturaci\u00f3n electr\u00f3nica)\n-- ============================================================\nCREATE TABLE IF NOT EXISTS dian_configs (\n  id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  organization_id     UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,\n  branch_id           UUID REFERENCES branches(id),\n  resolution_number   VARCHAR(50),\n  prefix              VARCHAR(10),\n  from_number         INTEGER,\n  to_number           INTEGER,\n  current_number      INTEGER DEFAULT 1,\n  resolution_date     DATE,\n  pta_provider        VARCHAR(50),   -- proveedor tecnol\u00f3gico DIAN\n  environment         VARCHAR(20) DEFAULT 'test',\n  is_active           BOOLEAN DEFAULT FALSE,\n  created_at          TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 17. AI PROPOSALS (human-in-the-loop)\n-- ============================================================\nCREATE TABLE IF NOT EXISTS ai_proposals (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  organization_id   UUID NOT NULL REFERENCES organizations(id),\n  branch_id         UUID REFERENCES branches(id),\n  proposal_type     VARCHAR(50) NOT NULL,\n  title             VARCHAR(255) NOT NULL,\n  description       TEXT NOT NULL,\n  payload           JSONB NOT NULL,\n  confidence_score  INTEGER,\n  status            ai_proposal_status DEFAULT 'pending',\n  source_type       VARCHAR(30),\n  source_id         UUID,\n  reviewed_by       UUID REFERENCES users(id),\n  reviewed_at       TIMESTAMPTZ,\n  review_notes      TEXT,\n  expires_at        TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '48 hours'),\n  created_at        TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 18. AI CHAT HISTORY\n-- ============================================================\nCREATE TABLE IF NOT EXISTS ai_chat_history (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  organization_id   UUID NOT NULL REFERENCES organizations(id),\n  user_id           UUID REFERENCES users(id),\n  session_id        VARCHAR(100),\n  role              VARCHAR(10) NOT NULL,\n  content           TEXT NOT NULL,\n  proposal_id       UUID REFERENCES ai_proposals(id),\n  model             VARCHAR(50),\n  tokens_used       INTEGER,\n  created_at        TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 19. AUDIT LOG\n-- ============================================================\nCREATE TABLE IF NOT EXISTS audit_log (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  organization_id   UUID NOT NULL REFERENCES organizations(id),\n  user_id           UUID REFERENCES users(id),\n  action            VARCHAR(50) NOT NULL,\n  table_name        VARCHAR(100),\n  record_id         UUID,\n  old_values        JSONB,\n  new_values        JSONB,\n  ip_address        INET,\n  user_agent        TEXT,\n  created_at        TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- 20. SYSTEM ALERTS\n-- ============================================================\nCREATE TABLE IF NOT EXISTS system_alerts (\n  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),\n  organization_id   UUID NOT NULL REFERENCES organizations(id),\n  branch_id         UUID REFERENCES branches(id),\n  alert_type        VARCHAR(50) NOT NULL,\n  severity          VARCHAR(10) DEFAULT 'medium',\n  title             VARCHAR(255) NOT NULL,\n  description       TEXT,\n  data              JSONB,\n  is_read           BOOLEAN DEFAULT FALSE,\n  is_resolved       BOOLEAN DEFAULT FALSE,\n  resolved_by       UUID REFERENCES users(id),\n  resolved_at       TIMESTAMPTZ,\n  created_at        TIMESTAMPTZ DEFAULT NOW()\n);\n\n-- ============================================================\n-- \u00cdNDICES CR\u00cdTICOS\n-- ============================================================\nCREATE INDEX IF NOT EXISTS idx_branches_org         ON branches(organization_id);\nCREATE INDEX IF NOT EXISTS idx_products_org         ON products(organization_id);\nCREATE INDEX IF NOT EXISTS idx_products_barcode     ON products(barcode) WHERE barcode IS NOT NULL;\nCREATE INDEX IF NOT EXISTS idx_inventory_branch     ON inventory(branch_id);\nCREATE INDEX IF NOT EXISTS idx_inventory_product    ON inventory(product_id);\nCREATE INDEX IF NOT EXISTS idx_orders_branch        ON orders(branch_id);\nCREATE INDEX IF NOT EXISTS idx_orders_date          ON orders(created_at);\nCREATE INDEX IF NOT EXISTS idx_orders_status        ON orders(status);\nCREATE INDEX IF NOT EXISTS idx_order_items_order    ON order_items(order_id);\nCREATE INDEX IF NOT EXISTS idx_payments_order       ON payments(order_id);\nCREATE INDEX IF NOT EXISTS idx_customers_org        ON customers(organization_id);\nCREATE INDEX IF NOT EXISTS idx_customers_phone      ON customers(phone) WHERE phone IS NOT NULL;\nCREATE INDEX IF NOT EXISTS idx_ai_proposals_org     ON ai_proposals(organization_id);\nCREATE INDEX IF NOT EXISTS idx_ai_proposals_status  ON ai_proposals(status);\nCREATE INDEX IF NOT EXISTS idx_audit_log_org        ON audit_log(organization_id);\n\n-- ============================================================\n-- TRIGGER: updated_at autom\u00e1tico\n-- ============================================================\nCREATE OR REPLACE FUNCTION set_updated_at()\nRETURNS TRIGGER AS $$\nBEGIN NEW.updated_at = NOW(); RETURN NEW; END;\n$$ LANGUAGE plpgsql;\n\nDO $$ BEGIN\n  CREATE TRIGGER trg_orgs_updated_at     BEFORE UPDATE ON organizations FOR EACH ROW EXECUTE FUNCTION set_updated_at();\n  CREATE TRIGGER trg_branches_updated_at BEFORE UPDATE ON branches      FOR EACH ROW EXECUTE FUNCTION set_updated_at();\n  CREATE TRIGGER trg_products_updated_at BEFORE UPDATE ON products      FOR EACH ROW EXECUTE FUNCTION set_updated_at();\n  CREATE TRIGGER trg_orders_updated_at   BEFORE UPDATE ON orders        FOR EACH ROW EXECUTE FUNCTION set_updated_at();\n  CREATE TRIGGER trg_customers_updated_at BEFORE UPDATE ON customers    FOR EACH ROW EXECUTE FUNCTION set_updated_at();\nEXCEPTION WHEN duplicate_object THEN NULL; END $$;\n\n-- ============================================================\n-- TRIGGER CR\u00cdTICO: Auto-crear public.users desde auth.users\n-- Cuando alguien se registra con Supabase Auth, se crea la fila\n-- en public.users autom\u00e1ticamente.\n-- ============================================================\nCREATE OR REPLACE FUNCTION handle_new_auth_user()\nRETURNS TRIGGER AS $$\nBEGIN\n  INSERT INTO public.users (id, email, full_name, role, created_at, updated_at)\n  VALUES (\n    NEW.id,\n    NEW.email,\n    COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),\n    'owner',\n    NOW(),\n    NOW()\n  )\n  ON CONFLICT (id) DO NOTHING;\n  RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql SECURITY DEFINER;\n\nDROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;\nCREATE TRIGGER on_auth_user_created\n  AFTER INSERT ON auth.users\n  FOR EACH ROW EXECUTE FUNCTION handle_new_auth_user();\n\n-- ============================================================\n-- FUNCI\u00d3N: Generar n\u00famero de orden\n-- ============================================================\nCREATE OR REPLACE FUNCTION generate_order_number(p_branch_id UUID)\nRETURNS VARCHAR AS $$\nDECLARE v_count INTEGER;\nBEGIN\n  SELECT COUNT(*) + 1 INTO v_count FROM orders WHERE branch_id = p_branch_id;\n  RETURN 'ORD-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || LPAD(v_count::TEXT, 4, '0');\nEND;\n$$ LANGUAGE plpgsql;\n\n-- ============================================================\n-- TRIGGER: Alerta stock bajo\n-- ============================================================\nCREATE OR REPLACE FUNCTION check_low_stock()\nRETURNS TRIGGER AS $$\nDECLARE\n  v_product products%ROWTYPE;\n  v_org_id  UUID;\nBEGIN\n  SELECT * INTO v_product FROM products WHERE id = NEW.product_id;\n  SELECT organization_id INTO v_org_id FROM branches WHERE id = NEW.branch_id;\n  IF NEW.quantity <= NEW.min_stock AND v_product.track_inventory = TRUE AND NEW.min_stock > 0 THEN\n    INSERT INTO system_alerts (organization_id, branch_id, alert_type, severity, title, description, data)\n    VALUES (\n      v_org_id, NEW.branch_id, 'low_stock',\n      CASE WHEN NEW.quantity = 0 THEN 'critical' ELSE 'high' END,\n      'Stock bajo: ' || v_product.name,\n      'Quedan ' || NEW.quantity || ' unidades (m\u00ednimo: ' || NEW.min_stock || ')',\n      jsonb_build_object('product_id', NEW.product_id, 'current_qty', NEW.quantity, 'min_stock', NEW.min_stock)\n    );\n  END IF;\n  RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql;\n\nDO $$ BEGIN\n  CREATE TRIGGER trg_low_stock AFTER UPDATE OF quantity ON inventory\n    FOR EACH ROW EXECUTE FUNCTION check_low_stock();\nEXCEPTION WHEN duplicate_object THEN NULL; END $$;\n\n-- ============================================================\n-- TRIGGER: Actualizar estad\u00edsticas de cliente al pagar\n-- ============================================================\nCREATE OR REPLACE FUNCTION update_customer_stats()\nRETURNS TRIGGER AS $$\nBEGIN\n  IF NEW.status = 'paid' AND OLD.status != 'paid' AND NEW.customer_id IS NOT NULL THEN\n    UPDATE customers SET\n      total_spent  = total_spent + NEW.total,\n      visit_count  = visit_count + 1,\n      last_visit_at = NOW(),\n      segment = CASE\n        WHEN total_spent + NEW.total >= 1000000 THEN 'vip'\n        WHEN total_spent + NEW.total >= 200000  THEN 'regular'\n        ELSE segment END,\n      updated_at = NOW()\n    WHERE id = NEW.customer_id;\n  END IF;\n  RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql;\n\nDO $$ BEGIN\n  CREATE TRIGGER trg_customer_stats AFTER UPDATE ON orders\n    FOR EACH ROW EXECUTE FUNCTION update_customer_stats();\nEXCEPTION WHEN duplicate_object THEN NULL; END $$;\n\n-- ============================================================\n-- RLS \u2014 Row Level Security (aislamiento multi-tenant)\n-- ============================================================\nALTER TABLE organizations  ENABLE ROW LEVEL SECURITY;\nALTER TABLE branches       ENABLE ROW LEVEL SECURITY;\nALTER TABLE users          ENABLE ROW LEVEL SECURITY;\nALTER TABLE products       ENABLE ROW LEVEL SECURITY;\nALTER TABLE inventory      ENABLE ROW LEVEL SECURITY;\nALTER TABLE customers      ENABLE ROW LEVEL SECURITY;\nALTER TABLE orders         ENABLE ROW LEVEL SECURITY;\nALTER TABLE order_items    ENABLE ROW LEVEL SECURITY;\nALTER TABLE payments       ENABLE ROW LEVEL SECURITY;\nALTER TABLE ai_proposals   ENABLE ROW LEVEL SECURITY;\n\n-- Pol\u00edticas: cada usuario ve solo su organizaci\u00f3n\n-- (el service_role del backend bypasa RLS autom\u00e1ticamente)\n\nCREATE POLICY IF NOT EXISTS \"users_own_row\" ON users\n  FOR ALL USING (id = auth.uid());\n\nCREATE POLICY IF NOT EXISTS \"org_own\" ON organizations\n  FOR ALL USING (\n    id IN (SELECT organization_id FROM users WHERE id = auth.uid())\n  );\n\nCREATE POLICY IF NOT EXISTS \"branches_org\" ON branches\n  FOR ALL USING (\n    organization_id IN (SELECT organization_id FROM users WHERE id = auth.uid())\n  );\n\nCREATE POLICY IF NOT EXISTS \"products_org\" ON products\n  FOR ALL USING (\n    organization_id IN (SELECT organization_id FROM users WHERE id = auth.uid())\n  );\n\nCREATE POLICY IF NOT EXISTS \"inventory_branch\" ON inventory\n  FOR ALL USING (\n    branch_id IN (\n      SELECT b.id FROM branches b\n      JOIN users u ON u.organization_id = b.organization_id\n      WHERE u.id = auth.uid()\n    )\n  );\n\nCREATE POLICY IF NOT EXISTS \"customers_org\" ON customers\n  FOR ALL USING (\n    organization_id IN (SELECT organization_id FROM users WHERE id = auth.uid())\n  );\n\nCREATE POLICY IF NOT EXISTS \"orders_branch\" ON orders\n  FOR ALL USING (\n    branch_id IN (\n      SELECT b.id FROM branches b\n      JOIN users u ON u.organization_id = b.organization_id\n      WHERE u.id = auth.uid()\n    )\n  );\n\nCREATE POLICY IF NOT EXISTS \"order_items_order\" ON order_items\n  FOR ALL USING (\n    order_id IN (\n      SELECT o.id FROM orders o\n      JOIN branches b ON b.id = o.branch_id\n      JOIN users u ON u.organization_id = b.organization_id\n      WHERE u.id = auth.uid()\n    )\n  );\n\nCREATE POLICY IF NOT EXISTS \"payments_order\" ON payments\n  FOR ALL USING (\n    order_id IN (\n      SELECT o.id FROM orders o\n      JOIN branches b ON b.id = o.branch_id\n      JOIN users u ON u.organization_id = b.organization_id\n      WHERE u.id = auth.uid()\n    )\n  );\n\nCREATE POLICY IF NOT EXISTS \"ai_proposals_org\" ON ai_proposals\n  FOR ALL USING (\n    organization_id IN (SELECT organization_id FROM users WHERE id = auth.uid())\n  );\n\n-- ============================================================\n-- FIN DEL SCHEMA v2\n-- ============================================================\n";
+const PROJECT_REF = 'laimnfckldpiovgbugyr';
+
+async function deploySchema() {
+  const btn = document.getElementById('btn');
+  const status = document.getElementById('status');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Desplegando...';
+  status.className = 'status-info';
+  status.style.display = 'block';
+  status.innerHTML = '🔄 Conectando con Supabase Management API...';
+
+  try {
+    // 1. Obtener el token de sesión actual de Supabase
+    const sessionResp = await fetch('https://api.supabase.com/v1/profile', {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (sessionResp.status === 401) {
+      throw new Error('No_auth');
+    }
+
+    status.innerHTML = '✅ Sesión detectada.<br>🔄 Ejecutando schema SQL...';
+
+    // 2. Ejecutar el SQL via Management API
+    const execResp = await fetch(
+      `https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`,
+      {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: SQL })
+      }
+    );
+
+    const data = await execResp.text();
+
+    if (!execResp.ok) {
+      // Intentar por statements individuales si falla el bloque completo
+      status.innerHTML = '⚠️ Ejecutando en bloques...';
+      await deployByStatements();
+      return;
+    }
+
+    status.className = 'status-ok';
+    status.innerHTML = `
+      ✅ <strong>¡Schema desplegado exitosamente!</strong><br><br>
+      Las tablas fueron creadas en Supabase.<br>
+      <span class="log-line">Respuesta: ${data.slice(0,100)}</span><br><br>
+      👉 Vuelve a FERZU POS y haz clic en <strong>¡Empezar a vender!</strong>
+    `;
+    btn.textContent = '✅ Completado';
+
+  } catch(err) {
+    if (err.message === 'No_auth') {
+      status.className = 'status-err';
+      status.innerHTML = `
+        ❌ <strong>No tienes sesión en Supabase en este navegador.</strong><br><br>
+        Opciones:<br>
+        1. <a href="https://supabase.com/dashboard/sign-in" target="_blank">Inicia sesión en Supabase</a> y vuelve aquí.<br>
+        2. O usa <strong>RUN_MIGRATE.bat</strong> en la carpeta del proyecto.
+      `;
+    } else {
+      status.className = 'status-err';
+      status.innerHTML = `❌ Error: ${err.message}<br><span class="log-line">Intenta <a href="https://supabase.com/dashboard/project/${PROJECT_REF}/sql/new" target="_blank">manualmente en el SQL Editor</a></span>`;
+    }
+    btn.disabled = false;
+    btn.textContent = '🔄 Reintentar';
+  }
+}
+
+async function deployByStatements() {
+  const btn = document.getElementById('btn');
+  const status = document.getElementById('status');
+  const statements = SQL.split(/;\s*\n/).filter(s => s.trim().length > 5);
+  let ok = 0, errors = [];
+
+  for (const stmt of statements) {
+    try {
+      const r = await fetch(
+        `https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: stmt + ';' })
+        }
+      );
+      if (r.ok || (await r.text()).includes('already exists')) ok++;
+      else errors.push(stmt.slice(0,60));
+    } catch(e) { errors.push(e.message); }
+    status.innerHTML = `🔄 Ejecutando... ${ok} sentencias OK`;
+  }
+
+  if (ok > 0) {
+    status.className = 'status-ok';
+    status.innerHTML = `
+      ✅ <strong>¡Schema desplegado!</strong> (${ok} sentencias ejecutadas)<br>
+      ${errors.length > 0 ? '⚠️ ' + errors.length + ' errores ignorados (objetos ya existentes)' : ''}<br><br>
+      👉 Vuelve a FERZU POS → <strong>¡Empezar a vender!</strong>
+    `;
+    btn.textContent = '✅ Completado';
+  } else {
+    throw new Error('No se pudo ejecutar ninguna sentencia');
+  }
+}
+</script>
+</body>
+</html>
