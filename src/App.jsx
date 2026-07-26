@@ -10,6 +10,7 @@ import { OfflineBanner } from './components/OfflineBanner'
 
 // --- Auth pages (no lazy: se necesitan antes de autenticar) ---
 import { LoginPage }        from './pages/auth/LoginPage'
+import { RegisterPage }     from './pages/auth/AuthScreens'
 import { OnboardingWizard } from './pages/auth/OnboardingWizard'
 import { BranchSelector }   from './pages/auth/BranchSelector'
 import { PINLockScreen }    from './pages/auth/PINLockScreen'
@@ -127,6 +128,7 @@ export default function App() {
             <Routes>
               {/* ====== Rutas públicas ====== */}
               <Route path="/login"         element={<LoginPage />} />
+              <Route path="/register"      element={<RegisterPage />} />
               <Route path="/onboarding"    element={<OnboardingWizard />} />
               <Route path="/branch-select" element={<BranchSelector />} />
               <Route path="/pricing"       element={<PricingPage />} />
