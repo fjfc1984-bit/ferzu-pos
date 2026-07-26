@@ -168,11 +168,10 @@ export default function App() {
                   />
                   <Route path="/checkout" element={<CheckoutPage />} />
 
-                  <Route index element={<Navigate to="/dashboard" replace />} />
                 </Route>
               </Route>
 
-              {/* Catch-all */}
+              {/* Catch-all — usuarios autenticados van al dashboard */}
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </SyncProvider>
