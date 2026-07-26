@@ -591,6 +591,60 @@ export function BranchSelector() {
 // 5 pasos: Empresa → Nicho → Sucursal → DIAN → Primer producto
 // =============================================================================
 
+// Ciudades principales de Colombia con su departamento (para selector sin errores)
+const CIUDADES_CO = [
+  { ciudad: 'Bogotá',           depto: 'Cundinamarca'       },
+  { ciudad: 'Medellín',         depto: 'Antioquia'          },
+  { ciudad: 'Cali',             depto: 'Valle del Cauca'    },
+  { ciudad: 'Barranquilla',     depto: 'Atlántico'          },
+  { ciudad: 'Cartagena',        depto: 'Bolívar'            },
+  { ciudad: 'Cúcuta',           depto: 'Norte de Santander' },
+  { ciudad: 'Soledad',          depto: 'Atlántico'          },
+  { ciudad: 'Ibagué',           depto: 'Tolima'             },
+  { ciudad: 'Bucaramanga',      depto: 'Santander'          },
+  { ciudad: 'Soacha',           depto: 'Cundinamarca'       },
+  { ciudad: 'Santa Marta',      depto: 'Magdalena'          },
+  { ciudad: 'Villavicencio',    depto: 'Meta'               },
+  { ciudad: 'Bello',            depto: 'Antioquia'          },
+  { ciudad: 'Pereira',          depto: 'Risaralda'          },
+  { ciudad: 'Manizales',        depto: 'Caldas'             },
+  { ciudad: 'Pasto',            depto: 'Nariño'             },
+  { ciudad: 'Neiva',            depto: 'Huila'              },
+  { ciudad: 'Armenia',          depto: 'Quindío'            },
+  { ciudad: 'Montería',         depto: 'Córdoba'            },
+  { ciudad: 'Valledupar',       depto: 'Cesar'              },
+  { ciudad: 'Itagüí',           depto: 'Antioquia'          },
+  { ciudad: 'Buenaventura',     depto: 'Valle del Cauca'    },
+  { ciudad: 'Palmira',          depto: 'Valle del Cauca'    },
+  { ciudad: 'Floridablanca',    depto: 'Santander'          },
+  { ciudad: 'Sincelejo',        depto: 'Sucre'              },
+  { ciudad: 'Popayán',          depto: 'Cauca'              },
+  { ciudad: 'Envigado',         depto: 'Antioquia'          },
+  { ciudad: 'Barrancabermeja',  depto: 'Santander'          },
+  { ciudad: 'Dosquebradas',     depto: 'Risaralda'          },
+  { ciudad: 'Riohacha',         depto: 'La Guajira'         },
+  { ciudad: 'Tunja',            depto: 'Boyacá'             },
+  { ciudad: 'Quibdó',           depto: 'Chocó'              },
+  { ciudad: 'Florencia',        depto: 'Caquetá'            },
+  { ciudad: 'Yumbo',            depto: 'Valle del Cauca'    },
+  { ciudad: 'Zipaquirá',        depto: 'Cundinamarca'       },
+  { ciudad: 'Girardot',         depto: 'Cundinamarca'       },
+  { ciudad: 'Facatativá',       depto: 'Cundinamarca'       },
+  { ciudad: 'Chía',             depto: 'Cundinamarca'       },
+  { ciudad: 'Mosquera',         depto: 'Cundinamarca'       },
+  { ciudad: 'Madrid',           depto: 'Cundinamarca'       },
+  { ciudad: 'Fusagasugá',       depto: 'Cundinamarca'       },
+  { ciudad: 'Rionegro',         depto: 'Antioquia'          },
+  { ciudad: 'Sabaneta',         depto: 'Antioquia'          },
+  { ciudad: 'Apartadó',         depto: 'Antioquia'          },
+  { ciudad: 'Turbo',            depto: 'Antioquia'          },
+  { ciudad: 'Maicao',           depto: 'La Guajira'         },
+  { ciudad: 'Magangué',         depto: 'Bolívar'            },
+  { ciudad: 'Lorica',           depto: 'Córdoba'            },
+  { ciudad: 'Cereté',           depto: 'Córdoba'            },
+  { ciudad: 'Sahagún',          depto: 'Córdoba'            },
+];
+
 const NICHES = [
   { key: 'restaurant',  label: 'Restaurante',   icon: Utensils,   desc: 'Mesas, cocina, comandas'    },
   { key: 'barbershop',  label: 'Barbería',       icon: Scissors,   desc: 'Citas, estilistas, comisiones' },
@@ -818,10 +872,32 @@ export function OnboardingWizard() {
                 <Field label="Dirección *" value={org.address}
                   onChange={v => update({ address: v })} placeholder="Calle 123 # 45-67" />
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Ciudad *" value={org.city}
-                    onChange={v => update({ city: v })} placeholder="Bogotá" />
-                  <Field label="Departamento" value={org.department}
-                    onChange={v => update({ department: v })} placeholder="Cundinamarca" />
+                  {/* Selector de ciudad — evita errores ortográficos */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium text-gray-600">Ciudad *</label>
+                    <select
+                      value={org.city}
+                      onChange={e => {
+                        const opt = CIUDADES_CO.find(c => c.ciudad === e.target.value);
+                        update({ city: e.target.value, department: opt?.depto || org.department });
+                      }}
+                      className="h-10 px-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white text-gray-900"
+                    >
+                      <option value="">Selecciona ciudad…</option>
+                      {CIUDADES_CO.map(c => (
+                        <option key={c.ciudad} value={c.ciudad}>{c.ciudad}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium text-gray-600">Departamento</label>
+                    <input
+                      readOnly
+                      value={org.department}
+                      placeholder="(auto)"
+                      className="h-10 px-3 rounded-xl border border-gray-200 text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
+                    />
+                  </div>
                 </div>
               </div>
             </OnboardingStep>
