@@ -16,7 +16,8 @@ import React, { useState, useEffect, useContext, createContext } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   Lock, Zap, CheckCircle2, X, ChevronRight, Sparkles,
-  Crown, ArrowRight, Star, Clock, AlertTriangle
+  Crown, ArrowRight, Star, Clock, AlertTriangle,
+  RefreshCw, Shield, MessageCircle
 } from 'lucide-react';
 import { supabase }  from '../lib/supabase.js';
 import { useAuth }   from '../context/AuthContext.jsx';
@@ -263,128 +264,117 @@ export function PricingPage() {
   const { plan: currentPlan } = usePlan();
   const navigate = useNavigate();
 
-  const SHOW_PLANS = ['free', 'pos_basic', 'barbershop', 'restaurant', 'workshop', 'minimarket', 'pro'];
+  const NICHO_PLANS = ['barbershop', 'restaurant', 'workshop', 'minimarket'];
 
-  const planColorMap = {
-    gray:   { border: 'border-gray-200',   badge: 'bg-gray-100 text-gray-700',  btn: 'bg-gray-800 hover:bg-gray-900 text-white' },
-    blue:   { border: 'border-blue-200',   badge: 'bg-blue-100 text-blue-700',  btn: 'bg-blue-600 hover:bg-blue-700 text-white' },
-    purple: { border: 'border-purple-300', badge: 'bg-purple-100 text-purple-700', btn: 'bg-purple-600 hover:bg-purple-700 text-white' },
-    orange: { border: 'border-orange-300', badge: 'bg-orange-100 text-orange-700', btn: 'bg-orange-500 hover:bg-orange-600 text-white' },
-    yellow: { border: 'border-yellow-300', badge: 'bg-yellow-100 text-yellow-700', btn: 'bg-yellow-500 hover:bg-yellow-600 text-white' },
-    green:  { border: 'border-green-300',  badge: 'bg-green-100 text-green-700', btn: 'bg-green-600 hover:bg-green-700 text-white' },
-    brand:  { border: 'border-brand-400',  badge: 'bg-brand-100 text-brand-700', btn: 'bg-brand-600 hover:bg-brand-700 text-white' },
-    dark:   { border: 'border-gray-400',   badge: 'bg-gray-800 text-white',      btn: 'bg-gray-900 hover:bg-black text-white' },
+  const nichoMeta = {
+    barbershop: { emoji: '💈', color: 'purple', border: 'border-purple-200', badge: 'bg-purple-50 text-purple-700', btn: 'bg-purple-600 hover:bg-purple-700 text-white', tag: 'Barberías & Spas' },
+    restaurant:  { emoji: '🍔', color: 'orange', border: 'border-orange-200', badge: 'bg-orange-50 text-orange-700', btn: 'bg-orange-500 hover:bg-orange-600 text-white', tag: 'Restaurantes & Cafés' },
+    workshop:    { emoji: '🔧', color: 'yellow', border: 'border-yellow-200', badge: 'bg-yellow-50 text-yellow-700', btn: 'bg-yellow-500 hover:bg-yellow-600 text-white', tag: 'Talleres mecánicos' },
+    minimarket:  { emoji: '🛒', color: 'green',  border: 'border-green-200',  badge: 'bg-green-50 text-green-700',  btn: 'bg-green-600 hover:bg-green-700 text-white',  tag: 'Minimarkets & Tiendas' },
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
-      <div className="max-w-6xl mx-auto">
+  // Tabla comparativa vs competencia
+  const COMP_ROWS = [
+    { feat: 'Precio/mes',            ferzu: '$79k–$149k',  alegra: '$26k–$200k', siigo: '$146k+',    loggro: '$109k' },
+    { feat: 'Módulos por nicho',     ferzu: '✅ 6 nichos', alegra: '❌',         siigo: '❌',         loggro: '⚠️ Solo rest.' },
+    { feat: 'IA asistente',          ferzu: '✅ Plan Pro',  alegra: '❌',         siigo: '❌',         loggro: '❌' },
+    { feat: 'Offline-first',         ferzu: '✅',           alegra: '❌',         siigo: '❌',         loggro: '⚠️ Parcial' },
+    { feat: 'DIAN en todos los planes', ferzu: '✅',        alegra: '✅',         siigo: '✅',         loggro: '✅' },
+    { feat: 'KDS cocina',            ferzu: '✅',           alegra: '❌',         siigo: '❌',         loggro: '✅' },
+    { feat: 'Barbería / Citas',      ferzu: '✅',           alegra: '❌',         siigo: '❌',         loggro: '❌' },
+    { feat: 'Taller / OT',           ferzu: '✅',           alegra: '❌',         siigo: '❌',         loggro: '❌' },
+    { feat: 'Multi-sucursal',        ferzu: '✅ Plan Pro',  alegra: '💰 +$80k',   siigo: '💰 +plan',  loggro: '✅' },
+  ];
 
-        {/* Header */}
-        <div className="text-center mb-12">
-          <div className="inline-flex items-center gap-2 bg-brand-50 border border-brand-200 rounded-full px-4 py-1.5 text-xs text-brand-700 font-medium mb-4">
+  return (
+    <div className="min-h-screen bg-gray-50">
+
+      {/* ── HERO ── */}
+      <div className="bg-gradient-to-br from-gray-950 via-gray-900 to-brand-950 text-white py-16 px-4">
+        <div className="max-w-4xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 bg-brand-500/20 border border-brand-500/30 rounded-full px-4 py-1.5 text-xs text-brand-300 font-medium mb-6">
             <Sparkles size={12} />
-            Elige el plan ideal para tu negocio
+            14 días de prueba gratis · Sin tarjeta de crédito
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-3">
-            Precios simples y transparentes
+          <h1 className="text-4xl font-bold mb-4 leading-tight">
+            El POS más completo de Colombia,<br/>al precio más justo
           </h1>
-          <p className="text-gray-500 max-w-lg mx-auto">
-            Paga solo por lo que necesitas. Sin costos ocultos. Cancela cuando quieras.
-            Todos los planes incluyen <strong>14 días de prueba gratis</strong>.
+          <p className="text-gray-400 text-lg max-w-xl mx-auto">
+            Un sistema especializado para tu tipo de negocio. No pagas por funciones que no usas.
           </p>
+          <div className="flex flex-wrap justify-center gap-4 mt-8 text-sm text-gray-400">
+            {['✓ DIAN UBL 2.1 incluido', '✓ Funciona sin internet', '✓ IA integrada en Plan Pro', '✓ Soporte por WhatsApp'].map(t => (
+              <span key={t} className="text-brand-300">{t}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 py-12">
+
+        {/* ── PLAN GRATIS ── */}
+        <div className="flex flex-col md:flex-row gap-4 mb-4">
+          <div className="flex-1 bg-white rounded-2xl border border-gray-200 p-6 flex items-center gap-6">
+            <div className="shrink-0">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Para empezar</p>
+              <p className="text-2xl font-bold text-gray-900">FERZU Gratis</p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">$0 <span className="text-sm font-normal text-gray-400">/ mes</span></p>
+              <p className="text-xs text-green-600 mt-0.5">✓ Para siempre · Sin vencimiento</p>
+            </div>
+            <div className="flex-1 grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-gray-600">
+              {['POS básico', 'Hasta 50 productos', '1 usuario', '1 sucursal'].map(f => (
+                <span key={f} className="flex items-center gap-1"><CheckCircle2 size={11} className="text-green-500" />{f}</span>
+              ))}
+              {['Sin DIAN', 'Sin IA', 'Sin nichos especializados'].map(f => (
+                <span key={f} className="flex items-center gap-1 text-gray-400"><X size={11} className="text-gray-300" />{f}</span>
+              ))}
+            </div>
+            <button
+              onClick={() => navigate('/register')}
+              className="shrink-0 px-6 py-2.5 bg-gray-900 hover:bg-black text-white text-sm font-semibold rounded-xl transition-colors">
+              Empezar gratis
+            </button>
+          </div>
         </div>
 
-        {/* Grid de planes */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {SHOW_PLANS.map(planId => {
-            const plan   = FERZU_PLANS[planId];
-            const colors = planColorMap[plan.color] || planColorMap.gray;
+        {/* ── PLANES POR NICHO ── */}
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Planes especializados por nicho</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          {NICHO_PLANS.map(planId => {
+            const plan  = FERZU_PLANS[planId];
+            const meta  = nichoMeta[planId];
             const isCurrent = currentPlan?.id === planId;
-
             return (
-              <div
-                key={planId}
-                className={`bg-white rounded-3xl border-2 p-5 flex flex-col transition-all hover:shadow-lg ${
-                  plan.highlight ? colors.border + ' shadow-md' : 'border-gray-200'
-                }`}>
-
-                {/* Badge */}
-                {plan.badge && (
-                  <div className={`text-[10px] font-bold px-2 py-1 rounded-full self-start mb-3 ${colors.badge}`}>
-                    {plan.badge}
-                  </div>
-                )}
-
-                {/* Nombre y precio */}
-                <div className="mb-4">
-                  <h3 className="font-bold text-gray-900 text-lg leading-tight">{plan.name}</h3>
-                  <p className="text-xs text-gray-400 mt-0.5">{plan.tagline}</p>
-                  <div className="mt-3">
-                    <span className="text-2xl font-bold text-gray-900">
-                      {plan.price_cop ? formatCOP(plan.price_cop) : 'A medida'}
-                    </span>
-                    {plan.price_cop != null && (
-                      <span className="text-xs text-gray-400 ml-1">/mes</span>
-                    )}
-                    {plan.price_cop === 0 && (
-                      <p className="text-xs text-green-600 font-medium mt-0.5">✓ Gratis para siempre</p>
-                    )}
-                  </div>
+              <div key={planId} className={`bg-white rounded-2xl border-2 ${meta.border} p-5 flex flex-col hover:shadow-md transition-shadow`}>
+                <div className={`text-[11px] font-semibold px-2 py-0.5 rounded-full self-start mb-3 ${meta.badge}`}>
+                  {meta.emoji} {meta.tag}
                 </div>
-
-                {/* Módulos incluidos */}
-                <div className="flex-1 space-y-1.5 mb-4">
-                  <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-400 mb-2">Incluye</p>
+                <p className="font-bold text-gray-900 text-base">{plan.name}</p>
+                <p className="text-2xl font-bold text-gray-900 mt-2">
+                  {formatCOP(plan.price_cop)} <span className="text-xs font-normal text-gray-400">/mes</span>
+                </p>
+                <div className="flex-1 mt-4 space-y-1.5">
                   {plan.enabled_modules.map(mKey => {
                     const m = MODULE_META[mKey];
                     if (!m) return null;
                     return (
                       <div key={mKey} className="flex items-center gap-2 text-xs text-gray-700">
-                        <CheckCircle2 size={12} className="text-green-500 shrink-0" />
+                        <CheckCircle2 size={11} className="text-green-500 shrink-0" />
                         <span>{m.icon} {m.label}</span>
                       </div>
                     );
                   })}
-
-                  {/* Limitaciones */}
-                  {plan.limitations?.map((lim, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs text-gray-400">
-                      <X size={11} className="text-gray-300 shrink-0" />
-                      <span>{lim}</span>
-                    </div>
-                  ))}
                 </div>
-
-                {/* Límites */}
-                <div className="bg-gray-50 rounded-xl p-2.5 mb-4 space-y-1">
-                  {[
-                    ['Productos', plan.max_products],
-                    ['Usuarios',  plan.max_users],
-                    ['Sucursales',plan.max_branches],
-                  ].map(([label, val]) => (
-                    <div key={label} className="flex justify-between text-[10px] text-gray-500">
-                      <span>{label}</span>
-                      <strong className="text-gray-700">{val == null ? 'Ilimitados' : val}</strong>
-                    </div>
-                  ))}
+                <div className="mt-4 bg-gray-50 rounded-xl p-2.5 space-y-0.5 text-[10px] text-gray-500 mb-4">
+                  <div className="flex justify-between"><span>Productos</span><strong className="text-gray-700">{plan.max_products}</strong></div>
+                  <div className="flex justify-between"><span>Usuarios</span><strong className="text-gray-700">{plan.max_users}</strong></div>
+                  <div className="flex justify-between"><span>Sucursales</span><strong className="text-gray-700">{plan.max_branches}</strong></div>
                 </div>
-
-                {/* CTA */}
                 {isCurrent ? (
-                  <div className="w-full py-2.5 bg-green-50 border border-green-200 text-green-700 text-sm font-semibold rounded-xl text-center">
-                    ✓ Tu plan actual
-                  </div>
+                  <div className="w-full py-2 bg-green-50 border border-green-200 text-green-700 text-xs font-semibold rounded-xl text-center">✓ Tu plan actual</div>
                 ) : (
-                  <button
-                    onClick={() => {
-                      if (planId === 'enterprise') {
-                        window.open('https://wa.me/573000000000?text=Hola, quiero información sobre el plan Enterprise de FERZU POS', '_blank');
-                      } else {
-                        navigate(`/checkout?plan=${planId}`);
-                      }
-                    }}
-                    className={`w-full py-2.5 text-sm font-semibold rounded-xl transition-colors ${colors.btn}`}>
+                  <button onClick={() => navigate(`/checkout?plan=${planId}`)}
+                    className={`w-full py-2.5 text-sm font-semibold rounded-xl transition-colors ${meta.btn}`}>
                     {plan.cta}
                   </button>
                 )}
@@ -393,20 +383,104 @@ export function PricingPage() {
           })}
         </div>
 
-        {/* FAQ / Garantía */}
-        <div className="mt-12 grid md:grid-cols-3 gap-6 text-center">
+        {/* ── PLAN PRO ── */}
+        <div className="bg-gradient-to-r from-brand-600 to-emerald-600 rounded-2xl p-1 mb-12">
+          <div className="bg-gray-950 rounded-xl p-7">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center gap-6">
+              <div className="flex-1">
+                <div className="inline-flex items-center gap-1.5 bg-brand-500/20 text-brand-300 text-xs font-semibold px-3 py-1 rounded-full mb-3">
+                  <Sparkles size={11} /> ⚡ Plan más completo · Todo incluido
+                </div>
+                <h2 className="text-2xl font-bold text-white">FERZU Pro</h2>
+                <p className="text-gray-400 text-sm mt-1">Todos los módulos + IA Claude + DIAN + hasta 3 sucursales</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-1.5 mt-4">
+                  {FERZU_PLANS.pro.enabled_modules.map(mKey => {
+                    const m = MODULE_META[mKey];
+                    if (!m) return null;
+                    return (
+                      <div key={mKey} className="flex items-center gap-1.5 text-xs text-gray-300">
+                        <CheckCircle2 size={11} className="text-brand-400" />{m.icon} {m.label}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="shrink-0 text-center lg:text-right">
+                <p className="text-gray-400 text-sm line-through">$200.000/mes</p>
+                <p className="text-4xl font-bold text-white">$149.000 <span className="text-base font-normal text-gray-400">/mes</span></p>
+                <p className="text-xs text-brand-400 mt-1">Hasta 20 usuarios · 3 sucursales · 10.000 productos</p>
+                <button
+                  onClick={() => navigate('/checkout?plan=pro')}
+                  className="mt-4 px-8 py-3 bg-brand-500 hover:bg-brand-400 text-white font-bold rounded-xl transition-colors shadow-lg shadow-brand-500/30">
+                  Empezar Pro ahora
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── COMPARATIVA VS COMPETENCIA ── */}
+        <div className="mb-12">
+          <h2 className="text-xl font-bold text-gray-900 mb-1">¿Por qué FERZU y no Alegra, Siigo o Loggro?</h2>
+          <p className="text-sm text-gray-500 mb-6">Comparación objetiva · Precios verificados julio 2026</p>
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left p-4 text-xs font-semibold text-gray-400 uppercase tracking-wide w-1/3">Característica</th>
+                  <th className="p-4 text-center bg-brand-50 text-brand-700 font-bold text-xs">FERZU POS</th>
+                  <th className="p-4 text-center text-gray-500 font-medium text-xs">Alegra POS</th>
+                  <th className="p-4 text-center text-gray-500 font-medium text-xs">Siigo</th>
+                  <th className="p-4 text-center text-gray-500 font-medium text-xs">Loggro</th>
+                </tr>
+              </thead>
+              <tbody>
+                {COMP_ROWS.map((row, i) => (
+                  <tr key={row.feat} className={i % 2 === 0 ? 'bg-gray-50/40' : ''}>
+                    <td className="p-3.5 pl-4 text-xs font-medium text-gray-700">{row.feat}</td>
+                    <td className="p-3.5 text-center text-xs font-semibold text-brand-700 bg-brand-50/50">{row.ferzu}</td>
+                    <td className="p-3.5 text-center text-xs text-gray-500">{row.alegra}</td>
+                    <td className="p-3.5 text-center text-xs text-gray-500">{row.siigo}</td>
+                    <td className="p-3.5 text-center text-xs text-gray-500">{row.loggro}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-2">* Alegra Emprendedor $25.900, plan con DIAN desde $79.900. Siigo plan profesional anual $145.993/mes + módulo POS adicional.</p>
+        </div>
+
+        {/* ── GARANTÍAS ── */}
+        <div className="grid md:grid-cols-3 gap-4 mb-8">
           {[
-            { icon: '🔄', title: 'Cancela cuando quieras', desc: 'Sin permanencia ni penalizaciones.' },
-            { icon: '🔒', title: 'Datos seguros',         desc: 'Encriptación y backups diarios.' },
-            { icon: '💬', title: 'Soporte por WhatsApp',  desc: 'Respuesta en menos de 2 horas.' },
+            { icon: <RefreshCw size={20} />, title: 'Cancela cuando quieras', desc: 'Sin permanencia mínima. Cancela con un clic.' },
+            { icon: <Shield size={20} />,    title: '14 días de prueba gratis', desc: 'Prueba el plan Pro completo sin pagar nada.' },
+            { icon: <MessageCircle size={20} />, title: 'Soporte por WhatsApp', desc: 'Equipo humano. Respuesta en menos de 2 horas.' },
           ].map(({ icon, title, desc }) => (
-            <div key={title} className="bg-white rounded-2xl p-4 border border-gray-200">
-              <div className="text-2xl mb-2">{icon}</div>
-              <p className="font-semibold text-sm text-gray-900">{title}</p>
-              <p className="text-xs text-gray-500 mt-1">{desc}</p>
+            <div key={title} className="bg-white rounded-2xl border border-gray-200 p-5 flex gap-4 items-start">
+              <div className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center text-brand-600 shrink-0">{icon}</div>
+              <div>
+                <p className="font-semibold text-sm text-gray-900">{title}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+              </div>
             </div>
           ))}
         </div>
+
+        {/* ── ENTERPRISE ── */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-6 flex flex-col md:flex-row items-center gap-6">
+          <div className="flex-1">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Para cadenas y franquicias</p>
+            <h3 className="text-xl font-bold text-gray-900">FERZU Enterprise</h3>
+            <p className="text-sm text-gray-500 mt-1">Sucursales ilimitadas, API REST, white-label, onboarding dedicado y SLA garantizado.</p>
+          </div>
+          <button
+            onClick={() => window.open('https://wa.me/573000000000?text=Hola, quiero información sobre FERZU Enterprise', '_blank')}
+            className="shrink-0 px-6 py-3 bg-gray-900 hover:bg-black text-white font-semibold rounded-xl text-sm transition-colors">
+            Contactar ventas →
+          </button>
+        </div>
+
       </div>
     </div>
   );

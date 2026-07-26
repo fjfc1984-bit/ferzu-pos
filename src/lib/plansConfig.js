@@ -68,7 +68,7 @@ export const FERZU_PLANS = {
     max_products:   200,
     max_users:       5,
     max_branches:    1,
-    enabled_modules: ['pos', 'barbershop', 'customers', 'dashboard', 'inventory'],
+    enabled_modules: ['pos', 'barbershop', 'customers', 'dashboard', 'inventory', 'dian'],
     limitations: [
       'Sin KDS de cocina',
       'Sin módulo de taller',
@@ -90,7 +90,7 @@ export const FERZU_PLANS = {
     max_products:   300,
     max_users:       8,
     max_branches:    1,
-    enabled_modules: ['pos', 'kitchen', 'customers', 'dashboard', 'inventory'],
+    enabled_modules: ['pos', 'kitchen', 'customers', 'dashboard', 'inventory', 'dian'],
     limitations: [
       'Sin módulo de barbería',
       'Sin módulo de taller',
@@ -111,7 +111,7 @@ export const FERZU_PLANS = {
     max_products:   500,
     max_users:       5,
     max_branches:    1,
-    enabled_modules: ['pos', 'workshop', 'inventory', 'customers', 'dashboard'],
+    enabled_modules: ['pos', 'workshop', 'inventory', 'customers', 'dashboard', 'dian'],
     badge: '🔧 Diseñado para talleres',
     cta: 'Empezar con Taller',
   },

@@ -9,11 +9,11 @@ import { SyncProvider } from './context/SyncContext'
 import { OfflineBanner } from './components/OfflineBanner'
 
 // --- Auth pages (no lazy: se necesitan antes de autenticar) ---
-import { LoginPage }        from './pages/auth/LoginPage'
-import { RegisterPage }     from './pages/auth/AuthScreens'
-import { OnboardingWizard } from './pages/auth/OnboardingWizard'
-import { BranchSelector }   from './pages/auth/BranchSelector'
-import { PINLockScreen }    from './pages/auth/PINLockScreen'
+import { LoginPage }           from './pages/auth/LoginPage'
+import { RegisterPage,
+         ForgotPasswordPage }  from './pages/auth/AuthScreens'
+import { OnboardingWizard }    from './pages/auth/OnboardingWizard'
+import { BranchSelector }      from './pages/auth/BranchSelector'
 
 // --- Feature pages (lazy para code splitting) ---
 // NOTA: páginas con "export default function" NO necesitan .then()
@@ -71,14 +71,10 @@ function ProtectedRoute() {
 // ---------------------------------------------------------------------------
 // AppShell — layout principal: sidebar + contenido (para todas las páginas
 //            EXCEPTO /pos que tiene su propio layout full-screen)
+// NOTA: El PIN lock lo maneja AuthContext directamente como overlay z-50.
+//       No necesitamos chequearlo aquí.
 // ---------------------------------------------------------------------------
 function AppShell() {
-  const { pinLocked } = useAuth()
-
-  if (pinLocked) {
-    return <PINLockScreen />
-  }
-
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden">
       <AdaptiveNav />
@@ -99,15 +95,9 @@ function AppShell() {
 // POSShell — contenedor standalone para el terminal POS.
 // POSPage tiene su propio h-screen + sidebar interno, así que NO debe ir
 // dentro de AppShell (doble sidebar, doble layout).
-// Sí respeta el PIN lock y muestra el OfflineBanner.
+// El PIN lock lo maneja AuthContext directamente.
 // ---------------------------------------------------------------------------
 function POSShell() {
-  const { pinLocked } = useAuth()
-
-  if (pinLocked) {
-    return <PINLockScreen />
-  }
-
   return (
     <>
       <OfflineBanner />
@@ -127,11 +117,12 @@ export default function App() {
           <SyncProvider>
             <Routes>
               {/* ====== Rutas públicas ====== */}
-              <Route path="/login"         element={<LoginPage />} />
-              <Route path="/register"      element={<RegisterPage />} />
-              <Route path="/onboarding"    element={<OnboardingWizard />} />
-              <Route path="/branch-select" element={<BranchSelector />} />
-              <Route path="/pricing"       element={<PricingPage />} />
+              <Route path="/login"            element={<LoginPage />} />
+              <Route path="/register"         element={<RegisterPage />} />
+              <Route path="/forgot-password"  element={<ForgotPasswordPage />} />
+              <Route path="/onboarding"       element={<OnboardingWizard />} />
+              <Route path="/branch-select"    element={<BranchSelector />} />
+              <Route path="/pricing"          element={<PricingPage />} />
 
               {/* ====== POS — full-screen standalone (sin AppShell) ====== */}
               <Route element={<ProtectedRoute />}>
