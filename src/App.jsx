@@ -8,6 +8,9 @@ import { POSProvider } from './context/POSContext'
 import { SyncProvider } from './context/SyncContext'
 import { OfflineBanner } from './components/OfflineBanner'
 
+// --- Landing page pública ---
+import LandingPage             from './pages/LandingPage'
+
 // --- Auth pages (no lazy: se necesitan antes de autenticar) ---
 import { LoginPage }           from './pages/auth/LoginPage'
 import { RegisterPage,
@@ -116,6 +119,9 @@ export default function App() {
         <POSProvider>
           <SyncProvider>
             <Routes>
+              {/* ====== Landing page pública ====== */}
+              <Route path="/"                 element={<LandingPage />} />
+
               {/* ====== Rutas públicas ====== */}
               <Route path="/login"            element={<LoginPage />} />
               <Route path="/register"         element={<RegisterPage />} />
@@ -163,7 +169,6 @@ export default function App() {
                   <Route path="/checkout" element={<CheckoutPage />} />
 
                   <Route index element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/"  element={<Navigate to="/dashboard" replace />} />
                 </Route>
               </Route>
 
