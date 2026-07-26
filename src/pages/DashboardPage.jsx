@@ -32,6 +32,87 @@ import { es } from 'date-fns/locale';
 // SECCIÓN 1: DashboardPage — Layout principal
 // =============================================================================
 
+// =============================================================================
+// TEMPORAL: Modal promocional Facturación Electrónica DIAN
+// Para desactivar: eliminar <DIANPromoModal /> del return y este componente
+// =============================================================================
+function DIANPromoModal() {
+  const STORAGE_KEY = 'ferzu_dian_promo_dismissed';
+  const [visible, setVisible] = useState(() => {
+    try { return !localStorage.getItem(STORAGE_KEY); } catch { return false; }
+  });
+
+  function dismiss() {
+    try { localStorage.setItem(STORAGE_KEY, '1'); } catch {}
+    setVisible(false);
+  }
+
+  if (!visible) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+        {/* Header verde */}
+        <div className="bg-emerald-600 px-6 py-4 flex items-center justify-between">
+          <div>
+            <p className="text-emerald-200 text-xs font-medium uppercase tracking-wider">Nuevo servicio opcional</p>
+            <h2 className="text-white font-bold text-lg leading-tight">Facturación Electrónica DIAN</h2>
+          </div>
+          <span className="bg-white/20 text-white text-xs font-bold px-3 py-1 rounded-full">OPCIONAL</span>
+        </div>
+
+        {/* Cuerpo */}
+        <div className="px-6 py-5 space-y-4">
+          <p className="text-gray-600 text-sm">
+            Ahora puedes emitir facturas electrónicas directamente desde FERZU POS,
+            cumpliendo con la normativa de la DIAN en Colombia.
+          </p>
+
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              ['XML UBL 2.1', 'Formato oficial DIAN'],
+              ['Firma digital', 'Con tu certificado .p12'],
+              ['PDF + QR DIAN', 'Para entregar al cliente'],
+              ['Historial facturas', 'Todo registrado'],
+            ].map(([titulo, desc]) => (
+              <div key={titulo} className="flex items-start gap-2 bg-emerald-50 rounded-lg p-3">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                <div>
+                  <p className="text-xs font-semibold text-gray-800">{titulo}</p>
+                  <p className="text-xs text-gray-500">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-gray-50 rounded-lg px-4 py-3 text-center">
+            <p className="text-xs text-gray-500">Add-on disponible desde</p>
+            <p className="text-emerald-600 font-bold text-lg">$30.000 – $50.000 COP / mes</p>
+            <p className="text-xs text-gray-400">El costo del proveedor tecnológico DIAN lo asume el negocio</p>
+          </div>
+        </div>
+
+        {/* Botones */}
+        <div className="px-6 pb-5 flex gap-3">
+          <button
+            onClick={dismiss}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            Ahora no
+          </button>
+          <a
+            href="mailto:fjfc1984@gmail.com?subject=Quiero%20activar%20Facturación%20Electrónica%20DIAN%20en%20FERZU%20POS"
+            onClick={dismiss}
+            className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold text-center hover:bg-emerald-700 transition-colors"
+          >
+            Me interesa
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { organizationId, branchId } = useAuth();
   const [range,    setRange]    = useState('today');   // 'today' | 'week' | 'month'
@@ -72,6 +153,9 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
+
+      {/* ── TEMPORAL: Modal DIAN — eliminar cuando ya no se necesite ── */}
+      <DIANPromoModal />
 
       {/* ── Header ── */}
       <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0">
