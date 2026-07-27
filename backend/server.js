@@ -1450,4 +1450,72 @@ cron.schedule('0 14 * * *', async () => {
 
 logger.info('[CRON] Job "trial día 10" registrado — corre 9:00 AM hora Colombia');
 
+// =============================================================================
+// ERROR BACKUP SYSTEM
+// Solo se activa durante percances — costo CERO en operación normal.
+// 1. POST /api/errors → recibe errores del frontend y los persiste
+// 2. process.on uncaughtException / unhandledRejection → captura crashes del proceso
+// =============================================================================
+
+// --- Endpoint público (no requiere auth): recibe snapshot de error del frontend ---
+app.post('/api/errors', async (req, res) => {
+  try {
+    const {
+      errorId, source, message, stack, componentStack,
+      url, userAgent, timestamp,
+    } = req.body;
+
+    if (!message) return res.status(400).json({ error: 'message requerido' });
+
+    const payload = {
+      error_id:         errorId || `fe-${Date.now()}`,
+      source:           source || 'frontend',
+      message:          String(message).substring(0, 500),
+      stack:            stack           ? String(stack).substring(0, 2000)          : null,
+      component_stack:  componentStack  ? String(componentStack).substring(0, 1000) : null,
+      url:              url             ? String(url).substring(0, 300)             : null,
+      user_agent:       userAgent       ? String(userAgent).substring(0, 300)       : null,
+      occurred_at:      timestamp || new Date().toISOString(),
+    };
+
+    // Log inmediato con winston (persiste en logs/error.log en Railway)
+    logger.error('[ERROR_BACKUP] Frontend error', payload);
+
+    // Persistir en Supabase si la tabla existe (best-effort)
+    try {
+      await supabaseAdmin
+        .from('error_logs')
+        .insert([payload]);
+    } catch (_) { /* tabla puede no existir aún — el log de winston es suficiente */ }
+
+    res.json({ received: true, errorId: payload.error_id });
+  } catch (err) {
+    logger.error('[ERROR_BACKUP] Error en endpoint /api/errors', { error: err.message });
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+// --- Handlers de proceso: capturan crashes antes de morir ---
+
+process.on('uncaughtException', (err) => {
+  logger.error('[PROCESO] uncaughtException — el proceso va a terminar', {
+    message: err.message,
+    stack:   err.stack?.substring(0, 2000),
+    ts:      new Date().toISOString(),
+  });
+  // Dar 500ms para que Winston vacíe el buffer antes de salir
+  setTimeout(() => process.exit(1), 500);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  const stk = reason instanceof Error ? reason.stack?.substring(0, 2000) : null;
+  logger.error('[PROCESO] unhandledRejection — promesa sin .catch()', {
+    message: msg,
+    stack:   stk,
+    ts:      new Date().toISOString(),
+  });
+  // No matamos el proceso en rejection — solo logueamos
+});
+
 export default app;
