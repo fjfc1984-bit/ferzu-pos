@@ -323,32 +323,69 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
           )}
         </div>
 
-        {/* Tabs de categorías */}
+        {/* Tabs de categorías con emoji */}
         <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-0.5">
           <button
             onClick={() => onCategoryChange(null)}
-            className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
+            className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
               !activeCategory
                 ? 'bg-brand-600 text-white shadow-sm shadow-brand-700/25'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}>
-            Todos
+            🏷️ Todos
           </button>
-          {categories.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => onCategoryChange(cat.id)}
-              className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                activeCategory === cat.id
-                  ? 'bg-brand-600 text-white shadow-sm shadow-brand-700/25'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-              style={activeCategory === cat.id ? {} : { borderColor: cat.color }}>
-              {cat.name}
-            </button>
-          ))}
+          {categories.map(cat => {
+            const EMOJI_MAP = {
+              comida:'🍔', bebidas:'🥤', bebida:'🥤', licores:'🍺', snacks:'🍟',
+              postres:'🍰', café:'☕', pizza:'🍕', pollo:'🍗', carnes:'🥩',
+              ensaladas:'🥗', desayunos:'🥐', almuerzo:'🥘', helados:'🍦',
+              servicios:'⚙️', servicio:'⚙️', corte:'✂️', barbería:'💈',
+              ropa:'👕', accesorios:'👜', tecnología:'📱', hogar:'🏠',
+              'sin categoría':'📦', general:'📦',
+            };
+            const emoji = EMOJI_MAP[cat.name?.toLowerCase()] || '📦';
+            return (
+              <button
+                key={cat.id}
+                onClick={() => onCategoryChange(cat.id)}
+                className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                  activeCategory === cat.id
+                    ? 'bg-brand-600 text-white shadow-sm shadow-brand-700/25'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}>
+                {emoji} {cat.name}
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      {/* ── Fila de Favoritos (top productos sin filtrar) ── */}
+      {!search && !activeCategory && products.length > 0 && (
+        <div className="px-4 pt-3 pb-0">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-2">
+            ⚡ Acceso rápido
+          </p>
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
+            {products.slice(0, 8).map(p => (
+              <button
+                key={`fav-${p.id}`}
+                onClick={() => !( (p.track_inventory && (p.current_stock ?? 0) === 0)) && addItem(p)}
+                disabled={p.track_inventory && (p.current_stock ?? 0) === 0}
+                className="shrink-0 flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl bg-white border border-gray-200 hover:border-brand-400 hover:bg-brand-50 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
+                style={{ minWidth:'72px', maxWidth:'80px' }}>
+                <span className="text-xl leading-none">
+                  {p.image_url
+                    ? <img src={p.image_url} alt={p.name} className="w-6 h-6 object-cover rounded" />
+                    : (p.item_type === 'service' ? '⚙️' : '📦')}
+                </span>
+                <span className="text-[10px] font-semibold text-gray-700 text-center leading-tight line-clamp-2">{p.name}</span>
+                <span className="text-[10px] font-bold text-brand-700">{formatCOP(p.price_with_vat || p.price)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Grilla de productos ── */}
       <div className="flex-1 overflow-y-auto p-4">
@@ -443,28 +480,38 @@ function OrderPanel({ onPay, onCustomer, onDiscount }) {
     <div className="w-[300px] xl:w-[320px] bg-white border-l border-gray-100 flex flex-col shrink-0 shadow-xl shadow-gray-300/20">
 
       {/* ── Header con info de caja ── */}
-      <div className="px-4 py-3.5 border-b border-gray-100">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-bold text-gray-900">Nueva orden</p>
-            <p className="text-[11px] text-gray-400">
-              {cashSession
-                ? `Caja abierta · ${new Date(cashSession.opened_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`
-                : <span className="text-amber-500">Sin caja activa</span>
-              }
-            </p>
+      <div className="px-4 py-3 border-b border-gray-100 bg-white">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${cashSession ? 'bg-green-500' : 'bg-amber-400'}`} />
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <p className="text-sm font-bold text-gray-900 truncate">Orden actual</p>
+                {!isEmpty && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-brand-100 text-brand-700">
+                    {items.length} ítem{items.length > 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-400 truncate">
+                {cashSession
+                  ? `Caja · ${new Date(cashSession.opened_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`
+                  : <span className="text-amber-500 font-medium">Sin caja activa</span>
+                }
+              </p>
+            </div>
           </div>
 
           {/* Botón cliente */}
           <button
             onClick={onCustomer}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+            className={`flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
               customerId
                 ? 'bg-brand-50 text-brand-700 border-brand-200 shadow-sm'
                 : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
             }`}>
             <User size={13} />
-            {customerId ? 'Cliente' : '+ Cliente'}
+            {customerId ? 'Cliente ✓' : '+ Cliente'}
           </button>
         </div>
       </div>
@@ -472,9 +519,22 @@ function OrderPanel({ onPay, onCustomer, onDiscount }) {
       {/* ── Items de la orden ── */}
       <div className="flex-1 overflow-y-auto scrollbar-hide">
         {isEmpty ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-300 gap-2">
-            <ShoppingCart size={36} />
-            <p className="text-sm">Agrega productos</p>
+          <div className="flex flex-col items-center justify-center h-full gap-3 px-4">
+            <div className="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center">
+              <ShoppingCart size={32} className="text-gray-200" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-gray-400">Carrito vacío</p>
+              <p className="text-xs text-gray-300 mt-1">Haz clic en un producto o escanea un código</p>
+            </div>
+            <div className="mt-2 flex flex-col gap-1.5 w-full">
+              {[['F2','Nueva venta'],['F4','Cobrar'],['ESC','Cancelar']].map(([key, label]) => (
+                <div key={key} className="flex items-center justify-between px-3 py-1.5 bg-gray-50 rounded-lg">
+                  <span className="text-[11px] text-gray-400">{label}</span>
+                  <kbd className="text-[10px] font-mono font-bold text-gray-500 bg-white border border-gray-200 px-1.5 py-0.5 rounded shadow-sm">{key}</kbd>
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="p-3 space-y-2">
@@ -556,17 +616,27 @@ function OrderPanel({ onPay, onCustomer, onDiscount }) {
           Aplicar descuento
         </button>
 
-        {/* Botón COBRAR */}
+        {/* Botón COBRAR — CTA principal */}
         <button
           onClick={onPay}
           disabled={isEmpty || !cashSession || isProcessing}
-          className="w-full h-12 bg-brand-600 hover:bg-brand-700 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-base rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-brand-600/25 hover:shadow-brand-700/30">
+          className={`
+            w-full h-14 text-white font-black text-lg rounded-2xl flex items-center justify-center gap-2.5
+            transition-all active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed
+            ${!isEmpty && cashSession && !isProcessing
+              ? 'bg-brand-600 hover:bg-brand-700 shadow-xl shadow-brand-600/35 hover:shadow-brand-700/40 hover:-translate-y-0.5'
+              : 'bg-brand-600 shadow-lg shadow-brand-600/20'}
+          `}>
           {isProcessing ? (
-            <RefreshCw size={18} className="animate-spin" />
+            <><RefreshCw size={20} className="animate-spin" /> Procesando…</>
           ) : (
             <>
-              <CheckCircle2 size={18} />
-              Cobrar {!isEmpty && formatCOP(totals.total)}
+              <CheckCircle2 size={20} strokeWidth={2.5} />
+              <span>
+                Cobrar
+                {!isEmpty && <span className="ml-1.5 font-extrabold">{formatCOP(totals.total)}</span>}
+              </span>
+              {!isEmpty && <kbd className="text-[11px] font-mono opacity-60 bg-white/15 px-1.5 py-0.5 rounded ml-auto">F4</kbd>}
             </>
           )}
         </button>

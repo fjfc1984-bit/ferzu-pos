@@ -637,6 +637,272 @@ function Features() {
   );
 }
 
+/* ─── SERVICES SHOWCASE ───────────────────────────────────────────────────── */
+function ServicesShowcase() {
+  const [active, setActive] = useState(0)
+
+  const SERVICES = [
+    {
+      icon: ShoppingCart,
+      tag:  'Cobro rápido',
+      title:'De producto a recibo en 8 segundos',
+      desc: 'Busca por nombre o escanea. El sistema maneja los cálculos — tú solo atiendes al cliente.',
+      bullets:['Búsqueda instantánea de productos','Escáner USB y cámara','Efectivo, tarjeta y Nequi/Bold','Recibo impreso o por WhatsApp'],
+    },
+    {
+      icon: BarChart3,
+      tag:  'Dashboard + Reportes',
+      title:'Entiende tu negocio en un vistazo',
+      desc: 'Ventas del día, productos más vendidos y tendencias — todo en tiempo real sin exportar nada.',
+      bullets:['KPIs actualizados en tiempo real','Ventas por hora, día y mes','Exportar a Excel y PDF con un clic','Análisis con IA en lenguaje natural'],
+    },
+    {
+      icon: Package,
+      tag:  'Inventario inteligente',
+      title:'Stock al día, sin hojas de Excel',
+      desc: 'El inventario se descuenta automáticamente con cada venta. Alertas de bajo stock incluidas.',
+      bullets:['Descuento automático al vender','Alertas de bajo stock','Multi-sucursal en tiempo real','Escáner de códigos de barras'],
+    },
+    {
+      icon: Smartphone,
+      tag:  'WhatsApp + Impresora',
+      title:'El recibo como tus clientes prefieren',
+      desc: 'Envía el comprobante por WhatsApp o imprime en tu térmica. Sin papel extra, sin complicaciones.',
+      bullets:['Enlace de recibo por WhatsApp Web','Impresora térmica USB 58/80mm','Sin app adicional instalada','Funciona en tablet, PC y celular'],
+    },
+  ]
+
+  // ── Mocks de UI ────────────────────────────────────────────────────────────
+  const POSMock = () => (
+    <div style={{ width:'100%', maxWidth:'360px' }}>
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-white font-black text-sm">🛒 Nueva venta</span>
+        <span className="text-xs px-2 py-1 rounded-full" style={{ background:'rgba(16,185,129,.15)', color:'#10b981', border:'1px solid rgba(16,185,129,.3)' }}>F2 nueva</span>
+      </div>
+      <div className="glass rounded-xl px-4 py-2.5 mb-4 flex items-center gap-2">
+        <span style={{ color:'rgba(255,255,255,.3)', fontSize:'14px' }}>🔍</span>
+        <span style={{ color:'rgba(255,255,255,.25)', fontSize:'13px' }}>Buscar producto o escanear…</span>
+      </div>
+      {[
+        { name:'Hamburguesa doble', qty:1, price:'$18.000' },
+        { name:'Papas medianas',    qty:2, price:'$12.000' },
+        { name:'Gaseosa 500ml',     qty:1, price:'$5.000'  },
+      ].map((p) => (
+        <div key={p.name} className="flex items-center justify-between py-2.5" style={{ borderBottom:'1px solid rgba(255,255,255,.06)' }}>
+          <div>
+            <p className="text-white text-sm font-medium">{p.name}</p>
+            <p style={{ color:'rgba(255,255,255,.3)', fontSize:'11px' }}>× {p.qty}</p>
+          </div>
+          <span className="text-white font-bold text-sm">{p.price}</span>
+        </div>
+      ))}
+      <div className="mt-4 pt-4" style={{ borderTop:'1px solid rgba(255,255,255,.1)' }}>
+        <div className="flex justify-between items-center mb-4">
+          <span className="text-white font-black text-lg">Total</span>
+          <span className="font-black text-2xl" style={{ color:'#10b981' }}>$35.000</span>
+        </div>
+        <button className="w-full btn-p py-4 rounded-2xl font-black text-white text-base">
+          💳 Cobrar — F4
+        </button>
+      </div>
+    </div>
+  )
+
+  const DashboardMock = () => (
+    <div style={{ width:'100%', maxWidth:'360px' }}>
+      <div className="flex items-center justify-between mb-5">
+        <span className="text-white font-black text-sm">📊 Dashboard — Hoy</span>
+        <span className="text-xs px-2 py-1 rounded-lg" style={{ background:'rgba(16,185,129,.12)', color:'#10b981', border:'1px solid rgba(16,185,129,.25)' }}>↓ Exportar</span>
+      </div>
+      <div className="grid grid-cols-3 gap-3 mb-5">
+        {[
+          { label:'Ventas hoy', val:'$487K', trend:'+12%' },
+          { label:'Órdenes',    val:'34',    trend:'+5'   },
+          { label:'Ticket prom',val:'$14K',  trend:'↑'   },
+        ].map(({ label, val, trend }) => (
+          <div key={label} className="glass rounded-xl p-3 text-center">
+            <p style={{ color:'rgba(255,255,255,.35)', fontSize:'10px', marginBottom:'4px' }}>{label}</p>
+            <p className="font-black text-white" style={{ fontSize:'15px' }}>{val}</p>
+            <p style={{ color:'#10b981', fontSize:'10px', marginTop:'2px' }}>{trend}</p>
+          </div>
+        ))}
+      </div>
+      <div className="glass rounded-xl p-4">
+        <p style={{ color:'rgba(255,255,255,.3)', fontSize:'10px', marginBottom:'12px' }}>Ventas por hora</p>
+        <div className="flex items-end gap-1.5" style={{ height:'56px' }}>
+          {[20,35,55,45,70,88,60,42].map((h, i) => (
+            <div key={i} className="flex-1 rounded-t-sm" style={{
+              height:`${h}%`,
+              background: i === 5 ? '#10b981' : 'rgba(16,185,129,.22)',
+            }} />
+          ))}
+        </div>
+        <div className="flex justify-between mt-2">
+          {['8am','10','12','2pm','4','6pm','8','10'].map(t => (
+            <span key={t} style={{ color:'rgba(255,255,255,.2)', fontSize:'8px' }}>{t}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  const InventoryMock = () => (
+    <div style={{ width:'100%', maxWidth:'360px' }}>
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-white font-black text-sm">📦 Inventario</span>
+        <div className="text-xs px-2 py-1 rounded-lg flex items-center gap-1" style={{ background:'rgba(239,68,68,.12)', color:'#f87171', border:'1px solid rgba(239,68,68,.25)' }}>
+          ⚠ 2 bajo stock
+        </div>
+      </div>
+      <div className="glass rounded-xl px-3 py-2.5 mb-4 flex items-center gap-2">
+        <span style={{ color:'rgba(255,255,255,.25)', fontSize:'12px' }}>🔍 Buscar o escanear producto…</span>
+      </div>
+      <div className="space-y-2">
+        {[
+          { name:'Hamburguesa doble', stock:48, status:'ok'       },
+          { name:'Papas medianas',    stock:12, status:'low'      },
+          { name:'Gaseosa 500ml',     stock:3,  status:'critical' },
+          { name:'Jugo natural',      stock:27, status:'ok'       },
+        ].map(({ name, stock, status }) => (
+          <div key={name} className="glass rounded-xl px-4 py-3 flex items-center justify-between">
+            <div>
+              <p className="text-white font-medium" style={{ fontSize:'12px' }}>{name}</p>
+              <p style={{ color:'rgba(255,255,255,.3)', fontSize:'10px' }}>Stock: {stock} und</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {status !== 'ok' && (
+                <span style={{ fontSize:'10px', color: status === 'critical' ? '#f87171' : '#eab308' }}>
+                  {status === 'critical' ? '¡Reponer!' : 'Bajo'}
+                </span>
+              )}
+              <div className="w-2.5 h-2.5 rounded-full" style={{
+                background: status === 'ok' ? '#10b981' : status === 'low' ? '#eab308' : '#ef4444',
+              }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+
+  const WhatsAppMock = () => (
+    <div style={{ width:'100%', maxWidth:'340px' }}>
+      <div className="flex items-center gap-3 mb-5 pb-4" style={{ borderBottom:'1px solid rgba(255,255,255,.08)' }}>
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg" style={{ background:'#25d366' }}>
+          📱
+        </div>
+        <div>
+          <p className="text-white font-black text-sm">WhatsApp · Comprobante</p>
+          <p style={{ color:'rgba(255,255,255,.35)', fontSize:'11px' }}>Envío automático al cliente</p>
+        </div>
+      </div>
+      <div className="rounded-2xl rounded-bl-none p-4 mb-4" style={{ background:'#1a2e1a', border:'1px solid rgba(37,211,102,.2)', maxWidth:'280px' }}>
+        <p style={{ color:'rgba(37,211,102,.9)', fontSize:'10px', fontWeight:'800', marginBottom:'8px', letterSpacing:'.3px' }}>
+          🧾 FERZU POS — Comprobante #847
+        </p>
+        <div style={{ background:'rgba(0,0,0,.35)', borderRadius:'8px', padding:'10px', fontFamily:'monospace', fontSize:'10px', color:'rgba(255,255,255,.7)', lineHeight:'1.8' }}>
+          <div style={{ display:'flex', justifyContent:'space-between' }}><span>1× Hamburguesa</span><span>$18.000</span></div>
+          <div style={{ display:'flex', justifyContent:'space-between' }}><span>2× Papas</span><span>$12.000</span></div>
+          <div style={{ borderTop:'1px dashed rgba(255,255,255,.15)', margin:'4px 0' }} />
+          <div style={{ display:'flex', justifyContent:'space-between', color:'#25d366', fontWeight:'700' }}>
+            <span>TOTAL</span><span>$30.000</span>
+          </div>
+        </div>
+        <p style={{ color:'rgba(255,255,255,.25)', fontSize:'9px', marginTop:'6px', textAlign:'right' }}>✓✓ Entregado · 14:32</p>
+      </div>
+      <div className="flex items-center gap-3 glass rounded-xl p-3">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base" style={{ background:'rgba(16,185,129,.12)', border:'1px solid rgba(16,185,129,.25)' }}>
+          🖨️
+        </div>
+        <div>
+          <p className="text-white font-bold" style={{ fontSize:'12px' }}>Impresora térmica 58/80mm</p>
+          <p style={{ color:'rgba(255,255,255,.35)', fontSize:'10px' }}>Epson TM-T20 · XP-58 · ZJ-58</p>
+        </div>
+        <div className="ml-auto w-2.5 h-2.5 rounded-full" style={{ background:'#10b981' }} />
+      </div>
+    </div>
+  )
+
+  const mocks = [<POSMock key="pos" />, <DashboardMock key="dash" />, <InventoryMock key="inv" />, <WhatsAppMock key="wa" />]
+
+  return (
+    <section className="section-bg py-24 px-5">
+      <div className="max-w-6xl mx-auto">
+
+        {/* Header */}
+        <div className="text-center mb-14">
+          <span className="s-tag">Servicios incluidos</span>
+          <h2 className="mt-4 font-black text-white" style={{ fontSize:'clamp(32px,5vw,52px)', lineHeight:1.1 }}>
+            Todo lo que necesitas,<br /><span className="g-text">en un solo lugar.</span>
+          </h2>
+          <p className="mt-4" style={{ color:'rgba(255,255,255,.4)', fontSize:'15px', maxWidth:'480px', margin:'14px auto 0' }}>
+            Cuatro módulos esenciales diseñados para el comercio colombiano real.
+          </p>
+        </div>
+
+        {/* Layout 2 cols */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-start">
+
+          {/* Tabs de servicio */}
+          <div className="lg:col-span-2 flex flex-col gap-3">
+            {SERVICES.map(({ icon: Icon, tag, title, bullets }, i) => (
+              <button
+                key={i}
+                onClick={() => setActive(i)}
+                className="text-left rounded-2xl p-5 transition-all duration-300"
+                style={{
+                  background:  active === i ? 'rgba(16,185,129,.08)' : 'rgba(255,255,255,.03)',
+                  border:      `1px solid ${active === i ? 'rgba(16,185,129,.35)' : 'rgba(255,255,255,.07)'}`,
+                  boxShadow:   active === i ? '0 0 24px rgba(16,185,129,.08)' : 'none',
+                  cursor:      'pointer',
+                }}
+              >
+                <div className="flex items-center gap-3 mb-0">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all duration-300"
+                    style={{
+                      background: active === i ? 'rgba(16,185,129,.2)' : 'rgba(255,255,255,.05)',
+                      border:     `1px solid ${active === i ? 'rgba(16,185,129,.4)' : 'rgba(255,255,255,.1)'}`,
+                    }}
+                  >
+                    <Icon size={16} style={{ color: active === i ? '#10b981' : 'rgba(255,255,255,.35)', transition:'color .3s' }} />
+                  </div>
+                  <span className="font-black text-sm transition-colors duration-300"
+                    style={{ color: active === i ? '#fff' : 'rgba(255,255,255,.45)' }}>
+                    {tag}
+                  </span>
+                </div>
+                {active === i && (
+                  <div className="mt-3">
+                    <p className="font-black text-white text-sm mb-3 leading-snug">{title}</p>
+                    <ul className="space-y-1.5">
+                      {bullets.map(b => (
+                        <li key={b} className="flex items-start gap-2" style={{ color:'rgba(255,255,255,.5)', fontSize:'12px' }}>
+                          <span style={{ color:'#10b981', fontSize:'10px', marginTop:'2px', flexShrink:0 }}>✓</span> {b}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Preview del servicio */}
+          <div className="lg:col-span-3 rounded-3xl p-8 flex items-center justify-center"
+            style={{
+              background:'rgba(255,255,255,.025)',
+              border:'1px solid rgba(255,255,255,.07)',
+              minHeight:'420px',
+            }}>
+            {mocks[active]}
+          </div>
+
+        </div>
+      </div>
+    </section>
+  )
+}
+
 /* ─── MODULES ─────────────────────────────────────────────────────────────── */
 function Modules() {
   return (
@@ -892,6 +1158,7 @@ export default function LandingPage() {
         <Hero />
         <Ticker />
         <Features />
+        <ServicesShowcase />
         <Modules />
         <HowItWorks />
         <Pricing />
