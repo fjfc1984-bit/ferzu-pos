@@ -14,7 +14,8 @@ import LandingPage             from './pages/LandingPage'
 // --- Auth pages (no lazy: se necesitan antes de autenticar) ---
 import { LoginPage }           from './pages/auth/LoginPage'
 import { RegisterPage,
-         ForgotPasswordPage }  from './pages/auth/AuthScreens'
+         ForgotPasswordPage,
+         ResetPasswordPage }   from './pages/auth/AuthScreens'
 import { OnboardingWizard }    from './pages/auth/OnboardingWizard'
 import { BranchSelector }      from './pages/auth/BranchSelector'
 
@@ -126,6 +127,7 @@ export default function App() {
               <Route path="/login"            element={<LoginPage />} />
               <Route path="/register"         element={<RegisterPage />} />
               <Route path="/forgot-password"  element={<ForgotPasswordPage />} />
+              <Route path="/reset-password"  element={<ResetPasswordPage />} />
               <Route path="/onboarding"       element={<OnboardingWizard />} />
               <Route path="/branch-select"    element={<BranchSelector />} />
               <Route path="/pricing"          element={<PricingPage />} />
