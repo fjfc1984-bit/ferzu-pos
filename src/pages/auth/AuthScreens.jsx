@@ -17,6 +17,7 @@ import {
   Shield, AlertCircle, RefreshCw, ArrowRight, Zap
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase.js';
+import { api } from '../../lib/api.js';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -205,6 +206,12 @@ export function RegisterPage() {
           role:      'owner',
         }, { onConflict: 'id' });
       }
+
+      // Email de bienvenida (best-effort, no bloquea el flujo)
+      api.post('/auth/welcome-email', {
+        email: form.email.trim().toLowerCase(),
+        name:  form.name.trim(),
+      }).catch(() => {});
 
       toast.success('¡Cuenta creada! Configura tu negocio.');
       navigate('/onboarding');

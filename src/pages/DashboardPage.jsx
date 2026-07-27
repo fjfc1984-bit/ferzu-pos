@@ -28,6 +28,7 @@ import { useAuth }   from '../context/AuthContext.jsx';
 import { formatCOP } from '../lib/math.js';
 import { format, subDays, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { ReportExporter } from '../components/ReportExporter.jsx';
 
 // =============================================================================
 // SECCIÓN 1: DashboardPage — Layout principal
@@ -178,6 +179,14 @@ export default function DashboardPage() {
               </button>
             ))}
           </div>
+
+          <ReportExporter
+            kpis={kpis}
+            orders={[]}
+            topProducts={topProducts || []}
+            businessName="FERZU POS"
+            dateRange={range === 'today' ? 'Hoy' : range === 'week' ? 'Esta semana' : 'Este mes'}
+          />
 
           <button onClick={() => { refresh(); setLastRefresh(new Date()); }}
             className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">

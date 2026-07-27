@@ -5,7 +5,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import App from "./App"
 import { Toaster } from "react-hot-toast"
 import { ErrorBoundary } from "./components/ErrorBoundary"
+import { initSentry } from "./lib/sentry.js"
 import "./index.css"
+
+// Inicializar Sentry antes de montar la app
+initSentry()
 
 const queryClient = new QueryClient({
   defaultOptions: {

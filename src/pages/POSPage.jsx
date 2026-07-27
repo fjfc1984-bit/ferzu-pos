@@ -26,13 +26,14 @@ import {
   Percent, DollarSign, CreditCard, Smartphone,
   Printer, RefreshCw, Settings, ChevronRight
 } from 'lucide-react';
-import { usePOS }          from '../context/POSContext.jsx';
-import { useAuth }         from '../context/AuthContext.jsx';
-import { useSyncContext }  from '../context/SyncContext.jsx';
-import { useAIProposals }  from '../hooks/useAIProposals.js';
-import { formatCOP }       from '../lib/math.js';
-import { cashAPI }         from '../lib/api.js';
-import toast               from 'react-hot-toast';
+import { usePOS }                  from '../context/POSContext.jsx';
+import { useAuth }                 from '../context/AuthContext.jsx';
+import { useSyncContext }          from '../context/SyncContext.jsx';
+import { useAIProposals }          from '../hooks/useAIProposals.js';
+import { useKeyboardShortcuts }    from '../hooks/useKeyboardShortcuts.js';
+import { formatCOP }               from '../lib/math.js';
+import { cashAPI }                 from '../lib/api.js';
+import toast                       from 'react-hot-toast';
 
 // Sub-componentes (definidos en secciones siguientes)
 // import ProductGrid        from '../components/pos/ProductGrid.jsx';
@@ -53,6 +54,19 @@ export default function POSPage() {
   const [showCashModal, setShowCashModal] = useState(false);
   const [showAIPanel,   setShowAIPanel]   = useState(false);
   const [activeCategory, setActiveCategory] = useState(null);
+
+  // ── Atajos de teclado ─────────────────────────────────────────────────────
+  useKeyboardShortcuts({
+    onNewSale:  () => { dispatch({ type: 'CLEAR_ORDER' }); toast('🛒 Nueva venta (F2)') },
+    onCheckout: () => { if (cashSession) setShowPayment(true) },
+    onEscape:   () => {
+      setShowPayment(false)
+      setShowDiscount(false)
+      setShowCustomer(false)
+      setShowCashModal(false)
+      setShowAIPanel(false)
+    },
+  })
 
   // Si no hay caja abierta al cargar, mostrar modal de apertura
   useEffect(() => {

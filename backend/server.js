@@ -27,6 +27,7 @@ import cron                 from 'node-cron';
 import crypto               from 'crypto';
 import { fileURLToPath }    from 'url';
 import { runFerzuAgent }    from './ferzu_claude_tools.js';
+import { initSentry, sentryRequestHandler, sentryErrorHandler } from './lib/sentry.js';
 
 dotenv.config();
 
@@ -35,6 +36,9 @@ dotenv.config();
 // =============================================================================
 
 const app  = express();
+
+// Inicializar Sentry ANTES de los middlewares (requiere instancia de app)
+initSentry(app);
 const PORT = process.env.PORT || 3001;
 
 // Logger
@@ -61,6 +65,9 @@ const supabaseAdmin = createClient(
 // =============================================================================
 // MIDDLEWARES GLOBALES
 // =============================================================================
+
+// Sentry request tracking — ANTES de cualquier otro middleware
+app.use(sentryRequestHandler());
 
 app.use(helmet());
 const ALLOWED_ORIGINS = (process.env.FRONTEND_URL || 'http://localhost:5173')
@@ -200,6 +207,20 @@ authRouter.post('/login', [
   } catch (err) {
     logger.error('Login error', { err });
     res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// POST /auth/welcome-email — Enviar email de bienvenida tras registro
+authRouter.post('/welcome-email', async (req, res) => {
+  try {
+    const { email, name } = req.body;
+    if (!email) return res.status(400).json({ error: 'email requerido' });
+    const { sendWelcomeEmail } = await import('./lib/emails.js');
+    await sendWelcomeEmail({ to: email, name: name || 'Usuario' });
+    res.json({ sent: true });
+  } catch (err) {
+    logger.warn('Welcome email error (non-critical)', { err: err.message });
+    res.json({ sent: false });   // No bloquear el registro
   }
 });
 
@@ -1158,6 +1179,9 @@ if (process.env.NODE_ENV !== 'production') {
   app.get('/deploy-schema',        (req, res) => res.status(404).end());
   app.get('/api/internal/migrate', (req, res) => res.status(404).end());
 }
+
+// Sentry error handler — ANTES del handler genérico
+app.use(sentryErrorHandler());
 
 // Manejo global de errores
 app.use((err, req, res, next) => {
