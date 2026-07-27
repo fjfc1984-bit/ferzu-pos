@@ -61,11 +61,20 @@ const supabaseAdmin = createClient(
 // =============================================================================
 
 app.use(helmet());
+const ALLOWED_ORIGINS = (process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map(o => o.trim());
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: (origin, cb) => {
+    // Permitir llamadas sin origen (curl, Postman en dev) solo en local
+    if (!origin && process.env.NODE_ENV !== 'production') return cb(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origen no permitido → ${origin}`));
+  },
   credentials: true,
 }));
-app.use(express.json({ limit: '10mb' }));  // 10MB para imágenes base64 de facturas
+app.use(express.json({ limit: '2mb' }));  // Reducido: las imágenes de facturas deben subirse a Supabase Storage, no inline
 
 // Rate limiting general
 app.use(rateLimit({
@@ -1115,100 +1124,38 @@ app.get('/health', (req, res) => {
 });
 
 // =============================================================================
-// ─── MIGRACIÓN INTERNA (sin auth, solo localhost) ────────────────────────────
+// ─── RUTAS INTERNAS — SOLO ENTORNO LOCAL ─────────────────────────────────────
+// SECURITY: estos endpoints están DESHABILITADOS en producción.
+// Las migraciones se ejecutan desde CLI local, nunca vía HTTP en producción.
 // =============================================================================
-
-// Sirve la página HTML de despliegue (no requiere auth ni CORS)
-app.get('/deploy-schema', async (req, res) => {
-  try {
-    const { readFileSync }  = await import('fs');
-    const { fileURLToPath } = await import('url');
-    const pathMod           = await import('path');
-    const __dir = pathMod.default.dirname(fileURLToPath(import.meta.url));
-    const htmlPath = pathMod.default.join(__dir, '..', 'DEPLOY_SCHEMA.html');
-    const html = readFileSync(htmlPath, 'utf8');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(html);
-  } catch (err) {
-    res.status(500).send('Error: ' + err.message);
-  }
-});
-
-// Endpoint que ejecuta la migración via pg
-app.get('/api/internal/migrate', async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-  res.setHeader('Content-Type', 'application/json');
-
-  try {
-    const { createRequire } = await import('module');
-    const { readFileSync }   = await import('fs');
-    const pathMod            = await import('path');
-    const { fileURLToPath }  = await import('url');
-
-    const _require = createRequire(import.meta.url);
-    const { Client } = _require('pg');
-
-    const __dir = pathMod.default.dirname(fileURLToPath(import.meta.url));
-    const sql   = readFileSync(pathMod.default.join(__dir, '..', 'schema_v2.sql'), 'utf8');
-
-    const PROJECT_REF     = 'laimnfckldpiovgbugyr';
-    const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    const POOLER_HOSTS = [
-      'aws-0-us-east-1.pooler.supabase.com',
-      'aws-0-us-west-1.pooler.supabase.com',
-      'aws-0-eu-west-1.pooler.supabase.com',
-      'aws-0-ap-southeast-1.pooler.supabase.com',
-    ];
-
-    let client = null;
-    const attempts = [];
-
-    for (const host of POOLER_HOSTS) {
-      try {
-        const c = new Client({
-          host, port: 6543,
-          database: 'postgres',
-          user: `postgres.${PROJECT_REF}`,
-          password: SERVICE_ROLE_KEY,
-          ssl: { rejectUnauthorized: false },
-          connectionTimeoutMillis: 6000,
-        });
-        await c.connect();
-        client = c;
-        attempts.push({ host, ok: true });
-        break;
-      } catch (err) {
-        attempts.push({ host, ok: false, err: err.message.slice(0, 80) });
-      }
-    }
-
-    if (!client) {
-      return res.status(502).json({ error: 'No se pudo conectar al pooler', attempts,
-        fallback: 'Abre DEPLOY_SCHEMA.html en tu navegador' });
-    }
-
+if (process.env.NODE_ENV !== 'production') {
+  // Solo disponible en desarrollo local: sirve la página HTML de despliegue
+  app.get('/deploy-schema', async (req, res) => {
     try {
-      await client.query(sql);
-      await client.end();
-      return res.json({ success: true, message: '¡Schema desplegado exitosamente!' });
-    } catch (execErr) {
-      const statements = sql.split(/;\s*\n/).filter(s => s.trim().length > 5);
-      let ok = 0, failed = 0;
-      for (const stmt of statements) {
-        try { await client.query(stmt + ';'); ok++; }
-        catch (e) { if (!e.message.includes('already exists') && !e.message.includes('duplicate')) failed++; }
-      }
-      await client.end();
-      return res.json({ success: true,
-        message: `Schema desplegado: ${ok} OK, ${failed} errores (normal si objetos ya existen)` });
+      const { readFileSync }  = await import('fs');
+      const { fileURLToPath } = await import('url');
+      const pathMod           = await import('path');
+      const __dir = pathMod.default.dirname(fileURLToPath(import.meta.url));
+      const htmlPath = pathMod.default.join(__dir, '..', 'DEPLOY_SCHEMA.html');
+      const html = readFileSync(htmlPath, 'utf8');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(html);
+    } catch (err) {
+      res.status(500).send('Error: ' + err.message);
     }
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-});
+  });
+
+  // Solo disponible en desarrollo local: ejecuta migraciones SQL
+  app.get('/api/internal/migrate', async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    logger.warn('[MIGRATE] Endpoint de migración llamado en modo local');
+    res.json({ disabled: true, reason: 'Ejecuta las migraciones desde Supabase Dashboard o CLI local.' });
+  });
+} else {
+  // En producción: devuelve 404 para no revelar que el endpoint existió
+  app.get('/deploy-schema',        (req, res) => res.status(404).end());
+  app.get('/api/internal/migrate', (req, res) => res.status(404).end());
+}
 
 // Manejo global de errores
 app.use((err, req, res, next) => {
