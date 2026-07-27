@@ -76,8 +76,8 @@ const ALLOWED_ORIGINS = (process.env.FRONTEND_URL || 'http://localhost:5173')
 
 app.use(cors({
   origin: (origin, cb) => {
-    // Permitir llamadas sin origen (curl, Postman en dev) solo en local
-    if (!origin && process.env.NODE_ENV !== 'production') return cb(null, true);
+    // Permitir llamadas sin origen (curl, Postman, health monitors, acceso directo)
+    if (!origin) return cb(null, true);
     if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
     cb(new Error(`CORS: origen no permitido → ${origin}`));
   },
