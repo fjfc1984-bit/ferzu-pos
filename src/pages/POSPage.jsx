@@ -610,13 +610,13 @@ function PaymentModal({ onClose }) {
 
   async function handleConfirm() {
     try {
-      await processPayment(method, method === 'cash' ? cashAmt : total);
-      setStep('done');
-      setTimeout(() => { onClose(); }, 2000);
+      const order = await processPayment(method, method === 'cash' ? cashAmt : total);
+      setStep(order?.offline ? 'done-offline' : 'done');
+      setTimeout(() => { onClose(); }, order?.offline ? 3500 : 2000);
     } catch {}
   }
 
-  // ── Paso: DONE ──
+  // ── Paso: DONE (online) ──
   if (step === 'done') {
     return (
       <Modal onClose={onClose} size="sm">
@@ -635,6 +635,30 @@ function PaymentModal({ onClose }) {
             <Printer size={14} className="inline mr-1" />
             Imprimir recibo
           </button>
+        </div>
+      </Modal>
+    );
+  }
+
+  // ── Paso: DONE-OFFLINE (sin conexión) ──
+  if (step === 'done-offline') {
+    return (
+      <Modal onClose={onClose} size="sm">
+        <div className="flex flex-col items-center py-8 gap-4">
+          <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center shadow-lg shadow-amber-200">
+            <span className="text-3xl">📦</span>
+          </div>
+          <p className="text-lg font-semibold text-gray-900">Venta guardada offline</p>
+          <p className="text-sm text-gray-500 text-center px-4">
+            Sin conexión al servidor. La venta quedó guardada en este dispositivo
+            y se sincronizará automáticamente cuando vuelva la red.
+          </p>
+          {method === 'cash' && change > 0 && (
+            <div className="bg-amber-50 rounded-xl px-6 py-3 text-center border border-amber-100">
+              <p className="text-sm text-gray-500">Vuelto</p>
+              <p className="text-2xl font-bold text-amber-600">{formatCOP(change)}</p>
+            </div>
+          )}
         </div>
       </Modal>
     );

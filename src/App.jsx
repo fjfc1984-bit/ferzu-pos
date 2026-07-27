@@ -117,8 +117,8 @@ export default function App() {
   return (
     <AuthProvider>
       <PlanProvider>
-        <POSProvider>
-          <SyncProvider>
+        <SyncProvider>
+          <POSProvider>
             <Routes>
               {/* ====== Landing page pública ====== */}
               <Route path="/"                 element={<LandingPage />} />
@@ -176,8 +176,8 @@ export default function App() {
               {/* Catch-all — usuarios autenticados van al dashboard */}
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
-          </SyncProvider>
-        </POSProvider>
+          </POSProvider>
+        </SyncProvider>
       </PlanProvider>
     </AuthProvider>
   )

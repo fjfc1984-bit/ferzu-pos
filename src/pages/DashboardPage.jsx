@@ -23,6 +23,7 @@ import {
   CheckCircle2, Wallet, Target, Calendar, Sparkles, Loader2
 } from 'lucide-react';
 import { supabase }  from '../lib/supabase.js';
+import { api }       from '../lib/api.js';
 import { useAuth }   from '../context/AuthContext.jsx';
 import { formatCOP } from '../lib/math.js';
 import { format, subDays, parseISO, startOfDay, endOfDay } from 'date-fns';
@@ -133,17 +134,12 @@ export default function DashboardPage() {
     if (!kpis) return;
     setAiLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-        body: JSON.stringify({
-          message: `Analiza estos datos de negocio y dame un resumen ejecutivo en español colombiano, máximo 3 párrafos. Datos: Ventas=${formatCOP(kpis.totalSales)}, Tickets=${kpis.totalOrders}, Ticket promedio=${formatCOP(kpis.avgTicket)}, Clientes nuevos=${kpis.newCustomers}, Margen estimado=${kpis.marginPct}%, Top producto="${topProducts?.[0]?.name || 'N/A'}". Incluye 1 recomendación concreta.`,
-          model: 'claude-haiku-4-5-20251001',
-        }),
+      // Usar la instancia axios (tiene baseURL de Railway configurado, no URL relativa)
+      const res = await api.post('/ai/chat', {
+        message: `Analiza estos datos de negocio y dame un resumen ejecutivo en español colombiano, máximo 3 párrafos. Datos: Ventas=${formatCOP(kpis.totalSales)}, Tickets=${kpis.totalOrders}, Ticket promedio=${formatCOP(kpis.avgTicket)}, Clientes nuevos=${kpis.newCustomers}, Margen estimado=${kpis.marginPct}%, Top producto="${topProducts?.[0]?.name || 'N/A'}". Incluye 1 recomendación concreta.`,
+        model: 'claude-haiku-4-5-20251001',
       });
-      const json = await res.json();
-      setAiReport(json.response || json.message || '');
+      setAiReport(res.data?.response || res.data?.message || '');
     } catch {
       setAiReport('Error al conectar con el asistente IA. Verifica la clave de API.');
     } finally {
@@ -791,14 +787,8 @@ export function useDashboard(branchId, organizationId, range) {
   }
 
   async function loadStockAlerts() {
-    const { data } = await supabase
-      .from('inventory')
-      .select('product_id, quantity, min_stock, products(name)')
-      .eq('branch_id', branchId)
-      .filter('quantity', 'lte', supabase.raw('min_stock'));
-
-    // Supabase no soporta "quantity <= min_stock" directamente via filter
-    // Usar la vista v_inventory_status del schema:
+    // Usar la vista v_inventory_status (columna-a-columna via SQL en DB, no en JS)
+    // supabase.raw() NO existe en supabase-js v2 — se eliminó la query rota
     const { data: alerts } = await supabase
       .from('v_inventory_status')
       .select('product_id, name, quantity, min_stock, status')
@@ -806,12 +796,24 @@ export function useDashboard(branchId, organizationId, range) {
       .in('status', ['low_stock', 'out_of_stock'])
       .order('quantity');
 
-    setStockAlerts(alerts || data?.map(d => ({
-      product_id: d.product_id,
-      name:       d.products?.name || '—',
-      quantity:   d.quantity,
-      min_stock:  d.min_stock,
-    })) || []);
+    // Fallback: si la vista no existe aún, comparar client-side
+    if (!alerts) {
+      const { data: raw } = await supabase
+        .from('inventory')
+        .select('product_id, quantity, min_stock, products(name)')
+        .eq('branch_id', branchId);
+      const lowStock = (raw || []).filter(r => r.quantity <= r.min_stock);
+      setStockAlerts(lowStock.map(d => ({
+        product_id: d.product_id,
+        name:       d.products?.name || '—',
+        quantity:   d.quantity,
+        min_stock:  d.min_stock,
+        status:     d.quantity === 0 ? 'out_of_stock' : 'low_stock',
+      })));
+      return;
+    }
+
+    setStockAlerts(alerts || []);
   }
 
   async function loadCashSession() {

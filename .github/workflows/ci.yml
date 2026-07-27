@@ -1,0 +1,67 @@
+# =============================================================================
+# FERZU POS — GitHub Actions CI
+#
+# Se ejecuta en cada push y pull request a main.
+# Bloquea el merge si algún test falla.
+#
+# Jobs:
+#   test-frontend  → Vitest (jsdom, React Testing Library)
+#   test-backend   → Node.js native test runner (node:test)
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Frontend: Vitest ────────────────────────────────────────────────────────
+  test-frontend:
+    name: 'Tests Frontend (Vitest)'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Correr tests
+        run: npm test
+
+  # ── Backend: node:test ──────────────────────────────────────────────────────
+  test-backend:
+    name: 'Tests Backend (node:test)'
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Correr tests
+        run: npm test

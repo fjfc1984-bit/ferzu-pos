@@ -9,25 +9,23 @@
  *   CheckoutPage       — flujo principal de 3 pasos
  *   PlanSummary        — resumen del plan seleccionado
  *   ContactStep        — datos del negocio para facturación
- *   PaymentStep        — métodos de pago (Wompi, Nequi, transferencia, trial)
+ *   PaymentStep        — métodos de pago (Bold, Nequi, transferencia, trial)
  *   SuccessScreen      — pantalla final con enlace al dashboard
  *   useActivatePlan    — mutación para activar plan en Supabase
  *
- * Archivo destino: src/pages/CheckoutPage.jsx
- *
  * INTEGRACIÓN DE PAGO:
- *   - Wompi (Colombia): widget embed con public key de .env
- *   - Nequi/Daviplata: muestra número y QR, espera confirmación manual
- *   - Transferencia: datos bancarios + webhook de confirmación
+ *   - Bold (Colombia): checkout hospedado — el backend calcula el monto (Regla de Oro #1)
+ *   - Nequi/Transferencia: confirmación manual — el webhook de Bold activa el plan automático
  *   - Trial gratuito 14 días: activa plan sin pago en modo trial
  */
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { formatCOP } from '../lib/math'
 import { FERZU_PLANS, MODULE_META } from '../lib/plansConfig'
+import { startPlanPayment } from '../lib/boldCheckout'
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -41,9 +39,9 @@ const PAYMENT_METHODS = [
     highlight: true,
   },
   {
-    id: 'wompi',
-    label: 'Tarjeta / PSE / Nequi',
-    description: 'Pago seguro vía Wompi (Colombia). Todas las tarjetas y PSE.',
+    id: 'bold',
+    label: 'Tarjeta / PSE / Nequi (Bold)',
+    description: 'Pago seguro con Bold — Colombia. Todas las tarjetas, PSE y Nequi.',
     icon: '💳',
   },
   {
@@ -290,24 +288,30 @@ function ContactStep({ data, onChange, onNext }) {
 function PaymentStep({ planId, contactData, onSuccess, onBack }) {
   const [selected, setSelected] = useState('trial')
   const [loading, setLoading] = useState(false)
-  const [wompiReady, setWompiReady] = useState(false)
+  const [boldError, setBoldError] = useState(null)
   const activatePlan = useActivatePlan()
 
   async function handlePay() {
-    if (selected === 'wompi') {
-      // Cargar widget de Wompi
-      setWompiReady(true)
-      return
-    }
-
+    setBoldError(null)
     setLoading(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { session } } = await supabase.auth.getSession()
       const { data: org } = await supabase
         .from('users')
         .select('organization_id')
-        .eq('id', user.id)
+        .eq('id', session.user.id)
         .single()
+
+      if (selected === 'bold') {
+        // Redirige al checkout hospedado de Bold
+        // El backend calcula el monto (Regla de Oro #1 — nunca el frontend)
+        await startPlanPayment({
+          planId,
+          organizationId: org.organization_id,
+          token: session.access_token,
+        })
+        return  // La navegación ocurre dentro de startPlanPayment (window.location.href)
+      }
 
       const result = await activatePlan.mutateAsync({
         planId,
@@ -317,7 +321,8 @@ function PaymentStep({ planId, contactData, onSuccess, onBack }) {
 
       onSuccess(result)
     } catch (err) {
-      console.error(err)
+      console.error('[CheckoutPage]', err)
+      setBoldError(err?.message || 'Error procesando el pago. Intenta de nuevo.')
     } finally {
       setLoading(false)
     }
@@ -404,71 +409,30 @@ function PaymentStep({ planId, contactData, onSuccess, onBack }) {
         </div>
       )}
 
-      {/* Widget de Wompi (carga dinámicamente) */}
-      {wompiReady && (
-        <WompiWidget
-          amount={plan?.price_cop || 0}
-          reference={`ferzu-${planId}-${Date.now()}`}
-          email={contactData.email}
-          onSuccess={() => onSuccess({ mode: 'wompi', success: true })}
-        />
+      {/* Mensaje de error de Bold */}
+      {boldError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
+          ⚠️ {boldError}
+        </div>
       )}
 
-      {!wompiReady && (
-        <button
-          onClick={handlePay}
-          disabled={loading || activatePlan.isPending}
-          className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-xl font-bold text-base transition flex items-center justify-center gap-2"
-        >
-          {(loading || activatePlan.isPending) ? (
-            <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : null}
-          {selected === 'trial'    ? '🎁 Activar prueba gratuita' :
-           selected === 'wompi'    ? '💳 Ir a pagar' :
-           selected === 'nequi'    ? '📱 Ya envié el pago' :
-                                     '🏦 Ya hice la transferencia'}
-        </button>
-      )}
+      <button
+        onClick={handlePay}
+        disabled={loading || activatePlan.isPending}
+        className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-xl font-bold text-base transition flex items-center justify-center gap-2"
+      >
+        {(loading || activatePlan.isPending) ? (
+          <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+        ) : null}
+        {selected === 'trial'    ? '🎁 Activar prueba gratuita' :
+         selected === 'bold'     ? '💳 Ir a pagar con Bold' :
+         selected === 'nequi'    ? '📱 Ya envié el pago' :
+                                   '🏦 Ya hice la transferencia'}
+      </button>
 
       <p className="text-center text-xs text-gray-400">
-        🔒 Pago seguro · Cancela cuando quieras · Sin compromisos
+        🔒 Pago seguro con Bold · Cancela cuando quieras · Sin compromisos
       </p>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Widget de Wompi (embed)
-// ---------------------------------------------------------------------------
-function WompiWidget({ amount, reference, email, onSuccess }) {
-  useEffect(() => {
-    // Cargar script de Wompi
-    const script = document.createElement('script')
-    script.src = 'https://checkout.wompi.co/widget.js'
-    script.setAttribute('data-render', 'button')
-    script.setAttribute('data-public-key', import.meta.env.VITE_WOMPI_PUBLIC_KEY || '')
-    script.setAttribute('data-currency', 'COP')
-    script.setAttribute('data-amount-in-cents', String(amount * 100))
-    script.setAttribute('data-reference', reference)
-    script.setAttribute('data-customer-data:email', email)
-    script.async = true
-
-    const container = document.getElementById('wompi-container')
-    if (container) container.appendChild(script)
-
-    // Escuchar evento de Wompi
-    window.addEventListener('message', function handler(e) {
-      if (e.data?.transaction?.status === 'APPROVED') {
-        onSuccess()
-        window.removeEventListener('message', handler)
-      }
-    })
-  }, [])
-
-  return (
-    <div className="border border-gray-200 rounded-xl p-4 bg-gray-50">
-      <p className="text-xs text-gray-500 mb-3 text-center">Serás redirigido a la pasarela de pago segura</p>
-      <div id="wompi-container" className="flex justify-center" />
     </div>
   )
 }

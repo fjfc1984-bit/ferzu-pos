@@ -25,6 +25,7 @@ import dotenv               from 'dotenv';
 import { Resend }           from 'resend';
 import cron                 from 'node-cron';
 import crypto               from 'crypto';
+import { fileURLToPath }    from 'url';
 import { runFerzuAgent }    from './ferzu_claude_tools.js';
 
 dotenv.config();
@@ -259,7 +260,7 @@ authRouter.post('/pin', [
   }
 });
 
-app.use('/auth', authRouter);
+app.use('/api/auth', authRouter);
 
 
 // =============================================================================
@@ -349,7 +350,7 @@ productsRouter.post('/', requireRole('owner', 'admin'), [
   }
 });
 
-app.use('/products', productsRouter);
+app.use('/api/products', productsRouter);
 
 
 // =============================================================================
@@ -461,7 +462,7 @@ cashRouter.post('/:id/close', [
   }
 });
 
-app.use('/cash-sessions', cashRouter);
+app.use('/api/cash-sessions', cashRouter);
 
 
 // =============================================================================
@@ -733,7 +734,7 @@ async function markOrderPaid(orderId, organizationId, userId) {
   }
 }
 
-app.use('/orders', ordersRouter);
+app.use('/api/orders', ordersRouter);
 
 
 // =============================================================================
@@ -802,7 +803,7 @@ inventoryRouter.post('/adjustment', requireRole('owner', 'admin'), [
   }
 });
 
-app.use('/inventory', inventoryRouter);
+app.use('/api/inventory', inventoryRouter);
 
 
 // =============================================================================
@@ -1008,7 +1009,7 @@ aiRouter.post('/proposals/:id/reject', requireRole('owner', 'admin'), async (req
   }
 });
 
-app.use('/ai', aiRouter);
+app.use('/api/ai', aiRouter);
 
 
 // =============================================================================
@@ -1074,7 +1075,7 @@ async function processSyncOperation(op, organizationId, userId) {
   }
 }
 
-app.use('/sync', syncRouter);
+app.use('/api/sync', syncRouter);
 
 
 // =============================================================================
@@ -1113,7 +1114,7 @@ reportsRouter.get('/dashboard', async (req, res) => {
   }
 });
 
-app.use('/reports', reportsRouter);
+app.use('/api/reports', reportsRouter);
 
 
 // =============================================================================
@@ -1164,9 +1165,13 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Error interno del servidor' });
 });
 
-app.listen(PORT, () => {
-  logger.info(`FERZU Backend corriendo en puerto ${PORT}`);
-});
+// Solo iniciar el servidor cuando este archivo es el punto de entrada (no durante tests)
+const isMain = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMain) {
+  app.listen(PORT, () => {
+    logger.info(`FERZU Backend corriendo en puerto ${PORT}`);
+  });
+}
 
 // =============================================================================
 // ─── CRON: EMAIL AUTOMÁTICO — DÍA 10 DE TRIAL ────────────────────────────────

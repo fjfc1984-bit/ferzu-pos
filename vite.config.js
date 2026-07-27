@@ -89,4 +89,17 @@ export default defineConfig({
     port: 5173,
     proxy: { '/api': { target: 'http://localhost:3001', changeOrigin: true } },
   },
+
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/__tests__/setup.js'],
+    include: ['src/__tests__/**/*.{test,spec}.{js,jsx}'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      include: ['src/**/*.{js,jsx}'],
+      exclude: ['src/main.jsx', 'src/**/*.d.ts'],
+    },
+  },
 })

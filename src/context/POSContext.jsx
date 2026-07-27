@@ -8,6 +8,7 @@ import { createContext, useContext, useReducer, useCallback, useEffect } from 'r
 import { supabase } from '../lib/supabase'
 import { api }      from '../lib/api'
 import toast        from 'react-hot-toast'
+import { useSync }  from './SyncContext'
 
 // ---------------------------------------------------------------------------
 // TIPOS DE ACCIÓN
@@ -163,6 +164,9 @@ const POSContext = createContext(null)
 export function POSProvider({ children }) {
   const [state, dispatch] = useReducer(posReducer, initialState)
 
+  // SyncContext provee el estado de conectividad y el fallback offline
+  const { isOnline, saveOrderOffline } = useSync()
+
   // Totales derivados — calculados en cada render, no en el estado
   const totals = computeTotals(state.items, state.discount)
 
@@ -278,41 +282,74 @@ export function POSProvider({ children }) {
   }, [state.cashSession])
 
   // ── PROCESAR PAGO ────────────────────────────────────────────────────────
-  // El backend recalcula y valida totales — el frontend solo envía los ítems crudos
+  // REGLA DE ORO #1: el frontend solo envía ítems crudos; el backend calcula totales.
+  // REGLA DE ORO #3: si no hay red, se guarda offline y sincroniza al reconectar.
   const processPayment = useCallback(async (paymentMethod, cashReceived) => {
     if (!state.cashSession) throw new Error('No hay sesión de caja activa')
     if (state.items.length === 0) throw new Error('El carrito está vacío')
 
-    dispatch({ type: A.SET_PROCESSING, payload: true })
-    try {
-      const { data: order } = await api.post('/orders', {
-        branch_id:       state.branchId,
-        cash_session_id: state.cashSession.id,
-        customer_id:     state.customerId || null,
-        items: state.items.map(i => ({
-          product_id:   i.product_id,
-          product_name: i.product_name,
-          product_sku:  i.product_sku,
-          quantity:     i.quantity,
-          unit_price:   i.unit_price,
-          vat_rate:     i.vat_rate,
-        })),
-        payment_method: paymentMethod,
-        cash_received:  paymentMethod === 'cash' ? Math.round(cashReceived) : null,
-        discount:       state.discount || null,
-      })
-
-      dispatch({ type: A.SET_LAST_ORDER, payload: order.id })
-      dispatch({ type: A.CLEAR_ORDER })
-      toast.success('¡Venta registrada!', { duration: 2000 })
-      return order
-    } catch (e) {
-      toast.error(e.response?.data?.message || 'Error al procesar el pago')
-      throw e
-    } finally {
-      dispatch({ type: A.SET_PROCESSING, payload: false })
+    const orderPayload = {
+      branch_id:       state.branchId,
+      cash_session_id: state.cashSession.id,
+      customer_id:     state.customerId || null,
+      items: state.items.map(i => ({
+        product_id:   i.product_id,
+        product_name: i.product_name,
+        product_sku:  i.product_sku,
+        quantity:     i.quantity,
+        unit_price:   i.unit_price,
+        vat_rate:     i.vat_rate,
+      })),
+      payment_method: paymentMethod,
+      cash_received:  paymentMethod === 'cash' ? Math.round(cashReceived) : null,
+      discount:       state.discount || null,
     }
-  }, [state])
+
+    dispatch({ type: A.SET_PROCESSING, payload: true })
+
+    // ── Ruta 1: Online — backend valida y calcula totales ───────────────────
+    let useOffline = !isOnline
+    let order      = null
+
+    if (!useOffline) {
+      try {
+        const { data } = await api.post('/orders', orderPayload)
+        order = data
+      } catch (e) {
+        const isNetworkError = !e.response  // axios: sin .response = error de red
+        if (!isNetworkError) {
+          // Error de negocio (400/422/500) — no guardar offline, mostrar el error
+          dispatch({ type: A.SET_PROCESSING, payload: false })
+          toast.error(e.response?.data?.message || e.response?.data?.error || 'Error al procesar el pago')
+          throw e
+        }
+        // Error de red → activar fallback offline
+        useOffline = true
+      }
+    }
+
+    // ── Ruta 2: Offline — Dexie + cola de sincronización ───────────────────
+    if (useOffline) {
+      try {
+        const localId = await saveOrderOffline(orderPayload)
+        order = { id: localId, offline: true }
+        toast.success('Guardado sin conexión — se sincronizará al reconectar', {
+          duration: 4000, icon: '📦',
+        })
+      } catch (offlineErr) {
+        dispatch({ type: A.SET_PROCESSING, payload: false })
+        toast.error('No se pudo guardar la venta. Intenta de nuevo.')
+        throw offlineErr
+      }
+    } else {
+      toast.success('¡Venta registrada!', { duration: 2000 })
+    }
+
+    dispatch({ type: A.SET_LAST_ORDER, payload: order.id })
+    dispatch({ type: A.CLEAR_ORDER })
+    dispatch({ type: A.SET_PROCESSING, payload: false })
+    return order
+  }, [state, isOnline, saveOrderOffline])
 
   // ── VALOR DEL CONTEXTO ───────────────────────────────────────────────────
   return (
