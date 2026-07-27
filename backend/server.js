@@ -24,6 +24,7 @@ import winston              from 'winston';
 import dotenv               from 'dotenv';
 import { Resend }           from 'resend';
 import cron                 from 'node-cron';
+import crypto               from 'crypto';
 import { runFerzuAgent }    from './ferzu_claude_tools.js';
 
 dotenv.config();
@@ -1396,6 +1397,247 @@ cron.schedule('0 14 * * *', async () => {
 });
 
 logger.info('[CRON] Job "trial día 10" registrado — corre 9:00 AM hora Colombia');
+
+// =============================================================================
+// ─── BOLD PAYMENTS — SESIÓN DE PAGO (BACKEND CALCULA EL MONTO) ───────────────
+// POST /api/payments/create-bold-session
+// El frontend NUNCA calcula precios — el backend es la fuente de verdad.
+// =============================================================================
+
+const PLAN_PRICES_COP = {
+  starter:    79_000,
+  pro:       149_000,
+  enterprise: 299_000,
+};
+
+const PLAN_NAMES = {
+  starter:    'FERZU POS Starter',
+  pro:        'FERZU POS Pro',
+  enterprise: 'FERZU POS Enterprise',
+};
+
+app.post('/api/payments/create-bold-session', requireAuth, async (req, res) => {
+  const { planId, organizationId } = req.body;
+
+  if (!planId || !organizationId) {
+    return res.status(400).json({ error: 'planId y organizationId son requeridos' });
+  }
+
+  const amountCOP = PLAN_PRICES_COP[planId];
+  if (!amountCOP) {
+    return res.status(400).json({ error: `Plan inválido: ${planId}` });
+  }
+
+  // Verificar que la org pertenece al usuario autenticado
+  const { data: org, error: orgErr } = await supabaseAdmin
+    .from('organizations')
+    .select('id, name, owner_id')
+    .eq('id', organizationId)
+    .eq('owner_id', req.user.id)
+    .single();
+
+  if (orgErr || !org) {
+    return res.status(403).json({ error: 'No tienes acceso a esta organización' });
+  }
+
+  // Obtener email del usuario para pre-llenar en Bold
+  let customerEmail = '';
+  try {
+    const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(req.user.id);
+    customerEmail = user?.email || '';
+  } catch { /* no crítico */ }
+
+  const orderId = uuidv4();
+
+  logger.info('[BOLD] Sesión de pago creada', { orgId: organizationId, planId, amountCOP, orderId });
+
+  return res.json({
+    orderId,
+    amountCOP,
+    description: `${PLAN_NAMES[planId] || planId} — ${org.name}`,
+    customerEmail,
+  });
+});
+
+// =============================================================================
+// ─── BOLD PAYMENTS — WEBHOOK DE CONFIRMACIÓN ─────────────────────────────────
+// Documentación: https://docs.getbold.io/
+// Evento principal: TRANSACTION_UPDATED (status: APPROVED / DECLINED / VOIDED)
+//
+// Flujo:
+//  1. El frontend redirige al checkout de Bold con los parámetros firmados
+//  2. Bold llama este endpoint cuando el estado del pago cambia
+//  3. Verificamos la firma HMAC-SHA256 con BOLD_SECRET_KEY
+//  4. Si APPROVED → activamos el plan en Supabase y enviamos email de bienvenida
+// =============================================================================
+
+const BOLD_SECRET_KEY = process.env.BOLD_SECRET_KEY || '';
+
+/**
+ * Verifica la firma HMAC-SHA256 que Bold incluye en el header x-bold-signature.
+ * Bold firma el raw body del request con tu clave secreta.
+ * Si la firma no coincide, rechazamos con 401.
+ */
+function verifyBoldSignature(rawBody, signatureHeader) {
+  if (!BOLD_SECRET_KEY) {
+    logger.warn('[BOLD] BOLD_SECRET_KEY no configurada — firma no verificada');
+    return true; // permisivo si no hay clave (solo en dev)
+  }
+  if (!signatureHeader) return false;
+
+  const expected = crypto
+    .createHmac('sha256', BOLD_SECRET_KEY)
+    .update(rawBody)
+    .digest('hex');
+
+  // Comparación segura contra timing attacks
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(expected, 'hex'),
+      Buffer.from(signatureHeader.replace(/^sha256=/, ''), 'hex')
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * POST /webhooks/bold
+ * Recibe notificaciones de Bold sobre cambios en transacciones de pago.
+ * Este endpoint NO requiere JWT auth — Bold llama desde sus servidores.
+ * La seguridad la provee la verificación HMAC.
+ *
+ * Se registra ANTES del middleware express.json() para poder leer el rawBody.
+ */
+app.post('/webhooks/bold', express.raw({ type: 'application/json' }), async (req, res) => {
+  const rawBody       = req.body;            // Buffer (raw) gracias a express.raw
+  const signatureHdr  = req.headers['x-bold-signature'] || req.headers['x-signature'] || '';
+
+  // 1. Verificar firma HMAC
+  if (!verifyBoldSignature(rawBody, signatureHdr)) {
+    logger.warn('[BOLD] Firma inválida — webhook rechazado', {
+      ip: req.ip,
+      signature: signatureHdr?.substring(0, 30),
+    });
+    return res.status(401).json({ error: 'Firma inválida' });
+  }
+
+  // 2. Parsear payload
+  let event;
+  try {
+    event = JSON.parse(rawBody.toString('utf8'));
+  } catch {
+    return res.status(400).json({ error: 'JSON inválido' });
+  }
+
+  const { type: eventType, data } = event;
+
+  logger.info('[BOLD] Webhook recibido', {
+    eventType,
+    transactionId: data?.id || data?.transaction_id,
+  });
+
+  // 3. Manejar solo TRANSACTION_UPDATED por ahora
+  if (eventType !== 'TRANSACTION_UPDATED') {
+    return res.json({ received: true, action: 'ignored' });
+  }
+
+  const { status, metadata = {} } = data || {};
+
+  // 4. Solo procesamos pagos APROBADOS
+  if (status !== 'APPROVED') {
+    logger.info('[BOLD] Transacción no aprobada', { status, id: data?.id });
+    return res.json({ received: true, action: 'noop', status });
+  }
+
+  // 5. Extraer contexto: organization_id y plan vienen en metadata del checkout
+  const orgId  = metadata.organization_id || metadata.org_id;
+  const planId = metadata.plan_id || metadata.plan;
+
+  if (!orgId || !planId) {
+    logger.error('[BOLD] Metadata incompleta — falta organization_id o plan_id', { metadata });
+    return res.status(422).json({ error: 'Metadata incompleta: organization_id y plan_id son requeridos' });
+  }
+
+  try {
+    // 6. Calcular fechas de suscripción (período: 1 mes)
+    const now           = new Date();
+    const periodEnd     = new Date(now);
+    periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+    // 7. Upsert en tabla subscriptions
+    const { error: subError } = await supabaseAdmin
+      .from('subscriptions')
+      .upsert({
+        organization_id:      orgId,
+        plan_id:              planId,
+        status:               'active',
+        bold_transaction_id:  data.id || data.transaction_id,
+        current_period_start: now.toISOString(),
+        current_period_end:   periodEnd.toISOString(),
+        updated_at:           now.toISOString(),
+      }, {
+        onConflict: 'organization_id',
+      });
+
+    if (subError) {
+      logger.error('[BOLD] Error actualizando subscripción', { error: subError.message, orgId });
+      return res.status(500).json({ error: 'Error interno actualizando suscripción' });
+    }
+
+    // 8. Actualizar plan activo en organizations
+    await supabaseAdmin
+      .from('organizations')
+      .update({ active_plan: planId, plan_expires_at: periodEnd.toISOString() })
+      .eq('id', orgId);
+
+    // 9. Email de bienvenida/confirmación (best-effort — no bloquea la respuesta)
+    supabaseAdmin.auth.admin.getUserById
+      ? (async () => {
+          try {
+            const { data: org } = await supabaseAdmin
+              .from('organizations')
+              .select('name, owner_id')
+              .eq('id', orgId)
+              .single();
+
+            if (org) {
+              const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(org.owner_id);
+              if (user?.email) {
+                await resend.emails.send({
+                  from: process.env.RESEND_FROM_EMAIL || 'FERZU POS <onboarding@resend.dev>',
+                  to:   user.email,
+                  subject: `✅ Plan ${planId} activado — FERZU POS`,
+                  html: `
+                    <div style="font-family:Arial,sans-serif;background:#0a0f1a;color:#d1fae5;padding:40px;border-radius:12px;max-width:480px;">
+                      <h2 style="color:#10b981;">¡Suscripción activada! 🎉</h2>
+                      <p>Hola <strong>${org.name}</strong>,</p>
+                      <p>Tu plan <strong style="color:#10b981;">${planId}</strong> está activo hasta el
+                         <strong>${periodEnd.toLocaleDateString('es-CO')}</strong>.</p>
+                      <p>Transacción Bold: <code style="color:#6ee7b7;">${data.id || data.transaction_id}</code></p>
+                      <a href="https://ferzu-pos.vercel.app/pos"
+                         style="display:inline-block;background:#059669;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;margin-top:16px;font-weight:700;">
+                        Ir al POS →
+                      </a>
+                    </div>`,
+                });
+                logger.info('[BOLD] Email de confirmación enviado', { email: user.email, orgId });
+              }
+            }
+          } catch (emailErr) {
+            logger.warn('[BOLD] Error enviando email de confirmación', { error: emailErr.message });
+          }
+        })()
+      : null;
+
+    logger.info('[BOLD] Plan activado exitosamente', { orgId, planId, transactionId: data.id });
+    return res.json({ received: true, action: 'plan_activated', orgId, planId });
+
+  } catch (err) {
+    logger.error('[BOLD] Error inesperado procesando webhook', { error: err.message, stack: err.stack });
+    return res.status(500).json({ error: 'Error interno' });
+  }
+});
 
 // =============================================================================
 // ERROR BACKUP SYSTEM
