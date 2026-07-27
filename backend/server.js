@@ -161,15 +161,20 @@ function validate(req, res, next) {
 
 // Log de auditoría
 async function logAudit(organizationId, userId, action, tableName, recordId, oldValues, newValues) {
-  await supabaseAdmin.from('audit_log').insert({
-    organization_id: organizationId,
-    user_id: userId,
-    action,
-    table_name: tableName,
-    record_id: recordId,
-    old_values: oldValues,
-    new_values: newValues,
-  }).throwOnError();
+  try {
+    await supabaseAdmin.from('audit_log').insert({
+      organization_id: organizationId,
+      user_id: userId,
+      action,
+      table_name: tableName,
+      record_id: recordId,
+      old_values: oldValues,
+      new_values: newValues,
+    });
+  } catch (e) {
+    // La auditoría es best-effort: un fallo aquí no debe matar el endpoint
+    logger.warn('[logAudit] No se pudo registrar auditoría', { action, tableName, recordId, err: e.message });
+  }
 }
 
 
@@ -211,10 +216,21 @@ authRouter.post('/login', [
 });
 
 // POST /auth/welcome-email — Enviar email de bienvenida tras registro
-authRouter.post('/welcome-email', async (req, res) => {
+// Solo se acepta desde el propio frontend (verificamos que el email exista en Supabase Auth)
+authRouter.post('/welcome-email', [
+  body('email').isEmail().normalizeEmail(),
+  validate,
+], async (req, res) => {
   try {
     const { email, name } = req.body;
     if (!email) return res.status(400).json({ error: 'email requerido' });
+
+    // Verificar que el email corresponde a un usuario registrado (anti-spam)
+    const { data: userRecord } = await supabaseAdmin
+      .from('users').select('id').eq('email', email).maybeSingle();
+    if (!userRecord) {
+      return res.json({ sent: false }); // No revelar si el email existe o no
+    }
     const { sendWelcomeEmail } = await import('./lib/emails.js');
     await sendWelcomeEmail({ to: email, name: name || 'Usuario' });
     res.json({ sent: true });
@@ -278,6 +294,50 @@ authRouter.post('/pin', [
   } catch (err) {
     logger.error('PIN login error', { err });
     res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// POST /auth/verify-pin — Verificar PIN de cajero (usuario ya autenticado, solo verifica PIN)
+// Diferente de /auth/pin: ese es para login; este es para desbloquear la pantalla de inactividad
+authRouter.post('/verify-pin', requireAuth, [
+  body('pin').isLength({ min: 4, max: 6 }).isNumeric(),
+  validate,
+], async (req, res) => {
+  try {
+    const { pin } = req.body;
+
+    // Traer todos los usuarios activos de la misma organización con pin_hash
+    const { data: users } = await supabaseAdmin
+      .from('users')
+      .select('id, full_name, role, pin_hash, email')
+      .eq('organization_id', req.organizationId)
+      .eq('is_active', true)
+      .not('pin_hash', 'is', null);
+
+    if (!users?.length) {
+      return res.json({ valid: false });
+    }
+
+    const bcrypt = (await import('bcryptjs')).default;
+    let matchedUser = null;
+    for (const u of users) {
+      if (u.pin_hash && await bcrypt.compare(pin, u.pin_hash)) {
+        matchedUser = u;
+        break;
+      }
+    }
+
+    if (!matchedUser) {
+      return res.json({ valid: false });
+    }
+
+    res.json({
+      valid: true,
+      user: { id: matchedUser.id, full_name: matchedUser.full_name, role: matchedUser.role },
+    });
+  } catch (err) {
+    logger.error('verify-pin error', { err });
+    res.status(500).json({ valid: false, error: 'Error del servidor' });
   }
 });
 
@@ -380,6 +440,28 @@ app.use('/api/products', productsRouter);
 
 const cashRouter = express.Router();
 cashRouter.use(requireAuth);
+
+// GET /cash-sessions/current — Sesión de caja activa del usuario en su sucursal
+cashRouter.get('/current', async (req, res) => {
+  try {
+    const branchId = req.headers['x-branch-id'];
+    if (!branchId) return res.status(400).json({ error: 'x-branch-id header requerido' });
+
+    const { data, error } = await req.supabase
+      .from('cash_sessions')
+      .select('*')
+      .eq('branch_id', branchId)
+      .eq('status', 'open')
+      .order('opened_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    res.json(data || null);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // POST /cash-sessions/open
 cashRouter.post('/open', [
@@ -698,7 +780,7 @@ ordersRouter.post('/:id/refund', requireRole('owner', 'admin'), [
 
 // Helper: registrar pago en BD
 async function processPaymentInternal(orderId, method, amount, cashReceived, userId, ref, gateway, cashChange = 0) {
-  await supabaseAdmin.from('payments').insert({
+  const { error } = await supabaseAdmin.from('payments').insert({
     order_id: orderId,
     payment_method: method,
     amount,
@@ -707,7 +789,8 @@ async function processPaymentInternal(orderId, method, amount, cashReceived, use
     transaction_ref: ref,
     gateway: gateway || 'manual',
     gateway_status: 'approved',
-  }).throwOnError();
+  });
+  if (error) throw new Error(`Error registrando pago: ${error.message}`);
 }
 
 // Helper: marcar orden pagada + descontar inventario
