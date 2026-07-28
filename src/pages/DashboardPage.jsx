@@ -198,6 +198,42 @@ export default function DashboardPage() {
       {/* ── Contenido scrolleable ── */}
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
 
+        {/* ── Empty state primer día ── */}
+        {!loading && !kpis && !branchId && (
+          <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-brand-50 flex items-center justify-center">
+              <BarChart3 size={28} className="text-brand-500" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800">Aún no tienes una sucursal activa</h2>
+              <p className="text-sm text-gray-500 mt-1">Completa el onboarding para empezar a ver tus métricas aquí.</p>
+            </div>
+            <a href="/onboarding"
+              className="px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-xl hover:bg-brand-700 transition-colors">
+              Completar configuración
+            </a>
+          </div>
+        )}
+
+        {/* ── Empty state sin ventas (branchId ok pero 0 órdenes) ── */}
+        {!loading && kpis && kpis.totalOrders === 0 && (
+          <div className="bg-brand-50 border border-brand-100 rounded-2xl px-6 py-5 flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shrink-0">
+              <ShoppingBag size={18} className="text-brand-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-brand-800">¡Es tu primer día!</p>
+              <p className="text-xs text-brand-600 mt-0.5">
+                Abre la caja en el POS y registra tu primera venta para ver métricas aquí.
+              </p>
+            </div>
+            <a href="/pos"
+              className="ml-auto shrink-0 px-4 py-2 bg-brand-600 text-white text-xs font-semibold rounded-xl hover:bg-brand-700 transition-colors">
+              Ir al POS →
+            </a>
+          </div>
+        )}
+
         {/* KPI Cards */}
         <KPICards kpis={kpis} loading={loading} />
 
@@ -650,7 +686,7 @@ export function useDashboard(branchId, organizationId, range) {
   const [loading,      setLoading]      = useState(true);
 
   async function refresh() {
-    if (!branchId) return;
+    if (!branchId) { setLoading(false); return; }
     setLoading(true);
     const { from, to } = dateRange(range);
 
