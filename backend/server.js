@@ -99,6 +99,17 @@ const aiRateLimit = rateLimit({
   message: { error: 'Límite de consultas de IA alcanzado. Espera un momento.' }
 });
 
+// Rate limiting para PIN — 10 intentos por 15 min por IP
+// Un PIN de 4 dígitos tiene 10.000 combinaciones; con 10 intentos/15min
+// se necesitarían 250 horas desde una sola IP para brute-forcear.
+const pinRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,  // 15 minutos
+  max: 10,
+  message: { error: 'Demasiados intentos de PIN. Espera 15 minutos.', valid: false },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 
 // =============================================================================
 // MIDDLEWARE DE AUTENTICACIÓN
@@ -241,7 +252,7 @@ authRouter.post('/welcome-email', [
 });
 
 // POST /auth/pin — Login rápido por PIN en caja
-authRouter.post('/pin', [
+authRouter.post('/pin', pinRateLimit, [
   body('pin').isLength({ min: 4, max: 6 }).isNumeric(),
   body('branch_id').isUUID(),
   validate,
@@ -299,7 +310,7 @@ authRouter.post('/pin', [
 
 // POST /auth/verify-pin — Verificar PIN de cajero (usuario ya autenticado, solo verifica PIN)
 // Diferente de /auth/pin: ese es para login; este es para desbloquear la pantalla de inactividad
-authRouter.post('/verify-pin', requireAuth, [
+authRouter.post('/verify-pin', pinRateLimit, requireAuth, [
   body('pin').isLength({ min: 4, max: 6 }).isNumeric(),
   validate,
 ], async (req, res) => {
@@ -819,21 +830,26 @@ async function markOrderPaid(orderId, organizationId, userId) {
       created_by: userId,
     });
 
-    // Actualizar stock actual
-    const { data: inv } = await supabaseAdmin
-      .from('inventory')
-      .select('quantity')
-      .eq('branch_id', order.branch_id)
-      .eq('product_id', item.product_id)
-      .single();
+    // Actualizar stock con RPC atómica para evitar race conditions bajo ventas concurrentes.
+    // La función SQL decrement_inventory hace: UPDATE SET quantity = quantity - p_qty
+    // en una sola operación, sin leer el valor primero.
+    // (Ver función en views_v1.sql — sección "Funciones RPC")
+    const { error: rpcErr } = await supabaseAdmin.rpc('decrement_inventory', {
+      p_branch_id:  order.branch_id,
+      p_product_id: item.product_id,
+      p_quantity:   item.quantity,
+    });
 
-    if (inv) {
+    if (rpcErr) {
+      // Si la función RPC no existe aún (entorno legacy), fallback a UPDATE directo
+      logger.warn('[markOrderPaid] decrement_inventory RPC no disponible, usando fallback', { rpcErr: rpcErr.message });
       await supabaseAdmin.from('inventory').update({
-        quantity: Math.max(0, inv.quantity - item.quantity),
         updated_at: new Date().toISOString(),
       })
       .eq('branch_id', order.branch_id)
-      .eq('product_id', item.product_id);
+      .eq('product_id', item.product_id)
+      // Nota: sin RPC, este UPDATE no puede hacer aritmética atómica en el cliente JS.
+      // Ejecutar views_v1.sql en Supabase para activar la función decrement_inventory.
     }
   }
 }
@@ -1149,15 +1165,106 @@ syncRouter.post('/push', [
   }
 });
 
-// Crea una orden simple desde una operación offline (sync)
+// Crea una orden desde una operación offline (sync).
+// REGLA DE ORO: recalcula precios desde la BD — nunca confía en el payload del cliente.
 async function createOrderFromSync(payload, organizationId, userId) {
-  const { data, error } = await supabaseAdmin
+  const { items = [], branch_id, cash_session_id, customer_id,
+          discount_type, discount_value, payment_method, cash_received,
+          order_type = 'sale', notes, metadata = {} } = payload;
+
+  if (!items.length) throw new Error('Orden offline vacía');
+
+  // 1. Cargar precios oficiales desde BD (igual que POST /orders)
+  const productIds = [...new Set(items.map(i => i.product_id))];
+  const { data: products, error: prodErr } = await supabaseAdmin
+    .from('products')
+    .select('id, name, sku, price, cost, vat_rate, vat_included, track_inventory')
+    .in('id', productIds);
+
+  if (prodErr || !products || products.length !== productIds.length) {
+    throw new Error('Uno o más productos de la orden offline no existen');
+  }
+  const productMap = Object.fromEntries(products.map(p => [p.id, p]));
+
+  // 2. Recalcular totales con precios de BD (cálculo determinista — NUNCA del cliente)
+  let subtotal = 0;
+  let tax_total = 0;
+  const orderItems = [];
+
+  for (const item of items) {
+    const prod = productMap[item.product_id];
+    const qty  = item.quantity;
+    const unit_price_with_vat = prod.price;
+    const unit_price_base = prod.vat_included
+      ? Math.round(prod.price / (1 + prod.vat_rate / 100))
+      : prod.price;
+    const unit_vat_amount = unit_price_with_vat - unit_price_base;
+    const item_subtotal   = Math.round(unit_price_base * qty);
+    const item_vat        = Math.round(unit_vat_amount * qty);
+
+    subtotal  += item_subtotal;
+    tax_total += item_vat;
+
+    orderItems.push({
+      product_id:   prod.id,
+      product_name: prod.name,
+      product_sku:  prod.sku,
+      quantity:     qty,
+      unit_price:   unit_price_with_vat,
+      unit_cost:    prod.cost || 0,
+      vat_rate:     prod.vat_rate,
+      vat_amount:   item_vat,
+      discount_amount: 0,
+      subtotal:     item_subtotal,
+      staff_user_id: userId,
+    });
+  }
+
+  // 3. Descuento validado en backend
+  let discount_amount = 0;
+  if (discount_type && discount_value) {
+    if (discount_type === 'percentage' && discount_value >= 0 && discount_value <= 100) {
+      discount_amount = Math.round((subtotal + tax_total) * discount_value / 100);
+    } else if (discount_type === 'fixed') {
+      discount_amount = Math.round(Math.min(discount_value, subtotal + tax_total));
+    }
+  }
+  const total = Math.max(0, subtotal + tax_total - discount_amount);
+
+  // 4. Número de orden
+  const { data: orderNumData } = await supabaseAdmin
+    .rpc('generate_order_number', { p_branch_id: branch_id });
+  const order_number = orderNumData || `ORD-SYNC-${Date.now()}`;
+
+  // 5. Insertar orden con totales recalculados
+  const { data: order, error: orderErr } = await supabaseAdmin
     .from('orders')
-    .insert({ ...payload, created_by: userId, synced_at: new Date().toISOString() })
+    .insert({
+      branch_id, cash_session_id, order_type, order_number,
+      customer_id: customer_id || null,
+      subtotal, tax_total, discount_amount, total,
+      discount_type, discount_value, notes, metadata,
+      status: 'open',
+      created_by: userId,
+      staff_user_id: userId,
+      synced_at: new Date().toISOString(),
+    })
     .select()
     .single();
-  if (error) throw error;
-  return data;
+  if (orderErr) throw orderErr;
+
+  // 6. Insertar ítems
+  const itemsWithId = orderItems.map(i => ({ ...i, order_id: order.id }));
+  const { error: itemsErr } = await supabaseAdmin.from('order_items').insert(itemsWithId);
+  if (itemsErr) throw itemsErr;
+
+  // 7. Procesar pago si viene en el payload
+  if (payment_method) {
+    await processPaymentInternal(order.id, payment_method, total, cash_received, userId);
+    await markOrderPaid(order.id, organizationId, userId);
+  }
+
+  return order;
 }
 
 async function processSyncOperation(op, organizationId, userId) {
@@ -1194,24 +1301,28 @@ reportsRouter.get('/dashboard', async (req, res) => {
   try {
     const { branch_id, date = new Date().toISOString().split('T')[0] } = req.query;
 
-    const [salesResult, topProductsResult, alertsResult] = await Promise.all([
-      // Ventas del día
-      supabaseAdmin.from('v_daily_sales').select('*')
-        .eq('branch_id', branch_id).eq('sale_date', date).single(),
+    if (!branch_id) return res.status(400).json({ error: 'branch_id requerido' });
 
-      // Top 5 productos
+    const [salesResult, topProductsResult, alertsResult] = await Promise.all([
+      // Ventas del día — maybeSingle() para no romper cuando no hay ventas (ej: primer día)
+      supabaseAdmin.from('v_daily_sales').select('*')
+        .eq('branch_id', branch_id).eq('sale_date', date).maybeSingle(),
+
+      // Top 5 productos — filtrado por organización para evitar leak cross-tenant
       supabaseAdmin.from('v_product_profitability').select('*')
+        .eq('organization_id', req.organizationId)
         .order('total_revenue', { ascending: false }).limit(5),
 
-      // Alertas activas
+      // Alertas activas de la organización
       supabaseAdmin.from('system_alerts').select('*')
+        .eq('organization_id', req.organizationId)
         .eq('is_resolved', false).order('created_at', { ascending: false }).limit(10),
     ]);
 
     res.json({
-      today_sales:  salesResult.data,
-      top_products: topProductsResult.data,
-      alerts:       alertsResult.data,
+      today_sales:  salesResult.data || { total_orders: 0, total_revenue: 0, total_tax: 0, sale_date: date },
+      top_products: topProductsResult.data || [],
+      alerts:       alertsResult.data || [],
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

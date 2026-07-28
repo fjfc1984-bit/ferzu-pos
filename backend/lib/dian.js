@@ -62,6 +62,74 @@ const DIAN_SCHEMAS = {
   UBL:     'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2',
 };
 
+// =============================================================================
+// CÓDIGOS DIVIPOLA — Municipios Colombia (Fuente: DANE)
+// Mapa: nombre normalizado → código DIVIPOLA de 5 dígitos
+// Para casos no mapeados: configurar branches.city_code directamente en Supabase.
+// =============================================================================
+const DIVIPOLA_MAP = {
+  'bogota':           '11001', 'bogotá':           '11001',
+  'medellin':         '05001', 'medellín':         '05001',
+  'cali':             '76001',
+  'barranquilla':     '08001',
+  'cartagena':        '13001',
+  'bucaramanga':      '68001',
+  'pereira':          '66001',
+  'santa marta':      '47001',
+  'manizales':        '17001',
+  'ibague':           '73001', 'ibagué':           '73001',
+  'cucuta':           '54001', 'cúcuta':           '54001',
+  'villavicencio':    '50001',
+  'armenia':          '63001',
+  'monteria':         '23001', 'montería':         '23001',
+  'valledupar':       '20001',
+  'pasto':            '52001',
+  'neiva':            '41001',
+  'palmira':          '76520',
+  'buenaventura':     '76109',
+  'bello':            '05088',
+  'soledad':          '08758',
+  'soacha':           '25754',
+  'itagui':           '05360', 'itagüí':           '05360',
+  'floridablanca':    '68276',
+  'giron':            '68307', 'girón':            '68307',
+  'tulua':            '76834', 'tuluá':            '76834',
+  'barrancabermeja':  '68081',
+  'dosquebradas':     '66170',
+  'riohacha':         '44001',
+  'sincelejo':        '70001',
+  'popayan':          '19001', 'popayán':          '19001',
+  'tunja':            '15001',
+  'florencia':        '18001',
+  'mocoa':            '86001',
+  'quibdo':           '27001', 'quibdó':           '27001',
+  'yopal':            '85001',
+  'leticia':          '91001',
+  'mitu':             '97001', 'mitú':             '97001',
+  'puerto inirida':   '94001',
+  'san jose del guaviare': '95001',
+  'inirida':          '94001',
+};
+
+/**
+ * Resuelve el código DIVIPOLA de un municipio colombiano.
+ * Prioridad: 1) branch.city_code (configurado por el usuario) → 2) lookup por nombre → 3) warning + default
+ *
+ * @param {string|null} cityCode - Código DIVIPOLA configurado en branches.city_code
+ * @param {string} cityName - Nombre del municipio (branches.city)
+ * @returns {string} Código DIVIPOLA de 5 dígitos
+ */
+export function resolveCityCode(cityCode, cityName) {
+  if (cityCode) return cityCode;                          // Código explícito configurado
+  const normalized = (cityName || '').toLowerCase().trim();
+  if (DIVIPOLA_MAP[normalized]) return DIVIPOLA_MAP[normalized];
+  // Ciudad no mapeada: registrar advertencia y usar Bogotá como fallback seguro
+  console.warn(`[DIAN] Ciudad "${cityName}" no tiene código DIVIPOLA configurado. ` +
+    `Usando 11001 (Bogotá) como fallback. Configure branches.city_code en Supabase ` +
+    `para corregirlo. Ver: https://www.dane.gov.co/files/censo2005/divipola.xls`);
+  return '11001';
+}
+
 
 // =============================================================================
 // SECCIÓN 2: CÁLCULO DEL CUFE (Código Único de Factura Electrónica)
@@ -510,7 +578,7 @@ export async function triggerElectronicInvoice(orderId, organizationId) {
         regimeType:  org.tax_regime,
         address:     branch.address,
         city:        branch.city,
-        cityCode:    '11001',  // TODO: lookup from branch.city
+        cityCode:    resolveCityCode(branch.city_code, branch.city),
         department:  branch.department,
         email:       org.email,
       },

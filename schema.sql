@@ -75,6 +75,7 @@ CREATE TABLE branches (
   name              VARCHAR(255) NOT NULL,           -- "Sede Norte", "Local Centro"
   address           TEXT,
   city              VARCHAR(100),
+  city_code         VARCHAR(8),                      -- Código DIVIPOLA DANE (ej: '11001' Bogotá, '05001' Medellín)
   department        VARCHAR(100),                    -- Dpto Colombia
   phone             VARCHAR(20),
   is_active         BOOLEAN DEFAULT TRUE,
@@ -968,6 +969,7 @@ $$ LANGUAGE plpgsql;
 -- Vista: rentabilidad por producto (para reportes de IA)
 CREATE OR REPLACE VIEW v_product_profitability AS
 SELECT
+  p.organization_id,                                 -- REQUERIDO para filtro multi-tenant
   oi.product_id,
   p.name AS product_name,
   p.category_id,
@@ -985,7 +987,7 @@ FROM order_items oi
 JOIN products p ON p.id = oi.product_id
 LEFT JOIN categories cat ON cat.id = p.category_id
 JOIN orders o ON o.id = oi.order_id AND o.status = 'paid'
-GROUP BY oi.product_id, p.name, p.category_id, cat.name;
+GROUP BY p.organization_id, oi.product_id, p.name, p.category_id, cat.name;
 
 -- Vista: resumen de ventas por día (para análisis predictivo de IA)
 CREATE OR REPLACE VIEW v_daily_sales AS

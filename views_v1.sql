@@ -95,3 +95,31 @@ SELECT
 FROM orders o
 WHERE o.status = 'paid'
 GROUP BY o.branch_id, DATE_TRUNC('week', o.created_at AT TIME ZONE 'America/Bogota');
+
+
+-- ============================================================
+-- FUNCIÓN RPC: decrement_inventory
+-- Descuento atómico de stock — sin race condition.
+-- Usada por markOrderPaid() en server.js.
+-- La operación es: quantity = quantity - p_quantity (puede resultar negativo = sobrestock visible)
+-- ============================================================
+CREATE OR REPLACE FUNCTION decrement_inventory(
+  p_branch_id  UUID,
+  p_product_id UUID,
+  p_quantity   NUMERIC
+)
+RETURNS void
+LANGUAGE sql
+SECURITY DEFINER
+AS $$
+  UPDATE inventory
+  SET
+    quantity   = quantity - p_quantity,
+    updated_at = NOW()
+  WHERE
+    branch_id  = p_branch_id
+    AND product_id = p_product_id;
+$$;
+
+-- Conceder acceso al service role (usado por supabaseAdmin)
+GRANT EXECUTE ON FUNCTION decrement_inventory(UUID, UUID, NUMERIC) TO service_role;
