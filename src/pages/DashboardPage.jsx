@@ -654,18 +654,17 @@ export function useDashboard(branchId, organizationId, range) {
     setLoading(true);
     const { from, to } = dateRange(range);
 
-    try {
-      await Promise.all([
-        loadKPIs(from, to),
-        loadSalesChart(from, to),
-        loadHeatmap(from, to),
-        loadTopProducts(from, to),
-        loadStockAlerts(),
-        loadCashSession(),
-      ]);
-    } finally {
-      setLoading(false);
-    }
+    // Promise.allSettled garantiza que un fallo en una sub-query no rompe las demás.
+    // El dashboard muestra estados vacíos para la sección que falló.
+    await Promise.allSettled([
+      loadKPIs(from, to).catch(e => console.warn('[Dashboard] loadKPIs:', e.message)),
+      loadSalesChart(from, to).catch(e => console.warn('[Dashboard] loadSalesChart:', e.message)),
+      loadHeatmap(from, to).catch(e => console.warn('[Dashboard] loadHeatmap:', e.message)),
+      loadTopProducts(from, to).catch(e => console.warn('[Dashboard] loadTopProducts:', e.message)),
+      loadStockAlerts().catch(e => console.warn('[Dashboard] loadStockAlerts:', e.message)),
+      loadCashSession().catch(e => console.warn('[Dashboard] loadCashSession:', e.message)),
+    ]);
+    setLoading(false);
   }
 
   useEffect(() => { refresh(); }, [branchId, range]);
@@ -836,7 +835,7 @@ export function useDashboard(branchId, organizationId, range) {
       .eq('status', 'open')
       .order('opened_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();  // Bug fix: .single() lanza error cuando no hay caja abierta
 
     if (!data) { setCashSession(null); return; }
 

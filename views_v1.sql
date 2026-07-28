@@ -56,9 +56,11 @@ GROUP BY o.branch_id, DATE(o.created_at AT TIME ZONE 'America/Bogota');
 -- ============================================================
 -- VISTA: v_product_profitability
 -- Usada por GET /reports/dashboard (top productos)
+-- IMPORTANTE: incluye organization_id para filtro multi-tenant seguro
 -- ============================================================
 CREATE OR REPLACE VIEW v_product_profitability AS
 SELECT
+  p.organization_id,                                        -- filtro multi-tenant
   oi.product_id,
   oi.product_name,
   oi.product_sku,
@@ -77,9 +79,10 @@ SELECT
     ELSE 0
   END                                                       AS profit_margin_pct
 FROM order_items oi
-JOIN orders o ON o.id = oi.order_id
+JOIN orders o   ON o.id  = oi.order_id
+JOIN products p ON p.id  = oi.product_id
 WHERE o.status = 'paid'
-GROUP BY oi.product_id, oi.product_name, oi.product_sku, o.branch_id;
+GROUP BY p.organization_id, oi.product_id, oi.product_name, oi.product_sku, o.branch_id;
 
 -- ============================================================
 -- VISTA: v_weekly_sales (bonus — para el dashboard de tendencias)
