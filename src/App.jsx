@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, Component } from 'react'
 
 // --- Providers (orden importa: Auth → Plan → POS → Sync) ---
 import { AuthProvider, useAuth } from './context/AuthContext'
@@ -32,6 +32,46 @@ const MinimarketPage     = lazy(() => import('./pages/MinimarketPage'))
 const CustomersPage      = lazy(() => import('./pages/CustomersPage').then(m => ({ default: m.CustomersPage })))
 // CheckoutPage: tiene tanto named export como default export — usamos default
 const CheckoutPage       = lazy(() => import('./pages/CheckoutPage'))
+
+// ---------------------------------------------------------------------------
+// ErrorBoundary global — evita pantalla blanca en errores no capturados
+// ---------------------------------------------------------------------------
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary]', error, info)
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex h-screen flex-col items-center justify-center gap-5 bg-gray-50 px-6 text-center">
+          <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center text-3xl">⚠️</div>
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">Ocurrió un error inesperado</h2>
+            <p className="text-sm text-gray-500 mt-1">Recarga la página para continuar.</p>
+            {import.meta.env.DEV && (
+              <pre className="mt-3 text-xs text-red-600 text-left bg-red-50 rounded p-3 max-w-md overflow-auto">
+                {this.state.error?.toString()}
+              </pre>
+            )}
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-5 py-2 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700 transition-colors">
+            Recargar
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Fallback de carga mientras el chunk lazy se descarga
@@ -115,6 +155,7 @@ function POSShell() {
 // ---------------------------------------------------------------------------
 export default function App() {
   return (
+    <ErrorBoundary>
     <AuthProvider>
       <PlanProvider>
         <SyncProvider>
@@ -180,5 +221,6 @@ export default function App() {
         </SyncProvider>
       </PlanProvider>
     </AuthProvider>
+    </ErrorBoundary>
   )
 }

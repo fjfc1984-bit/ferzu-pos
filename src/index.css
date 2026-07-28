@@ -12,3 +12,30 @@
   .scrollbar-thin::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
   .focus-ring { @apply focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2; }
 }
+
+/* ── IMPRESIÓN: Recibo térmico 80mm ─────────────────────────────────────── */
+@media print {
+  /* Ocultar todo excepto el recibo */
+  body > *            { display: none !important; }
+  #print-receipt      { display: block !important; }
+
+  @page {
+    size: 80mm auto;
+    margin: 4mm 4mm;
+  }
+
+  #print-receipt {
+    width: 72mm;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: #000;
+    background: #fff;
+  }
+
+  #print-receipt .receipt-logo    { text-align: center; font-weight: bold; font-size: 14px; margin-bottom: 4px; }
+  #print-receipt .receipt-divider { border-top: 1px dashed #000; margin: 6px 0; }
+  #print-receipt .receipt-row     { display: flex; justify-content: space-between; margin: 2px 0; }
+  #print-receipt .receipt-total   { font-weight: bold; font-size: 13px; }
+  #print-receipt .receipt-change  { font-size: 15px; font-weight: bold; text-align: center; margin: 6px 0; }
+  #print-receipt .receipt-footer  { text-align: center; font-size: 10px; margin-top: 8px; }
+}

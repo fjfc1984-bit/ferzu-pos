@@ -113,6 +113,16 @@ export default function POSPage() {
 
         <div className="flex-1" />
 
+        {/* Cerrar caja — visible cuando hay sesión activa */}
+        {cashSession && (
+          <button
+            onClick={() => setShowCashModal(true)}
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-amber-500 hover:bg-amber-50 hover:text-amber-600 transition-all"
+            title="Cerrar caja">
+            <DollarSign size={17} />
+          </button>
+        )}
+
         {/* Estado de conexión */}
         <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
           isOnline ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'
@@ -716,7 +726,37 @@ function PaymentModal({ onClose }) {
   }
 
   function handleNewSale() {
+    clearOrder();
     onClose();
+  }
+
+  function handlePrint() {
+    // Inyectar div de recibo en el DOM para que @media print lo muestre
+    const existing = document.getElementById('print-receipt');
+    if (existing) existing.remove();
+
+    const lines = [];
+    if (customerName) lines.push(`<div class="receipt-row"><span>Cliente</span><span>${customerName}</span></div>`);
+    items.forEach(i => {
+      lines.push(`<div class="receipt-row"><span>${i.product_name} x${i.quantity}</span><span>$${(i.unit_price * i.quantity).toLocaleString('es-CO')}</span></div>`);
+    });
+
+    const div = document.createElement('div');
+    div.id = 'print-receipt';
+    div.style.display = 'none';
+    div.innerHTML = `
+      <div class="receipt-logo">FERZU POS</div>
+      <div class="receipt-divider"></div>
+      ${lines.join('')}
+      <div class="receipt-divider"></div>
+      <div class="receipt-row receipt-total"><span>TOTAL</span><span>$${totals.total.toLocaleString('es-CO')}</span></div>
+      ${finalChange > 0 ? `<div class="receipt-change">Vuelto: $${finalChange.toLocaleString('es-CO')}</div>` : ''}
+      <div class="receipt-divider"></div>
+      <div class="receipt-footer">¡Gracias por su compra!</div>
+    `;
+    document.body.appendChild(div);
+    window.print();
+    setTimeout(() => div.remove(), 2000);
   }
 
   // Genera texto de recibo para WhatsApp
@@ -804,7 +844,7 @@ function PaymentModal({ onClose }) {
 
             {/* Imprimir — usa window.print() con CSS de recibo */}
             <button
-              onClick={() => window.print()}
+              onClick={handlePrint}
               className="w-full h-10 border border-gray-200 text-gray-500 hover:bg-gray-50 font-medium rounded-xl flex items-center justify-center gap-2 text-sm transition-all">
               <Printer size={15} />
               Imprimir recibo
@@ -1138,10 +1178,12 @@ function DiscountModal({ onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function CashSessionModal({ onClose, branchId }) {
-  const { dispatch }       = usePOS();
+  const { cashSession, dispatch } = usePOS();
   const { user }           = useAuth();
   const [cash,    setCash] = useState('');
+  const [notes,   setNotes] = useState('');
   const [loading, setLoading] = useState(false);
+  const isOpen = !!cashSession;
 
   async function openSession() {
     if (!branchId) { toast.error('Selecciona una sucursal primero'); return; }
@@ -1159,6 +1201,80 @@ function CashSessionModal({ onClose, branchId }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function closeSession() {
+    if (!cashSession?.id) return;
+    setLoading(true);
+    try {
+      await cashAPI.close(cashSession.id, {
+        closing_cash: Number(cash) || 0,
+        notes,
+      });
+      dispatch({ type: 'SET_CASH_SESSION', payload: null });
+      toast.success('Caja cerrada correctamente');
+      onClose();
+    } catch (err) {
+      toast.error(err?.error || 'Error al cerrar caja');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Datos de resumen para el cierre
+  const openedAt  = cashSession?.opened_at ? new Date(cashSession.opened_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '';
+  const openingCash = cashSession?.opening_cash ?? 0;
+  const closingAmt  = Number(cash) || 0;
+  const expectedCash = openingCash + (cashSession?.total_cash ?? 0);
+  const difference   = closingAmt - expectedCash;
+
+  if (isOpen) {
+    return (
+      <Modal title="Cerrar caja" onClose={onClose}>
+        <div className="p-5 space-y-4">
+          {/* Resumen de sesión */}
+          <div className="bg-gray-50 rounded-2xl p-4 space-y-2 text-sm">
+            <div className="flex justify-between"><span className="text-gray-500">Cajero</span><span className="font-semibold">{user?.full_name}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Abierta a las</span><span className="font-semibold">{openedAt}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Efectivo inicial</span><span className="font-semibold">{formatCOP(openingCash)}</span></div>
+            <div className="h-px bg-gray-200 my-1" />
+            <div className="flex justify-between text-base font-bold"><span>Total ventas</span><span className="text-brand-700">{formatCOP(cashSession?.total_sales ?? 0)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Efectivo esperado</span><span className="font-semibold">{formatCOP(expectedCash)}</span></div>
+          </div>
+
+          {/* Efectivo contado */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-2 block">Efectivo contado en caja</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</span>
+              <input autoFocus type="number" value={cash} onChange={e => setCash(e.target.value)} placeholder="0"
+                className="w-full pl-7 pr-4 h-12 border-2 border-gray-200 focus:border-brand-400 rounded-xl text-xl font-bold text-right outline-none" />
+            </div>
+          </div>
+
+          {/* Diferencia */}
+          {closingAmt > 0 && (
+            <div className={`flex justify-between items-center px-4 py-3 rounded-xl text-sm font-bold border-2 ${
+              difference === 0 ? 'bg-green-50 border-green-200 text-green-700'
+              : difference > 0 ? 'bg-blue-50 border-blue-200 text-blue-700'
+              : 'bg-red-50 border-red-200 text-red-700'
+            }`}>
+              <span>{difference === 0 ? 'Sin descuadre ✓' : difference > 0 ? 'Sobrante' : 'Faltante'}</span>
+              <span>{formatCOP(Math.abs(difference))}</span>
+            </div>
+          )}
+
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Observaciones (opcional)"
+            rows={2} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none outline-none focus:border-brand-400" />
+
+          <button onClick={closeSession} disabled={loading || !cash}
+            className="w-full h-12 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all">
+            {loading ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+            {loading ? 'Cerrando...' : 'Cerrar caja'}
+          </button>
+        </div>
+      </Modal>
+    );
   }
 
   return (
