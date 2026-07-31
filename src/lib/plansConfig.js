@@ -243,7 +243,7 @@ export const MODULE_META = {
     key:         'dian',
     label:       'Facturación DIAN',
     icon:        '📋',
-    route:       '/dian-config',
+    route:       '/dian',
     description: 'Facturación electrónica, CUFE SHA-384, notas crédito',
     plans:       ['minimarket', 'pro', 'enterprise'],
   },

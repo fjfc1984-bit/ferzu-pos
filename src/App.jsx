@@ -32,6 +32,7 @@ const MinimarketPage     = lazy(() => import('./pages/MinimarketPage'))
 const CustomersPage      = lazy(() => import('./pages/CustomersPage').then(m => ({ default: m.CustomersPage })))
 // CheckoutPage: tiene tanto named export como default export — usamos default
 const CheckoutPage       = lazy(() => import('./pages/CheckoutPage'))
+const DianPage           = lazy(() => import('./pages/DianPage'))
 
 // ---------------------------------------------------------------------------
 // ErrorBoundary global — evita pantalla blanca en errores no capturados
@@ -208,6 +209,9 @@ export default function App() {
                   />
                   <Route path="/minimarket"
                     element={<ModuleGuard moduleKey="minimarket"><MinimarketPage /></ModuleGuard>}
+                  />
+                  <Route path="/dian"
+                    element={<ModuleGuard moduleKey="dian"><DianPage /></ModuleGuard>}
                   />
                   <Route path="/checkout" element={<CheckoutPage />} />
 
