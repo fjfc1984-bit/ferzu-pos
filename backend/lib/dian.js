@@ -478,8 +478,9 @@ function getPaymentMeansCode(method) {
 // y la organización tiene facturación electrónica activa
 // =============================================================================
 
-import { createClient } from '@supabase/supabase-js';
-import axios from 'axios';
+import { createClient }        from '@supabase/supabase-js';
+import axios                   from 'axios';
+import { preflightInvoiceCheck } from './dianAI.js';
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
@@ -567,6 +568,48 @@ export async function triggerElectronicInvoice(orderId, organizationId) {
         ? DIAN_ENVIRONMENTS.PRODUCTION
         : DIAN_ENVIRONMENTS.TEST,
     });
+
+    // ── 6b. Preflight IA — validar antes de generar XML ──────────────────────
+    const preflight = await preflightInvoiceCheck({
+      issuer: {
+        nit:        org.nit,
+        dv:         org.nit_dv,
+        name:       org.legal_name || org.name,
+        regimeType: org.tax_regime,
+      },
+      buyer,
+      resolution: {
+        number:    dianConfig.resolution_number,
+        prefix:    dianConfig.resolution_prefix,
+        from:      dianConfig.resolution_from,
+        to:        dianConfig.resolution_to,
+        endDate:   dianConfig.resolution_expires_at,
+      },
+      invoice:     { number: invoiceNumber },
+      items,
+      totals,
+      environment: dianConfig.environment === 'production'
+        ? DIAN_ENVIRONMENTS.PRODUCTION
+        : DIAN_ENVIRONMENTS.TEST,
+    });
+
+    // Errores fatales → no emitir
+    if (!preflight.isValid) {
+      await supabaseAdmin.from('system_alerts').insert({
+        organization_id: organizationId,
+        alert_type:      'dian_preflight_error',
+        severity:        'high',
+        title:           `Orden ${orderId}: factura bloqueada por validación IA`,
+        description:     preflight.errors.join(' | '),
+        data:            preflight,
+      });
+      return { success: false, blocked: true, errors: preflight.errors, warnings: preflight.warnings };
+    }
+
+    // Advertencias → loggear pero continuar
+    if (preflight.warnings.length > 0) {
+      console.warn(`[DIAN] Preflight warnings para orden ${orderId}:`, preflight.warnings);
+    }
 
     // ── 7. Generar XML UBL 2.1 ────────────────────────────────────────────────
     const xmlString = generateInvoiceXML({
@@ -761,11 +804,58 @@ async function sendToPTA(xmlString, invoiceNumber, dianConfig) {
   }
 }
 
-// Helper: Enviar factura por email
+// Helper: Enviar factura por email usando Resend
 async function sendInvoiceByEmail(email, name, pdfUrl, invoiceNumber, businessName) {
-  // Integrar con servicio de email (Resend, SendGrid, etc.)
-  // Por ahora, solo log
-  console.log(`📧 Enviar factura ${invoiceNumber} a ${email}`);
+  try {
+    const { Resend } = await import('resend');
+    const resend     = new Resend(process.env.RESEND_API_KEY);
+    const FROM       = process.env.RESEND_FROM_EMAIL || 'FERZU POS <noreply@ferzu.app>';
+
+    await resend.emails.send({
+      from:    FROM,
+      to:      email,
+      subject: `Tu factura electrónica ${invoiceNumber} — ${businessName}`,
+      html:    `
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f9fafb;margin:0;padding:24px">
+  <div style="max-width:540px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+    <div style="text-align:center;margin-bottom:24px">
+      <span style="font-size:28px;font-weight:800;color:#059669">FERZU</span>
+      <span style="font-size:14px;color:#6b7280;display:block;margin-top:4px">Factura Electrónica</span>
+    </div>
+    <p style="color:#1f2937;margin-bottom:16px">Hola <strong>${name}</strong>,</p>
+    <p style="color:#374151;margin-bottom:24px">
+      Tu factura electrónica <strong>${invoiceNumber}</strong> de <strong>${businessName}</strong>
+      ha sido emitida y validada por la DIAN exitosamente.
+    </p>
+    ${pdfUrl ? `
+    <div style="text-align:center;margin:24px 0">
+      <a href="${pdfUrl}" style="background:#059669;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block">
+        📄 Descargar Factura PDF
+      </a>
+    </div>
+    ` : ''}
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin-top:24px">
+      <p style="margin:0;font-size:13px;color:#065f46">
+        ✅ Esta factura está validada por la DIAN y tiene plena validez tributaria.
+        Puedes verificarla en <a href="https://catalogo-vpfe.dian.gov.co" style="color:#059669">catalogo-vpfe.dian.gov.co</a>
+      </p>
+    </div>
+    <p style="font-size:12px;color:#9ca3af;margin-top:24px;text-align:center">
+      ${businessName} · Factura emitida con FERZU POS
+    </p>
+  </div>
+</body>
+</html>`,
+    });
+
+    console.log(`[DIAN] ✅ Factura ${invoiceNumber} enviada a ${email}`);
+  } catch (emailErr) {
+    // El error de email NO debe bloquear la factura
+    console.error(`[DIAN] ⚠️ Error enviando factura ${invoiceNumber} por email (no crítico):`, emailErr.message);
+  }
 }
 
 // Función SQL para obtener siguiente número de factura (atómica)
