@@ -34,7 +34,8 @@ import { es } from 'date-fns/locale';
 
 export default function BarbershopPage() {
   const { organizationId, user }  = useAuth();
-  const [branchId]                = useState(user?.user_branches?.[0]?.branch_id);
+  // Computed, no useState — se actualiza cuando user carga de forma async
+  const branchId = user?.user_branches?.[0]?.branch_id || localStorage.getItem('ferzu_branch_id');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showNewAppt,  setShowNewAppt]  = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null); // {date, time, staffId}
@@ -118,9 +119,9 @@ export default function BarbershopPage() {
         {/* Stats del día */}
         <div className="p-3 border-t border-gray-100 space-y-2">
           {[
-            { label: 'Citas hoy',   value: appointments.filter(a => isSameDay(parseISO(a.start_at), new Date())).length, icon: Calendar },
-            { label: 'En espera',   value: waitingList.filter(w => w.status === 'arrived').length, icon: Timer },
-            { label: 'Completadas', value: appointments.filter(a => isSameDay(parseISO(a.start_at), new Date()) && a.status === 'completed').length, icon: CheckCircle2 },
+            { label: 'Citas del día',  value: appointments.filter(a => isSameDay(parseISO(a.start_at), selectedDate)).length, icon: Calendar },
+            { label: 'En espera',    value: waitingList.filter(w => w.status === 'arrived').length, icon: Timer },
+            { label: 'Completadas',  value: appointments.filter(a => isSameDay(parseISO(a.start_at), selectedDate) && a.status === 'completed').length, icon: CheckCircle2 },
           ].map(({ label, value, icon: Icon }) => (
             <div key={label} className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -906,8 +907,8 @@ export function useAppointments(branchId, date) {
         users!staff_user_id(id, full_name)
       `)
       .eq('branch_id', branchId)
-      .gte('start_at', `${startStr}T00:00:00`)
-      .lte('start_at', `${endStr}T23:59:59`)
+      .gte('start_at', `${startStr}T00:00:00-05:00`)
+      .lte('start_at', `${endStr}T23:59:59-05:00`)
       .order('start_at');
 
     if (!error) setAppointments(data || []);
