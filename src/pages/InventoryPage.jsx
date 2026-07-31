@@ -22,10 +22,11 @@ import {
   Loader2, ChevronRight, ToggleLeft, ToggleRight, QrCode,
   SlidersHorizontal, Layers
 } from 'lucide-react';
-import { supabase }  from '../lib/supabase.js';
-import { useAuth }   from '../context/AuthContext.jsx';
-import { formatCOP } from '../lib/math.js';
-import toast         from 'react-hot-toast';
+import { supabase }      from '../lib/supabase.js';
+import { useAuth }       from '../context/AuthContext.jsx';
+import { formatCOP }     from '../lib/math.js';
+import toast             from 'react-hot-toast';
+import VATClassifier, { RATE_LABELS } from '../components/dian/VATClassifier.jsx';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -352,18 +353,19 @@ function ProductList({ organizationId, branchId }) {
 function ProductForm({ product, organizationId, branchId, categories, onClose, onSaved }) {
   const isEdit = !!product;
   const [form, setForm] = useState({
-    name:        product?.name        || '',
-    sku:         product?.sku         || '',
-    barcode:     product?.barcode     || '',
-    price:       product?.price?.toString() || '',
-    cost:        product?.cost?.toString()  || '',
-    category_id: product?.category_id || '',
-    emoji:       product?.emoji       || '📦',
-    item_type:   product?.item_type   || 'product',
-    taxes_included: product?.taxes_included ?? true,
-    min_stock:   product?.min_stock?.toString() || '5',
+    name:         product?.name         || '',
+    sku:          product?.sku          || '',
+    barcode:      product?.barcode      || '',
+    price:        product?.price?.toString()     || '',
+    cost:         product?.cost?.toString()      || '',
+    category_id:  product?.category_id  || '',
+    emoji:        product?.emoji        || '📦',
+    item_type:    product?.item_type    || 'product',
+    vat_rate:     (product?.vat_rate != null ? String(product.vat_rate) : '0'), // 0|5|8|19
+    vat_included: product?.vat_included ?? true,             // precio ya incluye IVA
+    min_stock:    product?.min_stock?.toString() || '5',
     initial_stock: '0',
-    description: product?.description || '',
+    description:  product?.description  || '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -386,7 +388,8 @@ function ProductForm({ product, organizationId, branchId, categories, onClose, o
         category_id:     form.category_id || null,
         emoji:           form.emoji,
         item_type:       form.item_type,
-        taxes_included:  form.taxes_included,
+        vat_rate:        parseFloat(form.vat_rate) || 0,    // columna real en DB
+        vat_included:    form.vat_included,                  // columna real en DB
         description:     form.description || null,
         is_active:       true,
       };
@@ -500,12 +503,48 @@ function ProductForm({ product, organizationId, branchId, categories, onClose, o
             <FField label="Costo unitario (COP)" value={form.cost} onChange={v => update('cost', v)} type="number" placeholder="2500" />
           </div>
 
-          {/* IVA incluido */}
+          {/* Tarifa de IVA */}
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1.5 block">
+              Tarifa IVA (DIAN)
+            </label>
+            <div className="flex gap-2 flex-wrap mb-2">
+              {Object.entries(RATE_LABELS).map(([rate, label]) => (
+                <button
+                  key={rate}
+                  type="button"
+                  onClick={() => update('vat_rate', rate)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${
+                    form.vat_rate === rate
+                      ? 'bg-brand-600 text-white border-brand-600'
+                      : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-brand-200'
+                  }`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {/* Clasificador IA */}
+            <VATClassifier
+              productName={form.name}
+              productCategory={categories.find(c => c.id === form.category_id)?.name}
+              productDescription={form.description}
+              currentRate={Number(form.vat_rate)}
+              onAccepted={rate => update('vat_rate', String(rate))}
+              disabled={saving}
+            />
+          </div>
+
+          {/* IVA incluido en el precio */}
           <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={form.taxes_included}
-              onChange={e => update('taxes_included', e.target.checked)}
-              className="rounded accent-brand-600" />
-            <span className="text-sm text-gray-600">Precio incluye IVA 19%</span>
+            <input
+              type="checkbox"
+              checked={form.vat_included}
+              onChange={e => update('vat_included', e.target.checked)}
+              className="rounded accent-brand-600"
+            />
+            <span className="text-sm text-gray-600">
+              El precio de venta ya incluye el IVA
+            </span>
           </label>
 
           {/* Categoría */}
