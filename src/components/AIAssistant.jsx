@@ -119,7 +119,7 @@ export function AIAssistant() {
         branch_id:            branchId || undefined,
         conversation_history: history,
         page_context:         pathname,
-      })
+      }, { timeout: 60000 }) // IA puede tardar hasta 60s
       setMessages(prev => [...prev, { role: 'assistant', content: data.text }])
       if (!open) setHasNew(true)
     } catch (err) {
