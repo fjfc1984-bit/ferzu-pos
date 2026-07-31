@@ -799,28 +799,151 @@ async function executeApprovedProposal(proposalId, userId, context) {
 async function queryBusinessData(queryInput, context) {
   const { supabase } = context;
   const { query_type, filters = {} } = queryInput;
+  const orgId    = context.organization_id;
+  const branchId = filters.branch_id || context.branch_id;
+  const lim      = filters.limit || 30;
 
-  // Map query_type → vista de PostgreSQL
-  const viewMap = {
-    daily_sales: 'v_daily_sales',
-    product_profitability: 'v_product_profitability',
-    inventory_status: 'v_inventory_status',
-  };
+  // Fechas por defecto: últimos 7 días
+  const today    = new Date().toISOString().split('T')[0];
+  const week_ago = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const dateFrom = filters.date_from || week_ago;
+  const dateTo   = filters.date_to   || today;
 
-  const view = viewMap[query_type];
-  if (!view) return { error: `Tipo de consulta no soportado: ${query_type}` };
+  switch (query_type) {
 
-  let query = supabase.from(view).select('*');
+    // ── Ventas diarias (vista v_daily_sales) ─────────────────────────────
+    case 'daily_sales': {
+      let q = supabase.from('v_daily_sales').select('*');
+      if (orgId)    q = q.eq('organization_id', orgId);
+      if (branchId) q = q.eq('branch_id', branchId);
+      q = q.gte('sale_date', dateFrom).lte('sale_date', dateTo)
+           .order('sale_date', { ascending: false }).limit(lim);
+      const { data, error } = await q;
+      if (error) {
+        // Fallback: consultar orders directamente si la vista no existe
+        let q2 = supabase
+          .from('orders')
+          .select('id, total, created_at, payment_method, status')
+          .eq('status', 'completed')
+          .gte('created_at', `${dateFrom}T00:00:00-05:00`)
+          .lte('created_at', `${dateTo}T23:59:59-05:00`);
+        if (branchId) q2 = q2.eq('branch_id', branchId);
+        const { data: orders, error: e2 } = await q2.order('created_at', { ascending: false }).limit(200);
+        if (e2) return { error: e2.message };
+        // Agrupar por día
+        const byDay = {};
+        for (const o of orders || []) {
+          const day = o.created_at.split('T')[0];
+          if (!byDay[day]) byDay[day] = { sale_date: day, total_sales: 0, order_count: 0, avg_ticket: 0 };
+          byDay[day].total_sales += o.total;
+          byDay[day].order_count++;
+        }
+        for (const d of Object.values(byDay)) d.avg_ticket = Math.round(d.total_sales / d.order_count);
+        const rows = Object.values(byDay).sort((a, b) => b.sale_date.localeCompare(a.sale_date));
+        return { data: rows, count: rows.length, query_type, source: 'orders_fallback' };
+      }
+      return { data, count: data?.length, query_type };
+    }
 
-  if (filters.branch_id)  query = query.eq('branch_id', filters.branch_id);
-  if (filters.date_from)  query = query.gte('sale_date', filters.date_from);
-  if (filters.date_to)    query = query.lte('sale_date', filters.date_to);
-  if (filters.limit)      query = query.limit(filters.limit);
+    // ── Productos más vendidos ────────────────────────────────────────────
+    case 'top_products': {
+      let q = supabase
+        .from('order_items')
+        .select('product_id, quantity, subtotal, products(name), orders!inner(created_at, status, branch_id)')
+        .eq('orders.status', 'completed')
+        .gte('orders.created_at', `${dateFrom}T00:00:00-05:00`)
+        .lte('orders.created_at', `${dateTo}T23:59:59-05:00`);
+      if (branchId) q = q.eq('orders.branch_id', branchId);
+      const { data, error } = await q;
+      if (error) return { error: error.message };
+      const map = {};
+      for (const item of data || []) {
+        const pid = item.product_id;
+        if (!map[pid]) map[pid] = { product_id: pid, name: item.products?.name, units_sold: 0, revenue: 0 };
+        map[pid].units_sold += item.quantity;
+        map[pid].revenue    += item.subtotal;
+      }
+      const rows = Object.values(map).sort((a, b) => b.revenue - a.revenue).slice(0, lim);
+      return { data: rows, count: rows.length, query_type };
+    }
 
-  const { data, error } = await query;
-  if (error) return { error: error.message };
+    // ── Rentabilidad por producto ─────────────────────────────────────────
+    case 'product_profitability': {
+      let q = supabase.from('v_product_profitability').select('*').eq('organization_id', orgId);
+      if (filters.category_id) q = q.eq('category_id', filters.category_id);
+      q = q.order('profit_margin', { ascending: false }).limit(lim);
+      const { data, error } = await q;
+      if (error) return { error: error.message };
+      return { data, count: data?.length, query_type };
+    }
 
-  return { data, count: data?.length, query_type };
+    // ── Estado del inventario ─────────────────────────────────────────────
+    case 'inventory_status': {
+      let q = supabase.from('v_inventory_status').select('*').eq('organization_id', orgId);
+      if (branchId) q = q.eq('branch_id', branchId);
+      q = q.limit(lim);
+      const { data, error } = await q;
+      if (error) return { error: error.message };
+      return { data, count: data?.length, query_type };
+    }
+
+    // ── Mix de métodos de pago ────────────────────────────────────────────
+    case 'payment_methods': {
+      let q = supabase.from('orders')
+        .select('payment_method, total')
+        .eq('status', 'completed')
+        .gte('created_at', `${dateFrom}T00:00:00-05:00`)
+        .lte('created_at', `${dateTo}T23:59:59-05:00`);
+      if (branchId) q = q.eq('branch_id', branchId);
+      const { data, error } = await q;
+      if (error) return { error: error.message };
+      const map = {};
+      for (const o of data || []) {
+        const m = o.payment_method || 'efectivo';
+        if (!map[m]) map[m] = { method: m, count: 0, total: 0 };
+        map[m].count++;
+        map[m].total += o.total;
+      }
+      return { data: Object.values(map), count: Object.keys(map).length, query_type };
+    }
+
+    // ── Ranking de clientes ───────────────────────────────────────────────
+    case 'customer_ranking': {
+      let q = supabase.from('customers')
+        .select('id, first_name, last_name, total_spent, visit_count, last_visit_at, loyalty_points')
+        .eq('organization_id', orgId)
+        .order('total_spent', { ascending: false })
+        .limit(lim);
+      const { data, error } = await q;
+      if (error) return { error: error.message };
+      return { data, count: data?.length, query_type };
+    }
+
+    // ── Resumen sesión de caja ────────────────────────────────────────────
+    case 'cash_session_summary': {
+      let q = supabase.from('cash_sessions').select('*')
+        .order('opened_at', { ascending: false }).limit(5);
+      if (branchId) q = q.eq('branch_id', branchId);
+      const { data, error } = await q;
+      if (error) return { error: error.message };
+      return { data, count: data?.length, query_type };
+    }
+
+    // ── Propuestas IA pendientes ──────────────────────────────────────────
+    case 'pending_ai_proposals': {
+      let q = supabase.from('ai_proposals').select('*')
+        .eq('status', 'pending')
+        .eq('organization_id', orgId)
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false }).limit(10);
+      const { data, error } = await q;
+      if (error) return { error: error.message };
+      return { data, count: data?.length, query_type };
+    }
+
+    default:
+      return { error: `Tipo de consulta no soportado: ${query_type}` };
+  }
 }
 
 async function handleAnomalyDetection(aiOutput, context) {
