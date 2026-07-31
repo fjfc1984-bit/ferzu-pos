@@ -379,12 +379,11 @@ Responde SOLO con JSON (sin texto adicional):
  * @returns {Promise<{regime, responsability, needsElectronicInvoicing, explanation, nextSteps}>}
  */
 export async function suggestTaxRegime({ businessType, estimatedAnnualRevenue, hasEmployees }) {
-  // Límite para Régimen Simple 2024: 80.000 UVT × $47.065 UVT = ~$3.765M COP
-  const UVT_2024      = 47065;
-  const SIMPLE_LIMIT  = 80000 * UVT_2024; // ~$3.765B COP
-
-  // Umbral facturación electrónica obligatoria: prácticamente todos desde 2022
-  const FE_THRESHOLD = 0; // Todos los responsables de IVA deben usar FE
+  // UVT 2025: $49.799 COP (Resolución DIAN 0187/2024)
+  // UVT 2024: $47.065 COP (referencia)
+  const UVT_2025     = 49799;
+  const SIMPLE_LIMIT = 80000 * UVT_2025; // ~$3.984B COP (tope Régimen Simple 2025)
+  const NO_IVA_LIMIT =  3500 * UVT_2025; // ~$174M COP (tope No Responsable IVA 2025)
 
   const response = await anthropic.messages.create({
     model:     MODELS.FAST,
@@ -397,13 +396,15 @@ DATOS DEL NEGOCIO:
 - Tipo: ${businessType}
 - Ingresos anuales estimados: ${new Intl.NumberFormat('es-CO', {style:'currency',currency:'COP',maximumFractionDigits:0}).format(estimatedAnnualRevenue)}
 - Tiene empleados: ${hasEmployees ? 'Sí' : 'No'}
-- Límite Régimen Simple 2024: ${new Intl.NumberFormat('es-CO', {style:'currency',currency:'COP',maximumFractionDigits:0}).format(SIMPLE_LIMIT)}
+- UVT 2025: $49.799 COP (Resolución DIAN 0187/2024)
+- Tope No Responsable IVA 2025: ${new Intl.NumberFormat('es-CO', {style:'currency',currency:'COP',maximumFractionDigits:0}).format(NO_IVA_LIMIT)} (3.500 UVT)
+- Tope Régimen Simple 2025: ${new Intl.NumberFormat('es-CO', {style:'currency',currency:'COP',maximumFractionDigits:0}).format(SIMPLE_LIMIT)} (80.000 UVT)
 
-CONTEXTO TRIBUTARIO COLOMBIA 2024:
-- No Responsable de IVA (antes simplificado): ingresos < 3.500 UVT (~$164M/año), <= 1 establecimiento, <= 1 empleado, no obligado a llevar contabilidad
-- Responsable de IVA (régimen común): debe declarar IVA, expedir facturas electrónicas, llevar contabilidad
-- Régimen Simple de Tributación (SIMPLE): alternativa al régimen ordinario, paga tarifa unificada, requiere FE
-- Facturación electrónica: OBLIGATORIA para todos los responsables de IVA desde 2022
+CONTEXTO TRIBUTARIO COLOMBIA 2025:
+- No Responsable de IVA: ingresos < 3.500 UVT/año, máx 1 establecimiento, máx 1 empleado, no obligado contabilidad
+- Responsable de IVA (régimen ordinario): debe declarar IVA bimestral, expedir FE, llevar contabilidad
+- Régimen Simple de Tributación (SIMPLE): tarifa unificada, requiere FE, puede ser ventajoso para pequeños negocios
+- Facturación electrónica: OBLIGATORIA para todos los responsables de IVA desde 2022 (incluyendo SIMPLE)
 
 Responde SOLO con JSON:
 {
@@ -468,21 +469,26 @@ export async function batchClassifyVAT(products) {
 
 /**
  * Valida el dígito verificador de un NIT colombiano.
- * Algoritmo oficial DIAN.
- * @param {string|number} nit - NIT sin dígito verificador
+ * Algoritmo oficial DIAN (Resolución 0042/2020, Sección 2.2).
+ *
+ * Los factores se aplican de DERECHA a IZQUIERDA sobre los dígitos antes del DV:
+ *   posición más a la derecha × 3, siguiente × 7, siguiente × 13 ... hasta × 71
+ *
+ * @param {string|number} nitWithDV - NIT completo incluyendo dígito verificador al final
  * @returns {boolean}
  */
 export function validateNIT(nitWithDV) {
   const nitStr = String(nitWithDV).replace(/[^0-9]/g, '');
   if (nitStr.length < 8) return false;
 
-  const primes   = [71, 67, 59, 53, 47, 43, 41, 37, 29, 23, 19, 17, 13, 7, 3];
+  // Factores DIAN: de derecha a izquierda → 3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71
+  const primes   = [3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71];
   const digits   = nitStr.split('').map(Number);
-  const dv       = digits.pop();
-  const reversed = digits.reverse();
+  const dv       = digits.pop();           // Último dígito = DV
+  const reversed = digits.reverse();       // Ahora el dígito más a la derecha está en índice 0
 
   let sum = 0;
-  reversed.forEach((d, i) => { sum += d * primes[i]; });
+  reversed.forEach((d, i) => { if (primes[i]) sum += d * primes[i]; });
 
   const remainder = sum % 11;
   const expected  = remainder < 2 ? remainder : 11 - remainder;
@@ -492,11 +498,13 @@ export function validateNIT(nitWithDV) {
 
 /**
  * Calcula el dígito verificador de un NIT.
- * @param {string|number} nit - NIT sin dígito verificador
+ * Algoritmo oficial DIAN — mismo que validateNIT pero sin el DV en el input.
+ * @param {string|number} nit - NIT SIN dígito verificador
  * @returns {number} Dígito verificador 0-9
  */
 export function calculateNITDV(nit) {
-  const primes  = [71, 67, 59, 53, 47, 43, 41, 37, 29, 23, 19, 17, 13, 7, 3];
+  // Factores DIAN: de derecha a izquierda → 3, 7, 13 ...
+  const primes  = [3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71];
   const digits  = String(nit).replace(/[^0-9]/g, '').split('').map(Number).reverse();
 
   let sum = 0;

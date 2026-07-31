@@ -15,6 +15,7 @@
 
 import { Router }            from 'express';
 import { createClient }      from '@supabase/supabase-js';
+import { aiRateLimit }       from '../config/rateLimits.js';
 import {
   classifyProductVAT,
   batchClassifyVAT,
@@ -38,6 +39,10 @@ function requireOrg(req, res, next) {
   next();
 }
 
+
+// Aplicar aiRateLimit a todos los endpoints que llaman a la IA
+// (10 req/min por IP — protege el costo de tokens Anthropic)
+router.use(['/classify-vat', '/batch-classify', '/preflight', '/explain-error', '/suggest-regime'], aiRateLimit);
 
 // =============================================================================
 // POST /api/dian/classify-vat
