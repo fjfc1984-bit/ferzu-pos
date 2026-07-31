@@ -90,9 +90,8 @@ router.get('/insights', async (req, res) => {
 
     let salesQuery = req.supabase
       .from('order_items')
-      .select('product_id, quantity, orders!inner(created_at, status, branch_id, organization_id)')
+      .select('product_id, quantity, orders!inner(created_at, status, branch_id)')
       .eq('orders.status', 'completed')
-      .eq('orders.organization_id', organizationId)   // defensa en profundidad: no cruzar tenants
       .gte('orders.created_at', since);
 
     if (branch_id) {
