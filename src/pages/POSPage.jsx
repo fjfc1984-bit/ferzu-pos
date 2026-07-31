@@ -19,6 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import {
   ShoppingCart, Search, Zap, User, ChevronDown,
   Package, BarChart3, LogOut, Wifi, WifiOff,
@@ -87,7 +88,7 @@ export default function POSPage() {
           { icon: Package,      label: 'Inventario',  active: false, href: '/inventory' },
           { icon: BarChart3,    label: 'Dashboard',   active: false, href: '/dashboard' },
         ].map(({ icon: Icon, label, active, href }) => (
-          <a key={label} href={href}
+          <Link key={label} to={href}
             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
               active
                 ? 'bg-brand-50 text-brand-700 shadow-sm ring-1 ring-brand-100'
@@ -95,7 +96,7 @@ export default function POSPage() {
             }`}
             title={label}>
             <Icon size={19} />
-          </a>
+          </Link>
         ))}
 
         {/* Botón IA con badge */}
@@ -224,12 +225,12 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
   const searchRef                  = useRef(null);
   const barcodeBuffer              = useRef('');
   const barcodeTimer               = useRef(null);
+  const isFirstLoad                = useRef(true);
 
-  // Cargar categorías
+  // Cargar categorías solo cuando cambia la sucursal
   useEffect(() => {
     loadCategories();
-    loadProducts();
-  }, [branchId, activeCategory]);
+  }, [branchId]);
 
   // Auto-focus en search
   useEffect(() => {
@@ -288,11 +289,16 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
     }
   }
 
-  // Debounce search
+  // Carga de productos: inmediata en mount, debounced al cambiar filtros
   useEffect(() => {
+    if (isFirstLoad.current) {
+      isFirstLoad.current = false;
+      loadProducts();
+      return;
+    }
     const timer = setTimeout(loadProducts, 300);
     return () => clearTimeout(timer);
-  }, [search, activeCategory]);
+  }, [search, activeCategory, branchId]);
 
   function handleBarcodeScanned(barcode) {
     const product = products.find(p => p.barcode === barcode || p.sku === barcode);
@@ -407,7 +413,9 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
         ) : products.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
             <Package size={40} className="mb-3 opacity-40" />
-            <p className="text-sm">Sin resultados para "{search}"</p>
+            <p className="text-sm">
+              {search ? `Sin resultados para "${search}"` : 'Sin productos disponibles'}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
@@ -690,7 +698,7 @@ function PaymentModal({ onClose }) {
   const total        = totals.total;
   const cashAmt      = Number(cashReceived) || 0;
   const change       = method === 'cash' ? Math.max(0, cashAmt - total) : 0;
-  const cashSufficient = method !== 'cash' || cashAmt >= total;
+  const cashSufficient = method !== 'cash' || (cashAmt >= total && cashAmt >= 0);
 
   // Auto-focus en el input de efectivo
   useEffect(() => {
@@ -716,6 +724,10 @@ function PaymentModal({ onClose }) {
   };
 
   async function handleConfirm() {
+    if (method === 'cash' && cashAmt < 0) {
+      toast.error('El monto recibido no puede ser negativo');
+      return;
+    }
     try {
       const order = await processPayment(method, method === 'cash' ? cashAmt : total);
       // Guardar el vuelto ANTES de que el estado cambie
@@ -896,6 +908,7 @@ function PaymentModal({ onClose }) {
               <input
                 ref={cashInputRef}
                 type="number"
+                min="0"
                 value={cashReceived}
                 onChange={e => setCashReceived(e.target.value)}
                 onFocus={e => e.target.select()}
@@ -1024,7 +1037,9 @@ function CustomerSearch({ onClose, organizationId }) {
           {!loading && query.length >= 2 && results.length === 0 && (
             <div className="text-center py-6">
               <p className="text-sm text-gray-400 mb-3">No se encontró el cliente</p>
-              <button className="text-sm text-brand-600 hover:underline">
+              <button
+                onClick={() => toast('Creación de clientes disponible en módulo Clientes', { icon: '👥' })}
+                className="text-sm text-brand-600 hover:underline">
                 + Crear nuevo cliente
               </button>
             </div>
@@ -1054,12 +1069,21 @@ function DiscountModal({ onClose }) {
   function handleApply() {
     const numVal = Number(value);
     if (!numVal || numVal <= 0) { toast.error('Ingresa un valor de descuento'); return; }
-    if (type === 'percentage' && numVal > maxDiscount) {
-      if (!isAdmin) {
+
+    // Descuento sobre el límite del cajero → requiere PIN de gerencia
+    if (type === 'percentage' && numVal > maxDiscount && !isAdmin) {
+      if (!needPin) {
         setNeedPin(true);
         return;
       }
+      // Ya se solicitó el PIN — validar que fue ingresado (mínimo 4 dígitos)
+      if (!pin || pin.length < 4) {
+        toast.error('Ingresa el PIN de gerencia (mínimo 4 dígitos)');
+        return;
+      }
+      // En producción: validar PIN contra backend. Por ahora se acepta si tiene ≥4 dígitos.
     }
+
     if (!reason.trim()) { toast.error('Indica el motivo del descuento'); return; }
 
     setDiscount({ type: type === 'percentage' ? 'pct' : 'fixed', value: numVal, reason });
@@ -1267,7 +1291,7 @@ function CashSessionModal({ onClose, branchId }) {
           <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Observaciones (opcional)"
             rows={2} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none outline-none focus:border-brand-400" />
 
-          <button onClick={closeSession} disabled={loading || !cash}
+          <button onClick={closeSession} disabled={loading}
             className="w-full h-12 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all">
             {loading ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
             {loading ? 'Cerrando...' : 'Cerrar caja'}
