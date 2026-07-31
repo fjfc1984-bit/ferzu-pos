@@ -784,7 +784,8 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
       .gte('created_at', from)
       .lte('created_at', to);
 
-    if (!orders) return;
+    // null = error RLS o branch sin datos → tratar como día sin ventas (no mostrar panel de error)
+    const safeOrders = orders ?? [];
 
     // Período anterior para comparar (mismo rango hacia atrás)
     const rangeMs = new Date(to) - new Date(from);
@@ -800,16 +801,16 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
 
     // BACKEND calcula totales (nunca el cliente para reportes críticos)
     // Aquí es OK para visualización — el backend recalcula para DIAN
-    const totalSales  = orders.reduce((s, o) => s + o.total, 0);
-    const totalCost   = orders.reduce((s, o) => s + (o.cost_total || 0), 0);
-    const totalOrders = orders.length;
+    const totalSales  = safeOrders.reduce((s, o) => s + o.total, 0);
+    const totalCost   = safeOrders.reduce((s, o) => s + (o.cost_total || 0), 0);
+    const totalOrders = safeOrders.length;
     const avgTicket   = totalOrders > 0 ? Math.round(totalSales / totalOrders) : 0;
     const marginPct   = totalSales > 0 ? Math.round(((totalSales - totalCost) / totalSales) * 100) : 0;
 
-    const prevSales  = (prevOrders || []).reduce((s, o) => s + o.total, 0);
+    const prevSales  = (prevOrders ?? []).reduce((s, o) => s + o.total, 0);
     const prevCount  = prevOrders?.length || 0;
 
-    const newCustIds = new Set(orders.filter(o => o.customer_id).map(o => o.customer_id));
+    const newCustIds = new Set(safeOrders.filter(o => o.customer_id).map(o => o.customer_id));
 
     setKpis({
       totalSales,

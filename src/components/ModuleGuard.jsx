@@ -552,8 +552,26 @@ function BranchSwitcher({ isAdmin }) {
   const [branches, setBranches] = useState([]);
   const [loading,  setLoading]  = useState(false);
 
-  const currentName = localStorage.getItem('ferzu_branch_name') || 'Sucursal';
-  const currentId   = localStorage.getItem('ferzu_branch_id');
+  const [currentName, setCurrentName] = useState(
+    localStorage.getItem('ferzu_branch_name') || ''
+  );
+  const currentId = localStorage.getItem('ferzu_branch_id');
+
+  // Auto-cargar nombre si branch_id existe pero branch_name no está guardado
+  useEffect(() => {
+    if (currentName || !currentId) return;
+    supabase
+      .from('branches')
+      .select('name')
+      .eq('id', currentId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.name) {
+          localStorage.setItem('ferzu_branch_name', data.name);
+          setCurrentName(data.name);
+        }
+      });
+  }, [currentId]);
 
   async function loadBranches() {
     if (branches.length > 0) { setOpen(o => !o); return; }
@@ -587,7 +605,7 @@ function BranchSwitcher({ isAdmin }) {
       <div className="px-4 pt-1 pb-2 border-b border-white/10">
         <div className="flex items-center gap-1.5">
           <Building2 size={11} className="text-white/30 shrink-0" />
-          <span className="text-[10px] text-white/40 truncate">{currentName}</span>
+          <span className="text-[10px] text-white/40 truncate">{currentName || 'Sucursal'}</span>
         </div>
       </div>
     );
@@ -600,7 +618,7 @@ function BranchSwitcher({ isAdmin }) {
         className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors group">
         <Building2 size={12} className="text-white/40 shrink-0" />
         <span className="flex-1 text-left text-[11px] text-white/60 group-hover:text-white/90 truncate font-medium">
-          {currentName}
+          {currentName || 'Sucursal'}
         </span>
         {loading
           ? <RefreshCw size={10} className="text-white/30 animate-spin shrink-0" />
