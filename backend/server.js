@@ -19,6 +19,11 @@ import { initSentry, sentryRequestHandler, sentryErrorHandler } from './lib/sent
 const app = express();
 initSentry(app);
 
+// Railway (y cualquier proxy) pone el IP real en X-Forwarded-For.
+// Sin esto, express-rate-limit lanza ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
+// y bloquea TODOS los endpoints de IA con un error 500/timeout.
+app.set('trust proxy', 1);
+
 // ── Config / shared singletons ─────────────────────────────────────────────────
 import logger              from './config/logger.js';
 import { generalRateLimit } from './config/rateLimits.js';
