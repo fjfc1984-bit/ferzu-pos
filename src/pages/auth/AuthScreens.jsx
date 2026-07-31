@@ -1129,9 +1129,15 @@ export function AuthProvider({ children }) {
     if (data) {
       setUser(data);
       setOrganizationId(data.organization_id);
-      // Restaurar branchId desde localStorage
+      // Restaurar branchId desde localStorage o derivar de user_branches
       const storedBranch = localStorage.getItem('ferzu_branch_id');
-      if (storedBranch) setBranchId(storedBranch);
+      if (storedBranch) {
+        setBranchId(storedBranch);
+      } else if (data.user_branches?.[0]?.branch_id) {
+        const firstBranch = data.user_branches[0].branch_id;
+        setBranchId(firstBranch);
+        localStorage.setItem('ferzu_branch_id', firstBranch);
+      }
     }
   }
 
