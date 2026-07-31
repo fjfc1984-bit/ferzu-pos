@@ -823,7 +823,7 @@ async function queryBusinessData(queryInput, context) {
         // Fallback: consultar orders directamente si la vista no existe
         let q2 = supabase
           .from('orders')
-          .select('id, total, created_at, payment_method, status')
+          .select('id, total, created_at, status')
           .eq('status', 'completed')
           .gte('created_at', `${dateFrom}T00:00:00-05:00`)
           .lte('created_at', `${dateTo}T23:59:59-05:00`);
@@ -889,20 +889,30 @@ async function queryBusinessData(queryInput, context) {
 
     // ── Mix de métodos de pago ────────────────────────────────────────────
     case 'payment_methods': {
-      let q = supabase.from('orders')
-        .select('payment_method, total')
-        .eq('status', 'completed')
-        .gte('created_at', `${dateFrom}T00:00:00-05:00`)
-        .lte('created_at', `${dateTo}T23:59:59-05:00`);
-      if (branchId) q = q.eq('branch_id', branchId);
+      // Intentar con order_payments primero, fallback a orders con metadata
+      let q = supabase.from('order_payments')
+        .select('payment_method, amount, orders!inner(created_at, status, branch_id)')
+        .eq('orders.status', 'completed')
+        .gte('orders.created_at', `${dateFrom}T00:00:00-05:00`)
+        .lte('orders.created_at', `${dateTo}T23:59:59-05:00`);
+      if (branchId) q = q.eq('orders.branch_id', branchId);
       const { data, error } = await q;
-      if (error) return { error: error.message };
+      if (error) {
+        // Fallback: contar órdenes sin desglose de método
+        let q2 = supabase.from('orders').select('id, total').eq('status', 'completed')
+          .gte('created_at', `${dateFrom}T00:00:00-05:00`)
+          .lte('created_at', `${dateTo}T23:59:59-05:00`);
+        if (branchId) q2 = q2.eq('branch_id', branchId);
+        const { data: orders2 } = await q2;
+        const total = (orders2 || []).reduce((s, o) => s + o.total, 0);
+        return { data: [{ method: 'varios', count: (orders2 || []).length, total }], query_type, note: 'Sin desglose por método disponible' };
+      }
       const map = {};
       for (const o of data || []) {
         const m = o.payment_method || 'efectivo';
         if (!map[m]) map[m] = { method: m, count: 0, total: 0 };
         map[m].count++;
-        map[m].total += o.total;
+        map[m].total += o.amount;
       }
       return { data: Object.values(map), count: Object.keys(map).length, query_type };
     }
