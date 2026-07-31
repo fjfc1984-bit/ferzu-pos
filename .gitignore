@@ -5,3 +5,29 @@ backend/.env
 dist/
 .vite/
 *.log
+
+# Scripts one-off de git (se generan automáticamente, no van al repo)
+PUSH_*.bat
+COMMIT_*.bat
+FIX*.bat
+FIX*.ps1
+PUSH_*.ps1
+
+# Scripts legacy en raíz (reemplazados por FERZU.bat)
+ABRIR.bat
+ARRANCAR.bat
+AUTO_HEAL.bat
+BACKUP.bat
+HEALTH_CHECK.bat
+LIMPIAR_E_INSTALAR.bat
+REPARAR.bat
+RESTORE.bat
+SERVIDORES.bat
+SETUP.ps1
+START_FRONTEND.bat
+SUBIR_GITHUB.bat
+RUN_MIGRATE.bat
+
+# SQL legacy en raíz (usar database/migrations/ en su lugar)
+schema_v2.sql
+views_v1.sql
