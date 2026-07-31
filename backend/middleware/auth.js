@@ -18,16 +18,6 @@ export async function requireAuth(req, res, next) {
 
     const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !user) {
-      // LOG DIAGNÓSTICO — remover después de confirmar el fix
-      logger.warn('requireAuth: getUser failed', {
-        supabaseError: error?.message,
-        supabaseStatus: error?.status,
-        supabaseCode: error?.code,
-        tokenPreview: token?.substring(0, 20) + '...',
-        supabaseUrl: process.env.SUPABASE_URL,
-        hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-        serviceKeyEnd: process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(-10),
-      });
       return res.status(401).json({ error: 'Token inválido o expirado' });
     }
 
