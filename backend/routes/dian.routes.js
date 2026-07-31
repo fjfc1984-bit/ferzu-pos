@@ -179,12 +179,19 @@ router.post('/suggest-regime', requireOrg, async (req, res) => {
 // =============================================================================
 router.get('/validate-nit/:nit', async (req, res) => {
   try {
-    const nitRaw   = req.params.nit.replace(/[^0-9]/g, '');
-    const isValid  = validateNIT(nitRaw);
+    const nitRaw = req.params.nit.replace(/[^0-9]/g, '');
 
-    // Separar el NIT base del DV si viene con 9+ dígitos
-    const nitBase = nitRaw.length > 1 ? nitRaw.slice(0, -1) : nitRaw;
+    // Heurística: NITs colombianos base = 7-9 dígitos → con DV = 8-10 dígitos.
+    // Si el input tiene 10+ dígitos, el último es el DV ingresado por el usuario.
+    // Si tiene ≤ 9 dígitos, lo tratamos como el NIT base y calculamos el DV.
+    const userIncludedDV = nitRaw.length >= 10;
+    const nitBase = userIncludedDV ? nitRaw.slice(0, -1) : nitRaw;
     const dv      = calculateNITDV(nitBase);
+
+    // Validar: si el usuario incluyó DV, verificar que coincida; si no, siempre válido
+    const isValid = userIncludedDV
+      ? Number(nitRaw.slice(-1)) === dv
+      : true;
 
     res.json({
       nit:      nitBase,
@@ -193,7 +200,7 @@ router.get('/validate-nit/:nit', async (req, res) => {
       formatted: `${nitBase}-${dv}`,
       message:   isValid
         ? `NIT válido: ${nitBase}-${dv}`
-        : `NIT inválido — el dígito verificador debería ser ${dv}`,
+        : `NIT inválido — el dígito verificador debería ser ${dv} (ingresaste ${nitRaw.slice(-1)})`,
     });
 
   } catch (err) {

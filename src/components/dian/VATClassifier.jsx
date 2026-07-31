@@ -68,8 +68,10 @@ export default function VATClassifier({
       const r = data?.results?.[0];
       if (!r) throw new Error('Sin resultado de clasificación');
 
-      // Normalizar el campo de tarifa (la IA puede devolver 'rate' o 'suggestedRate')
-      r.resolvedRate = r.suggestedRate ?? r.rate ?? 0;
+      // Normalizar el campo de tarifa:
+      // El backend devuelve 'vatRate' (classifyProductVAT).
+      // Soportamos también 'suggestedRate' y 'rate' por retrocompatibilidad.
+      r.resolvedRate = r.suggestedRate ?? r.rate ?? r.vatRate ?? 0;
 
       setResult(r);
       setStatus('done');

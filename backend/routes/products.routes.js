@@ -71,7 +71,7 @@ router.get('/:id', async (req, res) => {
 router.post('/', requireRole('owner', 'admin'), [
   body('name').notEmpty().trim(),
   body('price').isInt({ min: 0 }),
-  body('vat_rate').isIn([0, 5, 19]),
+  body('vat_rate').isIn([0, 5, 8, 19]),  // 8 = INC restaurantes (Ley 2010/2019)
   validate,
 ], async (req, res) => {
   try {
