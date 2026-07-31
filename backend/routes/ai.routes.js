@@ -18,7 +18,7 @@ router.use(aiRateLimit);
 // POST /ai/chat — Conversación con el agente
 router.post('/chat', [
   body('message').notEmpty().isLength({ max: 2000 }),
-  body('branch_id').optional({ nullable: true }).isUUID(),
+  body('branch_id').optional({ nullable: true }).matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
   validate,
 ], async (req, res) => {
   try {
