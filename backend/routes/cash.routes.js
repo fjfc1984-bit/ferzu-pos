@@ -5,7 +5,7 @@ import express  from 'express';
 import { body } from 'express-validator';
 import { supabaseAdmin } from '../config/supabase.js';
 import logger   from '../config/logger.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireBranchAccess } from '../middleware/auth.js';
 import { validate }    from '../middleware/validate.js';
 import { logAudit }    from '../middleware/audit.js';
 
@@ -39,6 +39,7 @@ router.post('/open', [
   body('branch_id').isUUID(),
   body('opening_cash').isInt({ min: 0 }),
   validate,
+  requireBranchAccess(),  // ✅ valida branch_id pertenece a la org
 ], async (req, res) => {
   try {
     const { branch_id, opening_cash } = req.body;

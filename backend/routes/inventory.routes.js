@@ -4,7 +4,7 @@
 import express  from 'express';
 import { body } from 'express-validator';
 import { supabaseAdmin } from '../config/supabase.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requireRole, assertBranchOwnership, requireBranchAccess } from '../middleware/auth.js';
 import { validate }  from '../middleware/validate.js';
 import { logAudit }  from '../middleware/audit.js';
 import { analyzeInventory } from '../lib/inventoryAI.js';
@@ -16,6 +16,7 @@ router.use(requireAuth);
 router.get('/', async (req, res) => {
   try {
     const { branch_id, status } = req.query;
+    await assertBranchOwnership(branch_id, req.organizationId);
     let query = req.supabase
       .from('v_inventory_status')
       .select('*')
@@ -37,6 +38,7 @@ router.get('/', async (req, res) => {
 router.get('/insights', async (req, res) => {
   try {
     const { branch_id, skip_ai } = req.query;
+    await assertBranchOwnership(branch_id, req.organizationId);
     const organizationId = req.organizationId;
     const skipAI = skip_ai === 'true';
 
@@ -131,6 +133,7 @@ router.post('/adjustment', requireRole('owner', 'admin'), [
   body('quantity_delta').isFloat(),
   body('reason').notEmpty(),
   validate,
+  requireBranchAccess(),  // ✅ valida branch_id pertenece a la org
 ], async (req, res) => {
   try {
     const { branch_id, product_id, quantity_delta, reason, variant_id } = req.body;

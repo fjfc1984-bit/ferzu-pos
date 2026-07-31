@@ -17,7 +17,8 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   Lock, Zap, CheckCircle2, X, ChevronRight, Sparkles,
   Crown, ArrowRight, Star, Clock, AlertTriangle,
-  RefreshCw, Shield, MessageCircle, ToggleLeft, Settings2
+  RefreshCw, Shield, MessageCircle, ToggleLeft, Settings2,
+  Building2, ChevronDown
 } from 'lucide-react';
 import { supabase }  from '../lib/supabase.js';
 import { useAuth }   from '../context/AuthContext.jsx';
@@ -541,6 +542,110 @@ export function PricingPage() {
 
 
 // =============================================================================
+// SECCIÓN 5.5: BranchSwitcher — Selector in-app de sucursal (admin/owner)
+// Permite cambiar de sucursal sin cerrar sesión.
+// Solo visible para roles admin/owner. Cajeros solo ven el nombre.
+// =============================================================================
+
+function BranchSwitcher({ isAdmin }) {
+  const [open,     setOpen]     = useState(false);
+  const [branches, setBranches] = useState([]);
+  const [loading,  setLoading]  = useState(false);
+
+  const currentName = localStorage.getItem('ferzu_branch_name') || 'Sucursal';
+  const currentId   = localStorage.getItem('ferzu_branch_id');
+
+  async function loadBranches() {
+    if (branches.length > 0) { setOpen(o => !o); return; }
+    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data } = await supabase
+        .from('user_branches')
+        .select('branches(id, name, city, is_active)')
+        .eq('user_id', user.id);
+      const active = (data || []).map(r => r.branches).filter(b => b?.is_active);
+      setBranches(active);
+    } finally {
+      setLoading(false);
+      setOpen(true);
+    }
+  }
+
+  function switchBranch(branch) {
+    if (branch.id === currentId) { setOpen(false); return; }
+    localStorage.setItem('ferzu_branch_id',   branch.id);
+    localStorage.setItem('ferzu_branch_name', branch.name);
+    setOpen(false);
+    // Recarga para reinicializar POSContext, SyncContext, etc. con la nueva sucursal
+    window.location.href = '/pos';
+  }
+
+  // Cajeros: solo etiqueta read-only
+  if (!isAdmin) {
+    return (
+      <div className="px-4 pt-1 pb-2 border-b border-white/10">
+        <div className="flex items-center gap-1.5">
+          <Building2 size={11} className="text-white/30 shrink-0" />
+          <span className="text-[10px] text-white/40 truncate">{currentName}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative px-2 pt-1 pb-2 border-b border-white/10">
+      <button
+        onClick={loadBranches}
+        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/10 transition-colors group">
+        <Building2 size={12} className="text-white/40 shrink-0" />
+        <span className="flex-1 text-left text-[11px] text-white/60 group-hover:text-white/90 truncate font-medium">
+          {currentName}
+        </span>
+        {loading
+          ? <RefreshCw size={10} className="text-white/30 animate-spin shrink-0" />
+          : <ChevronDown size={10} className="text-white/30 group-hover:text-white/60 shrink-0" />
+        }
+      </button>
+
+      {open && branches.length > 0 && (
+        <>
+          {/* Overlay cierra el dropdown */}
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-2 right-2 top-full mt-1 bg-gray-900 border border-white/20 rounded-xl shadow-2xl z-50 overflow-hidden">
+            <p className="text-[9px] text-white/30 uppercase tracking-widest px-3 pt-2 pb-1 font-semibold">
+              Cambiar sucursal
+            </p>
+            {branches.map(branch => {
+              const isCurrent = branch.id === currentId;
+              return (
+                <button
+                  key={branch.id}
+                  onClick={() => switchBranch(branch)}
+                  className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${
+                    isCurrent
+                      ? 'bg-brand-700/40 text-white'
+                      : 'text-white/60 hover:text-white hover:bg-white/10'
+                  }`}>
+                  <Building2 size={11} className={isCurrent ? 'text-brand-400' : 'text-white/30'} />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{branch.name}</p>
+                    {branch.city && <p className="text-[9px] text-white/30">{branch.city}</p>}
+                  </div>
+                  {isCurrent && (
+                    <span className="text-[9px] text-brand-400 shrink-0">actual</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
 // SECCIÓN 6: AdaptiveNav — Menú lateral adaptativo por plan
 // Reemplaza el menú fijo. Solo muestra los módulos del plan activo.
 // =============================================================================
@@ -581,6 +686,9 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
           </div>
         </div>
       </div>
+
+      {/* Selector de sucursal */}
+      <BranchSwitcher isAdmin={isAdmin} />
 
       {/* Trial banner dentro del nav */}
       {trial && (

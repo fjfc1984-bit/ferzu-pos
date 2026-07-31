@@ -55,3 +55,44 @@ export function requireRole(...roles) {
     next();
   };
 }
+
+/**
+ * assertBranchOwnership(branchId, organizationId)
+ * Verifica que una sucursal pertenece a la organización del usuario.
+ * Lanza Error si no pertenece o no existe.
+ * Usar dentro de handlers: await assertBranchOwnership(branch_id, req.organizationId)
+ */
+export async function assertBranchOwnership(branchId, organizationId) {
+  if (!branchId) return; // branch_id opcional en algunos endpoints
+  const { data, error } = await supabaseAdmin
+    .from('branches')
+    .select('id')
+    .eq('id', branchId)
+    .eq('organization_id', organizationId)
+    .maybeSingle();
+  if (error || !data) {
+    const err = new Error('Sucursal no autorizada para esta organización');
+    err.status = 403;
+    throw err;
+  }
+}
+
+/**
+ * requireBranchAccess(getter?)
+ * Middleware factory — extrae branch_id y valida ownership.
+ * getter: función (req) => branchId. Por defecto lee req.body.branch_id.
+ * Para query params: requireBranchAccess(req => req.query.branch_id)
+ * Debe usarse DESPUÉS de requireAuth.
+ */
+export function requireBranchAccess(getter = (req) => req.body.branch_id) {
+  return async (req, res, next) => {
+    try {
+      const branchId = getter(req);
+      await assertBranchOwnership(branchId, req.organizationId);
+      next();
+    } catch (err) {
+      logger.warn('Branch access denied', { err: err.message, org: req.organizationId });
+      res.status(err.status || 403).json({ error: err.message });
+    }
+  };
+}

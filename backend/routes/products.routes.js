@@ -5,7 +5,7 @@ import express  from 'express';
 import { body } from 'express-validator';
 import logger   from '../config/logger.js';
 import { supabaseAdmin } from '../config/supabase.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requireRole, assertBranchOwnership } from '../middleware/auth.js';
 import { validate }  from '../middleware/validate.js';
 import { logAudit }  from '../middleware/audit.js';
 
@@ -16,6 +16,7 @@ router.use(requireAuth);
 router.get('/', async (req, res) => {
   try {
     const { branch_id, category_id, search, page = 1, limit = 50 } = req.query;
+    await assertBranchOwnership(branch_id, req.organizationId);
     const offset = (page - 1) * limit;
 
     let query = req.supabase

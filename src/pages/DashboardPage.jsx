@@ -20,7 +20,8 @@ import {
   TrendingUp, TrendingDown, ShoppingBag, Users, DollarSign,
   Package, AlertTriangle, RefreshCw, Zap, ChevronRight,
   BarChart3, Clock, ArrowUpRight, ArrowDownRight, Star,
-  CheckCircle2, Wallet, Target, Calendar, Sparkles, Loader2
+  CheckCircle2, Wallet, Target, Calendar, Sparkles, Loader2,
+  Building2, Layers
 } from 'lucide-react';
 import { supabase }  from '../lib/supabase.js';
 import { api }       from '../lib/api.js';
@@ -116,14 +117,31 @@ function DIANPromoModal() {
 }
 
 export default function DashboardPage() {
-  const { organizationId, branchId } = useAuth();
-  const [range,    setRange]    = useState('today');   // 'today' | 'week' | 'month'
-  const [aiReport, setAiReport] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
+  const { organizationId, branchId, isAdmin } = useAuth();
+  const [range,        setRange]        = useState('today');   // 'today' | 'week' | 'month'
+  const [consolidated, setConsolidated] = useState(false);     // T140: vista todas las sucursales
+  const [orgBranchIds, setOrgBranchIds] = useState([]);       // T140: IDs de todas las sucursales
+  const [aiReport,   setAiReport]   = useState('');
+  const [aiLoading,  setAiLoading]  = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
+  // T140: cargar todas las sucursales de la org (para modo consolidado)
+  useEffect(() => {
+    if (!organizationId || !isAdmin) return;
+    supabase
+      .from('branches')
+      .select('id')
+      .eq('organization_id', organizationId)
+      .eq('is_active', true)
+      .then(({ data }) => setOrgBranchIds((data || []).map(b => b.id)));
+  }, [organizationId, isAdmin]);
+
+  // En modo consolidado pasamos null + orgBranchIds; en modo normal pasamos branchId
+  const effectiveBranchId  = consolidated ? null : branchId;
+  const effectiveBranchIds = consolidated ? orgBranchIds : (branchId ? [branchId] : []);
+
   const { kpis, salesChart, heatmap, topProducts, stockAlerts, cashSession, loading, refresh }
-    = useDashboard(branchId, organizationId, range);
+    = useDashboard(effectiveBranchId, organizationId, range, effectiveBranchIds);
 
   // Ref siempre actualizada — evita que el intervalo capture refresh() estale
   // (branchId y range pueden cambiar después del primer render)
@@ -170,10 +188,30 @@ export default function DashboardPage() {
           <p className="text-xs text-gray-400">
             Actualizado {format(lastRefresh, 'h:mm a')} ·{' '}
             {format(new Date(), "EEEE d 'de' MMMM", { locale: es })}
+            {consolidated && (
+              <span className="ml-2 inline-flex items-center gap-1 text-brand-600 font-medium">
+                <Layers size={10} /> Todas las sucursales
+              </span>
+            )}
           </p>
         </div>
 
         <div className="flex items-center gap-3">
+          {/* T140: Toggle vista consolidada — solo admin/owner con múltiples sucursales */}
+          {isAdmin && orgBranchIds.length > 1 && (
+            <button
+              onClick={() => setConsolidated(c => !c)}
+              title={consolidated ? 'Ver sucursal actual' : 'Ver todas las sucursales'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                consolidated
+                  ? 'bg-brand-100 text-brand-700 border border-brand-300'
+                  : 'bg-gray-100 text-gray-500 hover:text-gray-700 hover:bg-gray-200'
+              }`}>
+              {consolidated ? <Layers size={13} /> : <Building2 size={13} />}
+              {consolidated ? 'Consolidado' : 'Por sucursal'}
+            </button>
+          )}
+
           {/* Selector de rango */}
           <div className="flex bg-gray-100 rounded-xl overflow-hidden">
             {[['today','Hoy'],['week','Semana'],['month','Mes']].map(([val, label]) => (
@@ -700,7 +738,10 @@ function dateRange(range) {
   return { from: from.toISOString(), to: to.toISOString() };
 }
 
-export function useDashboard(branchId, organizationId, range) {
+// T140: branchIds = array de sucursales para modo consolidado
+export function useDashboard(branchId, organizationId, range, branchIds = []) {
+  const isConsolidated = !branchId && branchIds.length > 0;
+
   const [kpis,         setKpis]         = useState(null);
   const [salesChart,   setSalesChart]   = useState([]);
   const [heatmap,      setHeatmap]      = useState([]);
@@ -709,8 +750,14 @@ export function useDashboard(branchId, organizationId, range) {
   const [cashSession,  setCashSession]  = useState(null);
   const [loading,      setLoading]      = useState(true);
 
+  // Helper: aplica el filtro de sucursal correcto a una query
+  function applyBranchFilter(query, field = 'branch_id') {
+    if (isConsolidated) return query.in(field, branchIds);
+    return query.eq(field, branchId);
+  }
+
   async function refresh() {
-    if (!branchId) { setLoading(false); return; }
+    if (!branchId && !isConsolidated) { setLoading(false); return; }
     setLoading(true);
     const { from, to } = dateRange(range);
 
@@ -727,13 +774,12 @@ export function useDashboard(branchId, organizationId, range) {
     setLoading(false);
   }
 
-  useEffect(() => { refresh(); }, [branchId, range]);
+  useEffect(() => { refresh(); }, [branchId, range, branchIds.join(',')]);
 
   async function loadKPIs(from, to) {
-    const { data: orders } = await supabase
-      .from('orders')
-      .select('total, cost_total, customer_id, created_at')
-      .eq('branch_id', branchId)
+    const { data: orders } = await applyBranchFilter(
+      supabase.from('orders').select('total, cost_total, customer_id, created_at')
+    )
       .eq('status', 'paid')
       .gte('created_at', from)
       .lte('created_at', to);
@@ -745,10 +791,9 @@ export function useDashboard(branchId, organizationId, range) {
     const prevFrom = new Date(new Date(from) - rangeMs).toISOString();
     const prevTo   = from;
 
-    const { data: prevOrders } = await supabase
-      .from('orders')
-      .select('total')
-      .eq('branch_id', branchId)
+    const { data: prevOrders } = await applyBranchFilter(
+      supabase.from('orders').select('total')
+    )
       .eq('status', 'paid')
       .gte('created_at', prevFrom)
       .lte('created_at', prevTo);
@@ -779,19 +824,19 @@ export function useDashboard(branchId, organizationId, range) {
   }
 
   async function loadSalesChart(from, to) {
-    const { data } = await supabase.rpc('get_sales_chart', {
+    // En modo consolidado, skip la RPC (solo acepta 1 branch_id) y usar fallback directo
+    const { data } = isConsolidated ? { data: null } : await supabase.rpc('get_sales_chart', {
       p_branch_id: branchId,
       p_from: from,
       p_to: to,
       p_range: range,
     }).catch(() => ({ data: null }));
 
-    // Fallback manual si la RPC no existe aún
+    // Fallback manual si la RPC no existe o modo consolidado
     if (!data) {
-      const { data: orders } = await supabase
-        .from('orders')
-        .select('total, created_at')
-        .eq('branch_id', branchId)
+      const { data: orders } = await applyBranchFilter(
+        supabase.from('orders').select('total, created_at')
+      )
         .eq('status', 'paid')
         .gte('created_at', from)
         .lte('created_at', to);
@@ -822,10 +867,9 @@ export function useDashboard(branchId, organizationId, range) {
   }
 
   async function loadHeatmap(from, to) {
-    const { data: orders } = await supabase
-      .from('orders')
-      .select('created_at, total')
-      .eq('branch_id', branchId)
+    const { data: orders } = await applyBranchFilter(
+      supabase.from('orders').select('created_at, total')
+    )
       .eq('status', 'paid')
       .gte('created_at', from)
       .lte('created_at', to);
@@ -841,10 +885,12 @@ export function useDashboard(branchId, organizationId, range) {
   }
 
   async function loadTopProducts(from, to) {
-    const { data } = await supabase
-      .from('order_items')
-      .select('product_id, product_name, quantity, subtotal, orders!inner(branch_id, status, created_at)')
-      .eq('orders.branch_id', branchId)
+    const { data } = await applyBranchFilter(
+      supabase
+        .from('order_items')
+        .select('product_id, product_name, quantity, subtotal, orders!inner(branch_id, status, created_at)'),
+      'orders.branch_id'
+    )
       .eq('orders.status', 'paid')
       .gte('orders.created_at', from)
       .lte('orders.created_at', to);
@@ -869,19 +915,17 @@ export function useDashboard(branchId, organizationId, range) {
   async function loadStockAlerts() {
     // Usar la vista v_inventory_status (columna-a-columna via SQL en DB, no en JS)
     // supabase.raw() NO existe en supabase-js v2 — se eliminó la query rota
-    const { data: alerts } = await supabase
-      .from('v_inventory_status')
-      .select('product_id, name, quantity, min_stock, status')
-      .eq('branch_id', branchId)
+    const { data: alerts } = await applyBranchFilter(
+      supabase.from('v_inventory_status').select('product_id, name, quantity, min_stock, status')
+    )
       .in('status', ['low_stock', 'out_of_stock'])
       .order('quantity');
 
     // Fallback: si la vista no existe aún, comparar client-side
     if (!alerts) {
-      const { data: raw } = await supabase
-        .from('inventory')
-        .select('product_id, quantity, min_stock, products(name)')
-        .eq('branch_id', branchId);
+      const { data: raw } = await applyBranchFilter(
+        supabase.from('inventory').select('product_id, quantity, min_stock, products(name)')
+      );
       const lowStock = (raw || []).filter(r => r.quantity <= r.min_stock);
       setStockAlerts(lowStock.map(d => ({
         product_id: d.product_id,
@@ -897,6 +941,9 @@ export function useDashboard(branchId, organizationId, range) {
   }
 
   async function loadCashSession() {
+    // En modo consolidado no hay "caja activa" global — skip
+    if (isConsolidated) { setCashSession(null); return; }
+
     const { data } = await supabase
       .from('cash_sessions')
       .select(`

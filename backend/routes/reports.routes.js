@@ -3,7 +3,7 @@
 // =============================================================================
 import express from 'express';
 import { supabaseAdmin } from '../config/supabase.js';
-import { requireAuth }   from '../middleware/auth.js';
+import { requireAuth, assertBranchOwnership } from '../middleware/auth.js';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -14,6 +14,7 @@ router.get('/dashboard', async (req, res) => {
     const { branch_id, date = new Date().toISOString().split('T')[0] } = req.query;
 
     if (!branch_id) return res.status(400).json({ error: 'branch_id requerido' });
+    await assertBranchOwnership(branch_id, req.organizationId);
 
     const [salesResult, topProductsResult, alertsResult] = await Promise.all([
       // maybeSingle() para no romper cuando no hay ventas (ej: primer día)
