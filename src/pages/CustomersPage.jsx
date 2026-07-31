@@ -532,7 +532,53 @@ export function CustomersPage() {
   const [showForm, setShowForm] = useState(false)
   const [editCustomer, setEditCustomer] = useState(null)
   const [showLoyalty, setShowLoyalty] = useState(false)
-  const [activeTab, setActiveTab] = useState('list') // 'list' | 'segments'
+  const [activeTab, setActiveTab] = useState('list') // 'list' | 'segments' | 'arco'
+  const [arcoSearch, setArcoSearch]     = useState('')
+  const [arcoResult, setArcoResult]     = useState(null)
+  const [arcoLoading, setArcoLoading]   = useState(false)
+  const [arcoAction, setArcoAction]     = useState(null) // 'anonymize' | 'delete' | null
+  const [arcoConfirm, setArcoConfirm]   = useState(false)
+  const [arcoSuccess, setArcoSuccess]   = useState('')
+
+  // Buscar cliente para ARCO
+  async function searchARCO() {
+    if (!arcoSearch.trim()) return
+    setArcoLoading(true); setArcoResult(null); setArcoSuccess('')
+    const { data } = await supabase.from('customers')
+      .select('id, first_name, last_name, phone, email, loyalty_points, total_spent, created_at')
+      .eq('organization_id', organizationId)
+      .or(`first_name.ilike.%${arcoSearch}%,last_name.ilike.%${arcoSearch}%,phone.ilike.%${arcoSearch}%,email.ilike.%${arcoSearch}%`)
+      .limit(5)
+    setArcoResult(data || [])
+    setArcoLoading(false)
+  }
+
+  // Anonimizar cliente (Cancelación / Rectificación ARCO)
+  async function anonymizeCustomer(customerId) {
+    const anon = `ANONIMIZADO-${Date.now()}`
+    const { error } = await supabase.from('customers').update({
+      first_name: 'CLIENTE',
+      last_name:  'ANONIMIZADO',
+      phone:      null,
+      email:      null,
+      notes:      `Datos anonimizados por solicitud ARCO el ${new Date().toLocaleDateString('es-CO')}`,
+    }).eq('id', customerId)
+    if (!error) {
+      setArcoSuccess('Datos del cliente anonimizados correctamente.')
+      setArcoResult(prev => prev.filter(c => c.id !== customerId))
+    }
+    setArcoConfirm(false); setArcoAction(null)
+  }
+
+  // Eliminar cliente (Supresión ARCO)
+  async function deleteCustomerARCO(customerId) {
+    const { error } = await supabase.from('customers').delete().eq('id', customerId)
+    if (!error) {
+      setArcoSuccess('Registro del cliente eliminado permanentemente.')
+      setArcoResult(prev => prev.filter(c => c.id !== customerId))
+    }
+    setArcoConfirm(false); setArcoAction(null)
+  }
 
   const searchRef = useRef(null)
 
@@ -623,6 +669,7 @@ export function CustomersPage() {
           {[
             { key: 'list',     label: `Todos (${enriched.length})` },
             { key: 'segments', label: 'Segmentos' },
+            { key: 'arco',     label: '🔒 Privacidad' },
           ].map(t => (
             <button
               key={t.key}
@@ -637,6 +684,125 @@ export function CustomersPage() {
             </button>
           ))}
         </div>
+
+        {/* ── Panel ARCO — Privacidad de clientes (Ley 1581/2012) ── */}
+        {activeTab === 'arco' && (
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+              <p className="text-xs font-semibold text-blue-800 mb-1">🔒 Derechos ARCO de clientes finales</p>
+              <p className="text-[11px] text-blue-700 leading-relaxed">
+                Si un cliente solicita acceso, corrección o eliminación de sus datos (Ley 1581 de 2012),
+                búscalo aquí y ejecuta la acción correspondiente. El registro de la acción queda en el log de auditoría.
+              </p>
+            </div>
+
+            {/* Búsqueda */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Nombre, teléfono o email del cliente..."
+                value={arcoSearch}
+                onChange={e => setArcoSearch(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && searchARCO()}
+                className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              />
+              <button
+                onClick={searchARCO}
+                disabled={arcoLoading || !arcoSearch.trim()}
+                className="px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition"
+              >
+                {arcoLoading ? '...' : 'Buscar'}
+              </button>
+            </div>
+
+            {/* Mensaje de éxito */}
+            {arcoSuccess && (
+              <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm text-green-700 font-medium">
+                ✅ {arcoSuccess}
+              </div>
+            )}
+
+            {/* Resultados */}
+            {arcoResult !== null && (
+              arcoResult.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">No se encontraron clientes con ese criterio.</p>
+              ) : (
+                <div className="space-y-2">
+                  {arcoResult.map(c => (
+                    <div key={c.id} className="border border-gray-200 rounded-xl p-3 bg-white">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">{c.first_name} {c.last_name}</p>
+                          <p className="text-xs text-gray-500">{c.phone || 'Sin teléfono'} · {c.email || 'Sin email'}</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">
+                            Registrado: {new Date(c.created_at).toLocaleDateString('es-CO')} · ${(c.total_spent || 0).toLocaleString('es-CO')} COP en compras
+                          </p>
+                        </div>
+                        <div className="flex gap-1.5 flex-shrink-0">
+                          <button
+                            onClick={() => { setArcoAction({ type: 'anonymize', customer: c }); setArcoConfirm(true) }}
+                            className="px-2 py-1 text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition"
+                            title="Anonimizar datos del cliente (mantiene historial de ventas sin identificar)"
+                          >
+                            🙈 Anonimizar
+                          </button>
+                          <button
+                            onClick={() => { setArcoAction({ type: 'delete', customer: c }); setArcoConfirm(true) }}
+                            className="px-2 py-1 text-[11px] font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition"
+                            title="Eliminar el registro completo del cliente"
+                          >
+                            🗑 Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* Modal de confirmación ARCO */}
+            {arcoConfirm && arcoAction && (
+              <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-4">
+                  <h3 className="font-bold text-gray-900">
+                    {arcoAction.type === 'anonymize' ? '🙈 Anonimizar datos' : '🗑 Eliminar cliente'}
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    {arcoAction.type === 'anonymize'
+                      ? `Se borrarán el nombre, teléfono y email de "${arcoAction.customer.first_name} ${arcoAction.customer.last_name}". El historial de ventas se conserva sin identificar. Esta acción no se puede deshacer.`
+                      : `Se eliminará permanentemente el registro de "${arcoAction.customer.first_name} ${arcoAction.customer.last_name}" incluyendo sus puntos y datos de contacto. Esta acción no se puede deshacer.`
+                    }
+                  </p>
+                  <p className="text-[11px] text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
+                    La acción quedará registrada en el log de auditoría para cumplimiento Ley 1581 de 2012.
+                  </p>
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      onClick={() => { setArcoConfirm(false); setArcoAction(null) }}
+                      className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => arcoAction.type === 'anonymize'
+                        ? anonymizeCustomer(arcoAction.customer.id)
+                        : deleteCustomerARCO(arcoAction.customer.id)
+                      }
+                      className={`px-4 py-2 text-sm font-semibold rounded-lg text-white transition ${
+                        arcoAction.type === 'anonymize'
+                          ? 'bg-amber-600 hover:bg-amber-700'
+                          : 'bg-red-600 hover:bg-red-700'
+                      }`}
+                    >
+                      Confirmar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Filtro de segmentos (si activeTab === 'segments') */}
         {activeTab === 'segments' && (

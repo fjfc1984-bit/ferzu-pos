@@ -304,9 +304,8 @@ export const FERZU_TOOLS = [
           items: {
             type: "object",
             properties: {
-              customer_id: { type: "string" },
-              customer_name: { type: "string" },
-              customer_phone: { type: "string" },
+              customer_id: { type: "string", description: "Referencia anonimizada del cliente (CLIENTE-XXXXXXXX)" },
+              customer_label: { type: "string", description: "Etiqueta anónima del cliente, ej: 'Cliente A. (35 días sin visitar)'" },
               days_inactive: { type: "number" },
               last_purchase_summary: {
                 type: "string",
@@ -329,7 +328,7 @@ export const FERZU_TOOLS = [
                 description: "Por qué se personalizó así (ej: 'Cliente de café frecuente, 35 días sin visita')"
               }
             },
-            required: ["customer_id", "customer_name", "customer_phone", "message_variant_a", "message_variant_b"]
+            required: ["customer_id", "customer_label", "message_variant_a", "message_variant_b"]
           }
         },
         segment_name: {
@@ -918,15 +917,31 @@ async function queryBusinessData(queryInput, context) {
     }
 
     // ── Ranking de clientes ───────────────────────────────────────────────
+    // PRIVACIDAD: Se anonimiza nombre completo antes de enviar al modelo de IA.
+    // Solo se expone el segmento de gasto y comportamiento, nunca datos identificables.
     case 'customer_ranking': {
       let q = supabase.from('customers')
-        .select('id, first_name, last_name, total_spent, visit_count, last_visit_at, loyalty_points')
+        .select('id, first_name, total_spent, visit_count, last_visit_at, loyalty_points')
         .eq('organization_id', orgId)
         .order('total_spent', { ascending: false })
         .limit(lim);
       const { data, error } = await q;
       if (error) return { error: error.message };
-      return { data, count: data?.length, query_type };
+      // Anonimizar: solo inicial del nombre + ID truncado
+      const anonymized = (data || []).map((c, i) => ({
+        rank:          i + 1,
+        customer_ref:  `CLIENTE-${c.id.slice(0, 8).toUpperCase()}`,
+        initial:       c.first_name ? c.first_name[0].toUpperCase() + '.' : 'N/A',
+        total_spent:   c.total_spent,
+        visit_count:   c.visit_count,
+        days_since_visit: c.last_visit_at
+          ? Math.floor((Date.now() - new Date(c.last_visit_at)) / 86400000)
+          : null,
+        loyalty_points: c.loyalty_points,
+        // ID real guardado para uso interno, no expuesto al prompt
+        _customer_id:  c.id,
+      }));
+      return { data: anonymized, count: anonymized.length, query_type };
     }
 
     // ── Resumen sesión de caja ────────────────────────────────────────────

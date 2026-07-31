@@ -81,16 +81,33 @@ export default function VATClassifier({
     }
   }
 
+  // ─── Log de auditoría IVA (Gobernanza IA — ISO/IEC 42001, Inventario AI-001) ──
+  // Registra silenciosamente: tarifa sugerida, tarifa final, y si fue corregida.
+  function logVATDecision(suggestedRate, finalRate, wasOverridden) {
+    api.post('/dian/vat-audit-log', {
+      product_name:   productName?.trim(),
+      suggested_rate: suggestedRate,
+      final_rate:     finalRate,
+      was_overridden: wasOverridden,
+      confidence:     result?.confidence,
+    }).catch(() => {/* silencioso — no interrumpir UX */});
+  }
+
   // ─── Aceptar sugerencia ─────────────────────────────────────────────────────
   function accept() {
     if (result) {
+      logVATDecision(result.resolvedRate, result.resolvedRate, false);
       onAccepted(result.resolvedRate);
       dismiss();
     }
   }
 
-  // ─── Descartar resultado ────────────────────────────────────────────────────
+  // ─── Descartar resultado (usuario mantiene tarifa original) ────────────────
   function dismiss() {
+    if (result) {
+      // Solo loguear si el usuario descarta activamente (había un resultado)
+      logVATDecision(result.resolvedRate, Number(currentRate), true);
+    }
     setResult(null);
     setStatus('idle');
     setShowReasoning(false);

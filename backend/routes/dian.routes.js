@@ -14,6 +14,8 @@
 // =============================================================================
 
 import { Router }            from 'express';
+import { body }              from 'express-validator';
+import { validate }          from '../middleware/validate.js';
 import { createClient }      from '@supabase/supabase-js';
 import { aiRateLimit }       from '../config/rateLimits.js';
 import { requireAuth }       from '../middleware/auth.js';
@@ -288,5 +290,45 @@ router.post('/retry-contingency', requireOrg, async (req, res) => {
   }
 });
 
+
+// POST /api/dian/vat-audit-log
+// Registra la decisión del usuario sobre la sugerencia del clasificador IVA.
+// Permite medir tasa de override para detectar sesgo o errores sistemáticos.
+// Gobernanza IA — ISO/IEC 42001 Anexo A, Inventario AI-001.
+router.post('/vat-audit-log', requireOrg, [
+  body('product_name').notEmpty().isLength({ max: 200 }),
+  body('suggested_rate').isIn([0, 5, 8, 19]),
+  body('final_rate').isIn([0, 5, 8, 19]),
+  body('was_overridden').isBoolean(),
+  body('confidence').optional().isIn(['high', 'medium', 'low']),
+  validate,
+], async (req, res) => {
+  try {
+    const { product_name, suggested_rate, final_rate, was_overridden, confidence } = req.body;
+
+    await supabaseAdmin.from('audit_log').insert({
+      organization_id: req.organizationId,
+      user_id:         req.user.id,
+      action:          'ai_vat_classification',
+      resource_type:   'vat_classifier',
+      resource_id:     null,
+      old_values:      null,
+      new_values: {
+        product_name:   product_name,
+        suggested_rate: suggested_rate,
+        final_rate:     final_rate,
+        was_overridden: was_overridden,
+        confidence:     confidence || null,
+        model:          'AI-001',
+      },
+    });
+
+    res.status(204).end();
+  } catch (err) {
+    // No fallar la UX por un error de log
+    console.warn('[DIAN] vat-audit-log error (non-critical):', err.message);
+    res.status(204).end();
+  }
+});
 
 export default router;
