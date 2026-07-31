@@ -28,6 +28,7 @@ import { formatCOP }     from '../lib/math.js';
 import toast             from 'react-hot-toast';
 import VATClassifier, { RATE_LABELS } from '../components/dian/VATClassifier.jsx';
 import InventoryInsights from '../components/inventory/InventoryInsights.jsx';
+import BatchVATClassifier from '../components/dian/BatchVATClassifier.jsx';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -111,6 +112,7 @@ function ProductList({ organizationId, branchId }) {
   const [showForm,  setShowForm]  = useState(false);
   const [editProd,  setEditProd]  = useState(null);
   const [showAdj,   setShowAdj]   = useState(null); // product para ajuste
+  const [showBatchVAT, setShowBatchVAT] = useState(false);
 
   useEffect(() => { loadAll(); }, [organizationId, branchId]);
 
@@ -206,6 +208,20 @@ function ProductList({ organizationId, branchId }) {
         </select>
 
         <div className="ml-auto flex gap-2">
+          {/* Botón Clasificar IVA — visible cuando hay productos sin tarifa */}
+          {products.filter(p => !p.vat_rate || Number(p.vat_rate) === 0).length > 0 && (
+            <button
+              onClick={() => setShowBatchVAT(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100
+                         text-amber-700 border border-amber-200 text-sm font-medium rounded-xl transition-colors">
+              <Sparkles size={14} />
+              Clasificar IVA
+              <span className="ml-0.5 min-w-[18px] h-[18px] px-1 bg-amber-500 text-white
+                               text-[10px] font-bold rounded-full flex items-center justify-center">
+                {products.filter(p => !p.vat_rate || Number(p.vat_rate) === 0).length}
+              </span>
+            </button>
+          )}
           <button
             onClick={() => setShowForm(true)}
             className="flex items-center gap-1.5 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl transition-colors">
@@ -353,6 +369,14 @@ function ProductList({ organizationId, branchId }) {
           currentStock={inventory[showAdj.id]?.quantity ?? 0}
           branchId={branchId}
           onClose={() => setShowAdj(null)}
+          onSaved={loadAll}
+        />
+      )}
+
+      {showBatchVAT && (
+        <BatchVATClassifier
+          products={products}
+          onClose={() => setShowBatchVAT(false)}
           onSaved={loadAll}
         />
       )}
