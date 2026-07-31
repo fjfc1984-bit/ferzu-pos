@@ -44,7 +44,7 @@ router.get('/insights', async (req, res) => {
     let productsQuery = req.supabase
       .from('products')
       .select(`
-        id, name, sku, cost_price, min_stock,
+        id, name, sku, cost, min_stock,
         inventory!inner(quantity, branch_id)
       `)
       .eq('organization_id', organizationId)
@@ -68,7 +68,7 @@ router.get('/insights', async (req, res) => {
           id:          p.id,
           name:        p.name,
           sku:         p.sku,
-          cost_price:  p.cost_price,
+          cost_price:  p.cost,
           min_stock:   p.min_stock,
           stock:       totalStock,
         });
