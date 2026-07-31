@@ -78,14 +78,34 @@ export function AIAssistant() {
   const pathname                   = location.pathname
   const suggestions                = PAGE_SUGGESTIONS[pathname] || PAGE_SUGGESTIONS.default
 
-  // Mensaje de bienvenida al abrir por primera vez
+  // Al abrir por primera vez: pulse check proactivo (no mensaje estático)
   useEffect(() => {
     if (open && messages.length === 0) {
+      const firstName = user?.full_name ? user.full_name.split(' ')[0] : null
       const page = getPageLabel(pathname)
-      setMessages([{
-        role: 'assistant',
-        content: `¡Hola${user?.full_name ? ', ' + user.full_name.split(' ')[0] : ''}! 👋 Soy el asistente de FERZU POS.\n\nEstás en **${page}**. ¿En qué te ayudo?`,
-      }])
+
+      // Mostrar typing dots mientras carga
+      setLoading(true)
+
+      const pulseMsg = `Saluda brevemente a${firstName ? ' ' + firstName : 'l usuario'} (está en ${page}). Luego revisa el estado actual y en máximo 3 puntos breves menciona solo lo que sea urgente o relevante ahora mismo: alertas de stock bajo, si la caja está abierta o cerrada, o algo crítico de DIAN. Si todo está bien, dilo en una línea y ofrece ayuda. Sé conciso.`
+
+      api.post('/ai/chat', {
+        message:              pulseMsg,
+        branch_id:            branchId || undefined,
+        conversation_history: [],
+        page_context:         pathname,
+      }, { timeout: 60000 })
+        .then(({ data }) => {
+          setMessages([{ role: 'assistant', content: data.text }])
+        })
+        .catch(() => {
+          // Fallback: mensaje estático si falla el pulse
+          setMessages([{
+            role: 'assistant',
+            content: `¡Hola${firstName ? ', ' + firstName : ''}! 👋 Soy el asistente de FERZU POS.\n\nEstás en **${page}**. ¿En qué te ayudo?`,
+          }])
+        })
+        .finally(() => setLoading(false))
     }
     if (open) {
       setHasNew(false)
@@ -195,8 +215,8 @@ export function AIAssistant() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Sugerencias rápidas (solo si hay pocos mensajes) */}
-          {messages.length <= 1 && !loading && (
+          {/* Sugerencias rápidas (solo si hay pocos mensajes y ya cargó el pulse) */}
+          {messages.length <= 1 && !loading && messages.length > 0 && (
             <div className="px-3 pb-2 flex flex-wrap gap-1.5 flex-shrink-0">
               {suggestions.map((s, i) => (
                 <button
