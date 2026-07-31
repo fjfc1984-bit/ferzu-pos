@@ -118,8 +118,13 @@ function ProductList({ organizationId, branchId }) {
 
   async function loadAll() {
     setLoading(true);
-    await Promise.all([loadProducts(), loadInventory(), loadCategories()]);
-    setLoading(false);
+    try {
+      await Promise.all([loadProducts(), loadInventory(), loadCategories()]);
+    } catch (err) {
+      toast.error('Error al cargar inventario');
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function loadProducts() {
@@ -132,6 +137,7 @@ function ProductList({ organizationId, branchId }) {
   }
 
   async function loadInventory() {
+    if (!branchId) return;
     const { data } = await supabase
       .from('inventory')
       .select('product_id, quantity, min_stock')
@@ -414,6 +420,9 @@ function ProductForm({ product, organizationId, branchId, categories, onClose, o
 
   async function handleSave() {
     if (!form.name || !form.price) { toast.error('Nombre y precio son obligatorios'); return; }
+    if (Number(form.price) < 0)         { toast.error('El precio no puede ser negativo'); return; }
+    if (form.cost && Number(form.cost) < 0) { toast.error('El costo no puede ser negativo'); return; }
+    if (!isEdit && Number(form.initial_stock) < 0) { toast.error('El stock inicial no puede ser negativo'); return; }
 
     setSaving(true);
     try {
@@ -538,8 +547,8 @@ function ProductForm({ product, organizationId, branchId, categories, onClose, o
 
           {/* Precio y costo */}
           <div className="grid grid-cols-2 gap-3">
-            <FField label="Precio de venta * (COP)" value={form.price} onChange={v => update('price', v)} type="number" placeholder="5000" />
-            <FField label="Costo unitario (COP)" value={form.cost} onChange={v => update('cost', v)} type="number" placeholder="2500" />
+            <FField label="Precio de venta * (COP)" value={form.price} onChange={v => update('price', v)} type="number" placeholder="5000" min="0" />
+            <FField label="Costo unitario (COP)" value={form.cost} onChange={v => update('cost', v)} type="number" placeholder="2500" min="0" />
           </div>
 
           {/* Tarifa de IVA */}
@@ -599,8 +608,8 @@ function ProductForm({ product, organizationId, branchId, categories, onClose, o
           {/* Stock inicial (solo al crear) */}
           {!isEdit && form.item_type === 'product' && (
             <div className="grid grid-cols-2 gap-3">
-              <FField label="Stock inicial" value={form.initial_stock} onChange={v => update('initial_stock', v)} type="number" placeholder="0" />
-              <FField label="Stock mínimo (alerta)" value={form.min_stock} onChange={v => update('min_stock', v)} type="number" placeholder="5" />
+              <FField label="Stock inicial" value={form.initial_stock} onChange={v => update('initial_stock', v)} type="number" placeholder="0" min="0" />
+              <FField label="Stock mínimo (alerta)" value={form.min_stock} onChange={v => update('min_stock', v)} type="number" placeholder="5" min="0" />
             </div>
           )}
         </div>
@@ -618,12 +627,19 @@ function ProductForm({ product, organizationId, branchId, categories, onClose, o
   );
 }
 
-function FField({ label, value, onChange, placeholder, type = 'text' }) {
+function FField({ label, value, onChange, placeholder, type = 'text', min, max }) {
   return (
     <div>
       <label className="text-xs font-medium text-gray-500 mb-1.5 block">{label}</label>
-      <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full h-10 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-brand-400" />
+      <input
+        type={type}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        min={min}
+        max={max}
+        className="w-full h-10 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-brand-400"
+      />
     </div>
   );
 }
@@ -681,6 +697,11 @@ function StockMovements({ branchId }) {
           <div className="flex items-center justify-center py-20">
             <Loader2 size={22} className="animate-spin text-gray-300" />
           </div>
+        ) : movements.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+            <BarChart3 size={36} className="mb-3 opacity-30" />
+            <p className="text-sm">{page > 0 ? 'No hay más movimientos' : 'Sin movimientos registrados'}</p>
+          </div>
         ) : (
           <table className="w-full text-sm bg-white">
             <thead className="bg-gray-50 sticky top-0">
@@ -697,7 +718,9 @@ function StockMovements({ branchId }) {
                 return (
                   <tr key={m.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-xs text-gray-500">
-                      {format(parseISO(m.created_at), "d MMM, h:mm a", { locale: es })}
+                      {m.created_at
+                        ? format(parseISO(m.created_at), "d MMM, h:mm a", { locale: es })
+                        : '—'}
                     </td>
                     <td className="px-4 py-3">
                       <span className="flex items-center gap-1.5 text-xs font-medium text-gray-800">
@@ -721,6 +744,25 @@ function StockMovements({ branchId }) {
             </tbody>
           </table>
         )}
+      </div>
+
+      {/* Paginación */}
+      <div className="border-t border-gray-100 bg-white px-6 py-3 flex items-center justify-between shrink-0">
+        <button
+          onClick={() => setPage(p => Math.max(0, p - 1))}
+          disabled={page === 0 || loading}
+          className="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-40 flex items-center gap-1">
+          ← Anterior
+        </button>
+        <span className="text-xs text-gray-400">
+          Página {page + 1} · {movements.length} registros
+        </span>
+        <button
+          onClick={() => setPage(p => p + 1)}
+          disabled={movements.length < PAGE_SIZE || loading}
+          className="text-xs text-brand-600 hover:text-brand-700 disabled:opacity-40 flex items-center gap-1">
+          Siguiente →
+        </button>
       </div>
     </div>
   );
@@ -752,16 +794,17 @@ function StockAdjustment({ product, currentStock, branchId, onClose, onSaved }) 
 
   async function handleSave() {
     if (!qty) { toast.error('Ingresa la cantidad'); return; }
+    if (Number(qty) < 0) { toast.error('La cantidad no puede ser negativa'); return; }
     setSaving(true);
     try {
-      const change = type === 'adjustment'
-        ? numQty - currentStock
-        : selectedType.sign * numQty;
+      // actualNewStock siempre >= 0; change consistente con lo que realmente cambia
+      const actualNewStock = Math.max(0, newStock);
+      const change = actualNewStock - currentStock;
 
       // 1. Actualizar inventario
       const { error: invError } = await supabase
         .from('inventory')
-        .update({ quantity: Math.max(0, newStock), updated_at: new Date().toISOString() })
+        .update({ quantity: actualNewStock, updated_at: new Date().toISOString() })
         .eq('product_id', product.id)
         .eq('branch_id', branchId);
 
@@ -773,7 +816,7 @@ function StockAdjustment({ product, currentStock, branchId, onClose, onSaved }) 
         branch_id:       branchId,
         movement_type:   type,
         quantity_change: change,
-        quantity_after:  Math.max(0, newStock),
+        quantity_after:  actualNewStock,
         unit_cost:       cost ? Math.round(Number(cost)) : null,
         notes:           notes || null,
       });
@@ -904,10 +947,15 @@ function SupplierList({ organizationId }) {
 
   async function saveSupplier(form) {
     const payload = { ...form, organization_id: organizationId };
+    let error;
     if (editSupp) {
-      await supabase.from('suppliers').update(payload).eq('id', editSupp.id);
+      ({ error } = await supabase.from('suppliers').update(payload).eq('id', editSupp.id));
     } else {
-      await supabase.from('suppliers').insert(payload);
+      ({ error } = await supabase.from('suppliers').insert(payload));
+    }
+    if (error) {
+      toast.error(error.message || 'Error al guardar proveedor');
+      return;
     }
     toast.success(editSupp ? 'Proveedor actualizado' : 'Proveedor creado');
     setShowForm(false);

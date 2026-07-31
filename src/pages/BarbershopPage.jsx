@@ -144,7 +144,7 @@ export default function BarbershopPage() {
           activeStaff={activeStaff}
           loading={loading}
           onSlotClick={(slot) => { setSelectedSlot(slot); setShowNewAppt(true); }}
-          onAppointmentClick={(appt) => console.log('appt click', appt)}
+          onAppointmentClick={() => {}}
           onRefresh={refresh}
         />
       </div>
@@ -335,7 +335,7 @@ function AppointmentCalendar({ date, onDateChange, appointments, staffList, acti
                       style={getApptStyle(appt)}
                       className={`absolute left-0.5 right-0.5 rounded-lg border px-1.5 py-1 text-[11px] cursor-pointer z-10 overflow-hidden transition-all hover:shadow-md ${color} ${statusStyles[appt.status] || ''}`}>
                       <p className="font-semibold truncate leading-tight">
-                        {appt.customers?.first_name || 'Sin nombre'}
+                        {appt.customers?.name || 'Sin nombre'}
                       </p>
                       <p className="truncate opacity-70">
                         {appt.services?.[0]?.name || 'Servicio'}
@@ -384,7 +384,7 @@ function WaitingRoom({ waitingList, staffList, onUpdate }) {
 
   async function sendWhatsAppReminder(appt) {
     const msg = encodeURIComponent(
-      `Hola ${appt.customers?.first_name}, te recordamos tu cita para hoy a las ` +
+      `Hola ${appt.customers?.name}, te recordamos tu cita para hoy a las ` +
       `${format(parseISO(appt.start_at), 'h:mm a')} con ${
         staffList.find(s => s.id === appt.staff_user_id)?.full_name || 'nuestro equipo'
       }. ¡Te esperamos! 💈`
@@ -438,7 +438,7 @@ function WaitingRoom({ waitingList, staffList, onUpdate }) {
                     {idx + 1}
                   </div>
                   <span className={`text-xs font-semibold ${isNow ? 'text-brand-700' : 'text-gray-700'}`}>
-                    {appt.customers?.first_name || 'Sin nombre'}
+                    {appt.customers?.name || 'Sin nombre'}
                   </span>
                 </div>
                 <span className="text-[10px] text-gray-400">{startTime}</span>
@@ -548,9 +548,9 @@ function NewAppointmentModal({ slot, staffList, branchId, organizationId, onClos
     if (q.length < 2) { setCustomerResults([]); return; }
     const timer = setTimeout(async () => {
       const { data } = await supabase.from('customers')
-        .select('id, first_name, last_name, phone, whatsapp')
+        .select('id, name, phone')
         .eq('organization_id', organizationId)
-        .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,phone.like.%${q}%`)
+        .or(`name.ilike.%${q}%,phone.like.%${q}%`)
         .limit(5);
       setCustomerResults(data || []);
     }, 300);
@@ -646,11 +646,11 @@ function NewAppointmentModal({ slot, staffList, branchId, organizationId, onClos
                         onClick={() => setForm(f => ({
                           ...f,
                           customer_id:     c.id,
-                          customer_search: `${c.first_name} ${c.last_name}`,
+                          customer_search: c.name,
                         }))}
                         className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm flex items-center gap-2">
                         <User size={13} className="text-gray-400" />
-                        <span>{c.first_name} {c.last_name}</span>
+                        <span>{c.name}</span>
                         <span className="text-gray-400 text-xs ml-auto">{c.phone}</span>
                       </button>
                     ))}
@@ -903,7 +903,7 @@ export function useAppointments(branchId, date) {
       .from('appointments')
       .select(`
         *,
-        customers(id, first_name, last_name, phone, whatsapp),
+        customers(id, name, phone),
         users!staff_user_id(id, full_name)
       `)
       .eq('branch_id', branchId)

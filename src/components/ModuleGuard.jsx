@@ -17,7 +17,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   Lock, Zap, CheckCircle2, X, ChevronRight, Sparkles,
   Crown, ArrowRight, Star, Clock, AlertTriangle,
-  RefreshCw, Shield, MessageCircle
+  RefreshCw, Shield, MessageCircle, ToggleLeft, Settings2
 } from 'lucide-react';
 import { supabase }  from '../lib/supabase.js';
 import { useAuth }   from '../context/AuthContext.jsx';
@@ -35,16 +35,17 @@ const PlanContext = createContext(null);
 
 export function PlanProvider({ children }) {
   const { organizationId } = useAuth();
-  const [plan,    setPlan]    = useState(null);
-  const [modules, setModules] = useState(['pos']); // Mínimo garantizado
-  const [trial,   setTrial]   = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [plan,          setPlan]          = useState(null);
+  const [modules,       setModules]       = useState(['pos']); // Mínimo garantizado
+  const [activeModules, setActiveModules] = useState({});      // {} = todos activos
+  const [trial,         setTrial]         = useState(null);
+  const [loading,       setLoading]       = useState(true);
 
   useEffect(() => {
     if (!organizationId) { setLoading(false); return; }
     loadPlan();
 
-    // Escuchar cambios de plan en tiempo real (webhook de pago actualiza la BD)
+    // Escuchar cambios de plan y active_modules en tiempo real
     const ch = supabase
       .channel(`plan:${organizationId}`)
       .on('postgres_changes', {
@@ -55,7 +56,8 @@ export function PlanProvider({ children }) {
       }, (payload) => {
         const org = payload.new;
         setPlan(FERZU_PLANS[org.plan_id] || FERZU_PLANS.free);
-        setModules(org.enabled_modules || ['pos']);
+        setModules(org.enabled_modules   || ['pos']);
+        setActiveModules(org.active_modules || {});
         if (org.trial_ends_at) setTrial(org.trial_ends_at);
       })
       .subscribe();
@@ -67,20 +69,21 @@ export function PlanProvider({ children }) {
     setLoading(true);
     const { data: org } = await supabase
       .from('organizations')
-      .select('plan_id, enabled_modules, trial_ends_at')
+      .select('plan_id, enabled_modules, active_modules, trial_ends_at')
       .eq('id', organizationId)
       .single();
 
     if (org) {
       setPlan(FERZU_PLANS[org.plan_id] || FERZU_PLANS.free);
-      setModules(org.enabled_modules || ['pos']);
+      setModules(org.enabled_modules   || ['pos']);
+      setActiveModules(org.active_modules || {});
       if (org.trial_ends_at) setTrial(org.trial_ends_at);
     }
     setLoading(false);
   }
 
   return (
-    <PlanContext.Provider value={{ plan, modules, trial, loading, refetch: loadPlan }}>
+    <PlanContext.Provider value={{ plan, modules, activeModules, trial, loading, refetch: loadPlan }}>
       {children}
     </PlanContext.Provider>
   );
@@ -98,11 +101,21 @@ export function usePlan() {
   return ctx;
 }
 
-/** Hook que verifica si la org tiene acceso a un módulo específico */
+/**
+ * Hook que verifica acceso a un módulo.
+ * Distingue 3 estados:
+ *   enabled:         el módulo está activo (plan OK + owner no lo desactivó)
+ *   disabledByOwner: el plan lo incluye pero el owner lo desactivó
+ *   lockedByPlan:    el plan no incluye este módulo → UpgradeWall
+ */
 export function useModule(moduleKey) {
-  const { modules, plan, loading } = usePlan();
+  const { modules, activeModules, plan, loading } = usePlan();
+  const inPlan         = hasModule(modules, moduleKey);
+  const ownerDisabled  = activeModules?.[moduleKey] === false;
   return {
-    enabled: !loading && hasModule(modules, moduleKey),
+    enabled:         !loading && inPlan && !ownerDisabled,
+    disabledByOwner: !loading && inPlan && ownerDisabled,
+    lockedByPlan:    !loading && !inPlan,
     plan,
     loading,
   };
@@ -126,7 +139,7 @@ export function useModule(moduleKey) {
  * Si tiene acceso → renderiza children.
  */
 export function ModuleGuard({ moduleKey, children }) {
-  const { enabled, plan, loading } = useModule(moduleKey);
+  const { enabled, disabledByOwner, plan, loading } = useModule(moduleKey);
   const meta = MODULE_META[moduleKey];
 
   if (loading) {
@@ -140,11 +153,51 @@ export function ModuleGuard({ moduleKey, children }) {
     );
   }
 
+  // Módulo en plan pero desactivado por el dueño → DisabledWall
+  if (disabledByOwner) {
+    return <DisabledWall moduleMeta={meta} />;
+  }
+
+  // Módulo no incluido en el plan → UpgradeWall
   if (!enabled) {
     return <UpgradeWall moduleKey={moduleKey} moduleMeta={meta} currentPlan={plan} />;
   }
 
   return children;
+}
+
+
+// =============================================================================
+// DisabledWall — Módulo en plan pero desactivado por el dueño
+// =============================================================================
+
+function DisabledWall({ moduleMeta }) {
+  const navigate = useNavigate();
+  return (
+    <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="max-w-sm w-full mx-4 text-center">
+        <div className="relative inline-flex mb-6">
+          <div className="w-20 h-20 rounded-3xl bg-gray-100 flex items-center justify-center text-4xl">
+            {moduleMeta?.icon || '📦'}
+          </div>
+          <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center shadow-lg">
+            <ToggleLeft size={14} className="text-white" />
+          </div>
+        </div>
+        <h1 className="text-xl font-bold text-gray-800 mb-2">
+          {moduleMeta?.label || 'Módulo'} desactivado
+        </h1>
+        <p className="text-sm text-gray-500 mb-6">
+          Este módulo está incluido en tu plan pero lo has desactivado. Puedes volver a habilitarlo desde la configuración de módulos.
+        </p>
+        <button
+          onClick={() => navigate('/modules')}
+          className="px-6 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl transition-colors">
+          Ir a Configuración de módulos
+        </button>
+      </div>
+    </div>
+  );
 }
 
 
@@ -493,22 +546,25 @@ export function PricingPage() {
 // =============================================================================
 
 export function AdaptiveNav({ currentPath: currentPathProp }) {
-  const { modules, plan, trial } = usePlan();
-  const { user, signOut }        = useAuth();
+  const { modules, activeModules, plan, trial } = usePlan();
+  const { user, signOut }                       = useAuth();
   const navigate  = useNavigate();
   const location  = useLocation();
-  // Usar prop si se pasa, sino derivar de react-router
   const currentPath = currentPathProp ?? location.pathname;
 
-  const navModules = getNavModules(modules);
+  const isAdmin = ['admin', 'owner'].includes(user?.role);
 
-  // Módulos que NO tiene el plan pero existen → mostrar bloqueados como upgrade hint
+  // Módulos habilitados por plan Y no desactivados por el dueño
+  const navModules = getNavModules(modules)
+    .filter(mod => activeModules?.[mod.key] !== false);
+
+  // Módulos que NO tiene el plan → upgrade hint (máx 3)
   const ALL_MAIN = ['pos', 'barbershop', 'kitchen', 'workshop', 'minimarket', 'inventory', 'dashboard'];
   const lockedModules = ALL_MAIN
     .filter(key => !modules.includes(key))
     .map(key => MODULE_META[key])
     .filter(Boolean)
-    .slice(0, 3); // Mostrar máximo 3 sugerencias
+    .slice(0, 3);
 
   return (
     <aside className="w-56 bg-gray-950 flex flex-col h-full shrink-0">
@@ -578,6 +634,22 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
           </>
         )}
       </nav>
+
+      {/* Enlace a configuración de módulos — solo admins */}
+      {isAdmin && (
+        <div className="px-2 pb-2">
+          <Link
+            to="/modules"
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
+              currentPath === '/modules'
+                ? 'bg-white/20 text-white'
+                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+            }`}>
+            <Settings2 size={13} />
+            <span>Configurar módulos</span>
+          </Link>
+        </div>
+      )}
 
       {/* Footer del nav */}
       <div className="p-3 border-t border-white/10">

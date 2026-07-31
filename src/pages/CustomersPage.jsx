@@ -22,6 +22,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { formatCOP } from '../lib/math'
+import { useAuth } from '../context/AuthContext.jsx'
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -124,11 +125,13 @@ function useCustomerHistory(customerId) {
   return useQuery({
     queryKey: ['customer-history', customerId],
     queryFn: async () => {
+      // NOTA: orders no tiene columna payment_method (pagos en order_payments)
+      // qty → quantity (nombre real de la columna en order_items)
       const { data, error } = await supabase
         .from('orders')
         .select(`
-          id, created_at, total, payment_method, status,
-          items:order_items(product_name, qty, unit_price, subtotal)
+          id, created_at, total, status,
+          items:order_items(product_name, quantity, unit_price, subtotal)
         `)
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false })
@@ -386,13 +389,12 @@ function CustomerProfile({ customer, onClose, onEdit }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                    order.payment_method === 'cash'     ? 'bg-gray-100 text-gray-600' :
-                    order.payment_method === 'card'     ? 'bg-blue-100 text-blue-700' :
-                    order.payment_method === 'nequi'    ? 'bg-purple-100 text-purple-700' :
-                    order.payment_method === 'daviplata'? 'bg-orange-100 text-orange-700' :
+                    order.status === 'paid'      ? 'bg-green-100 text-green-700' :
+                    order.status === 'cancelled' ? 'bg-red-100 text-red-600' :
+                    order.status === 'pending'   ? 'bg-yellow-100 text-yellow-700' :
                     'bg-gray-100 text-gray-600'
                   }`}>
-                    {order.payment_method}
+                    {order.status === 'paid' ? 'Pagado' : order.status === 'cancelled' ? 'Anulado' : order.status || '—'}
                   </span>
                   <span className="text-xs text-gray-500 truncate">
                     {order.items?.map(i => i.product_name).join(', ')}
@@ -413,8 +415,10 @@ function CustomerProfile({ customer, onClose, onEdit }) {
 function LoyaltyConfig({ orgId }) {
   const [config, setConfig] = useState({ points_per_cop: 1000, redemption_rate: 100 })
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(null)
 
   useEffect(() => {
+    if (!orgId) return  // Guard: no intentar cargar con id null
     supabase
       .from('organizations')
       .select('loyalty_config')
@@ -426,12 +430,20 @@ function LoyaltyConfig({ orgId }) {
   }, [orgId])
 
   async function save() {
+    if (!orgId) { setSaveError('No se encontró la organización'); return }
     setSaving(true)
-    await supabase
-      .from('organizations')
-      .update({ loyalty_config: config })
-      .eq('id', orgId)
-    setSaving(false)
+    setSaveError(null)
+    try {
+      const { error } = await supabase
+        .from('organizations')
+        .update({ loyalty_config: config })
+        .eq('id', orgId)
+      if (error) throw error
+    } catch (err) {
+      setSaveError(err.message || 'Error al guardar configuración')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -474,9 +486,12 @@ function LoyaltyConfig({ orgId }) {
           </p>
         </div>
       </div>
+      {saveError && (
+        <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{saveError}</p>
+      )}
       <button
         onClick={save}
-        disabled={saving}
+        disabled={saving || !orgId}
         className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition disabled:opacity-60"
       >
         {saving ? 'Guardando…' : 'Guardar configuración'}
@@ -508,6 +523,7 @@ function Modal({ open, title, children, onClose, size = 'md' }) {
 // CustomersPage — página principal del módulo
 // ---------------------------------------------------------------------------
 export function CustomersPage() {
+  const { organizationId } = useAuth()
   const branchId = localStorage.getItem('ferzu_branch_id')
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -537,7 +553,10 @@ export function CustomersPage() {
   // Enriquecer clientes con segmento
   const enriched = customers.map(c => {
     const totalOrders = c.orders?.[0]?.count || 0
-    const lastDate = c.last_order?.[0]?.created_at
+    // last_order no viene ordenado — buscar la fecha más reciente en el array
+    const lastDate = c.last_order?.length
+      ? c.last_order.reduce((max, o) => (o.created_at > max ? o.created_at : max), '')
+      : null
     const daysSince = lastDate
       ? Math.floor((Date.now() - new Date(lastDate)) / 86400000)
       : 999
@@ -707,7 +726,7 @@ export function CustomersPage() {
         onClose={() => setShowLoyalty(false)}
         size="sm"
       >
-        <LoyaltyConfig orgId={/* se pasa desde el contexto */null} />
+        <LoyaltyConfig orgId={organizationId} />
       </Modal>
     </div>
   )

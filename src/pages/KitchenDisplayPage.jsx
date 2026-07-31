@@ -63,7 +63,7 @@ function playBeep(freq = 800, ms = 150) {
 
 export default function KitchenDisplayPage() {
   const { organizationId, user } = useAuth();
-  const [branchId]    = useState(user?.user_branches?.[0]?.branch_id);
+  const branchId = localStorage.getItem('ferzu_branch_id') || user?.user_branches?.[0]?.branch_id;
   const [sound,       setSound]       = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [filterTable,  setFilterTable]  = useState('all'); // 'all' | 'dine_in' | 'delivery'
@@ -472,40 +472,48 @@ export function useKitchenOrders(branchId, { onNewOrder, onReadyOrder } = {}) {
   const [loading, setLoading] = useState(false);
   const prevIds = useRef(new Set());
 
+  // Refs para callbacks — evita stale closures cuando sound cambia en el padre
+  const onNewOrderRef   = useRef(onNewOrder);
+  const onReadyOrderRef = useRef(onReadyOrder);
+  onNewOrderRef.current   = onNewOrder;
+  onReadyOrderRef.current = onReadyOrder;
+
   const ACTIVE_STATUSES = ['pending', 'in_kitchen', 'ready', 'served'];
 
   async function load() {
     if (!branchId) return;
     setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          id, order_number, order_type, kitchen_status, notes,
+          created_at, in_kitchen_at, ready_at, served_at,
+          tables(id, number),
+          order_items(
+            id, product_name, quantity, notes, modifiers,
+            kitchen_done, kitchen_station
+          )
+        `)
+        .eq('branch_id', branchId)
+        .in('kitchen_status', ACTIVE_STATUSES)
+        .not('kitchen_status', 'eq', 'served')
+        .order('created_at', { ascending: true });
 
-    const { data, error } = await supabase
-      .from('orders')
-      .select(`
-        id, order_number, order_type, kitchen_status, notes,
-        created_at, in_kitchen_at, ready_at, served_at,
-        tables(id, number),
-        order_items(
-          id, product_name, quantity, notes, modifiers,
-          kitchen_done, kitchen_station
-        )
-      `)
-      .eq('branch_id', branchId)
-      .in('kitchen_status', ACTIVE_STATUSES)
-      .not('kitchen_status', 'eq', 'served')  // Excluir entregados > 5 min
-      .order('created_at', { ascending: true });
-
-    if (!error) {
-      // Detectar nuevos pedidos para disparar sonido
-      const newSet = new Set((data || []).map(o => o.id));
-      if (prevIds.current.size > 0) {
-        for (const id of newSet) {
-          if (!prevIds.current.has(id) && onNewOrder) onNewOrder();
+      if (!error) {
+        // Detectar nuevos pedidos para disparar sonido
+        const newSet = new Set((data || []).map(o => o.id));
+        if (prevIds.current.size > 0) {
+          for (const id of newSet) {
+            if (!prevIds.current.has(id)) onNewOrderRef.current?.();
+          }
         }
+        prevIds.current = newSet;
+        setOrders(data || []);
       }
-      prevIds.current = newSet;
-      setOrders(data || []);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   useEffect(() => { load(); }, [branchId]);
@@ -532,7 +540,7 @@ export function useKitchenOrders(branchId, { onNewOrder, onReadyOrder } = {}) {
         filter: `branch_id=eq.${branchId}`,
       }, (payload) => {
         const updated = payload.new;
-        if (updated.kitchen_status === 'ready' && onReadyOrder) onReadyOrder();
+        if (updated.kitchen_status === 'ready') onReadyOrderRef.current?.();
         setOrders(prev => prev.map(o =>
           o.id === updated.id ? { ...o, ...updated } : o
         ).filter(o => ACTIVE_STATUSES.includes(o.kitchen_status) && o.kitchen_status !== 'served'));

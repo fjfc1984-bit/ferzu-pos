@@ -15,7 +15,7 @@
 //   9. useDashboard.js      — Hook de datos con React Query
 // =============================================================================
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   TrendingUp, TrendingDown, ShoppingBag, Users, DollarSign,
   Package, AlertTriangle, RefreshCw, Zap, ChevronRight,
@@ -125,9 +125,14 @@ export default function DashboardPage() {
   const { kpis, salesChart, heatmap, topProducts, stockAlerts, cashSession, loading, refresh }
     = useDashboard(branchId, organizationId, range);
 
+  // Ref siempre actualizada — evita que el intervalo capture refresh() estale
+  // (branchId y range pueden cambiar después del primer render)
+  const refreshRef = useRef(null);
+  refreshRef.current = refresh;
+
   // Auto-refresh cada 5 minutos
   useEffect(() => {
-    const id = setInterval(() => { refresh(); setLastRefresh(new Date()); }, 5 * 60 * 1000);
+    const id = setInterval(() => { refreshRef.current(); setLastRefresh(new Date()); }, 5 * 60 * 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -137,10 +142,11 @@ export default function DashboardPage() {
     try {
       // Usar la instancia axios (tiene baseURL de Railway configurado, no URL relativa)
       const res = await api.post('/ai/chat', {
-        message: `Analiza estos datos de negocio y dame un resumen ejecutivo en español colombiano, máximo 3 párrafos. Datos: Ventas=${formatCOP(kpis.totalSales)}, Tickets=${kpis.totalOrders}, Ticket promedio=${formatCOP(kpis.avgTicket)}, Clientes nuevos=${kpis.newCustomers}, Margen estimado=${kpis.marginPct}%, Top producto="${topProducts?.[0]?.name || 'N/A'}". Incluye 1 recomendación concreta.`,
-        model: 'claude-haiku-4-5-20251001',
+        message: `Analiza estos datos de negocio y dame un resumen ejecutivo en español colombiano, máximo 3 párrafos. Datos: Ventas=${formatCOP(kpis.totalSales)}, Tickets=${kpis.totalOrders}, Ticket promedio=${formatCOP(kpis.avgTicket)}, Clientes únicos=${kpis.newCustomers}, Margen estimado=${kpis.marginPct}%, Top producto="${topProducts?.[0]?.name || 'N/A'}". Incluye 1 recomendación concreta.`,
+        branch_id: branchId,
       });
-      setAiReport(res.data?.response || res.data?.message || '');
+      // El endpoint /api/ai/chat responde { text: "..." }
+      setAiReport(res.data?.text || res.data?.response || '');
     } catch {
       setAiReport('Error al conectar con el asistente IA. Verifica la clave de API.');
     } finally {
@@ -198,8 +204,8 @@ export default function DashboardPage() {
       {/* ── Contenido scrolleable ── */}
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
 
-        {/* ── Empty state primer día ── */}
-        {!loading && !kpis && !branchId && (
+        {/* ── Empty state: sin sucursal ── */}
+        {!loading && !branchId && (
           <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
             <div className="w-16 h-16 rounded-2xl bg-brand-50 flex items-center justify-center">
               <BarChart3 size={28} className="text-brand-500" />
@@ -212,6 +218,24 @@ export default function DashboardPage() {
               className="px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-xl hover:bg-brand-700 transition-colors">
               Completar configuración
             </a>
+          </div>
+        )}
+
+        {/* ── Empty state: sucursal ok pero datos no cargaron (error de red) ── */}
+        {!loading && branchId && !kpis && (
+          <div className="bg-red-50 border border-red-100 rounded-2xl px-6 py-5 flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shrink-0">
+              <AlertTriangle size={18} className="text-red-500" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-red-800">No se pudieron cargar las métricas</p>
+              <p className="text-xs text-red-600 mt-0.5">Verifica tu conexión a internet e intenta de nuevo.</p>
+            </div>
+            <button
+              onClick={() => { refresh(); setLastRefresh(new Date()); }}
+              className="ml-auto shrink-0 px-4 py-2 bg-red-600 text-white text-xs font-semibold rounded-xl hover:bg-red-700 transition-colors">
+              Reintentar
+            </button>
           </div>
         )}
 
@@ -297,7 +321,7 @@ function KPICards({ kpis, loading }) {
       bg:     'bg-purple-50',
     },
     {
-      label:  'Clientes nuevos',
+      label:  'Clientes únicos',  // Cuenta compradores del período, no primeras compras históricas
       value:  kpis?.newCustomers ?? '—',
       prev:   null,
       icon:   Users,
@@ -772,14 +796,26 @@ export function useDashboard(branchId, organizationId, range) {
         .gte('created_at', from)
         .lte('created_at', to);
 
+      // sortKey garantiza orden cronológico:
+      //   'today'       → '06', '07', '08'... (HH, ordena bien alfabéticamente)
+      //   'week'/'month' → '2026-07-25', '2026-07-26'... (fecha ISO, ordena bien)
       const grouped = {};
       for (const o of orders || []) {
-        const key = range === 'today'
-          ? format(parseISO(o.created_at), 'HH')
-          : format(parseISO(o.created_at), 'EEE', { locale: es });
-        grouped[key] = (grouped[key] || 0) + o.total;
+        const date    = parseISO(o.created_at);
+        const sortKey = range === 'today'
+          ? format(date, 'HH')
+          : format(date, 'yyyy-MM-dd');
+        const label   = range === 'today'
+          ? format(date, 'HH')
+          : format(date, 'EEE', { locale: es });
+        if (!grouped[sortKey]) grouped[sortKey] = { label, total: 0 };
+        grouped[sortKey].total += o.total;
       }
-      setSalesChart(Object.entries(grouped).map(([label, total]) => ({ label, total })));
+      setSalesChart(
+        Object.keys(grouped)
+          .sort()
+          .map(k => grouped[k])
+      );
       return;
     }
     setSalesChart(data);

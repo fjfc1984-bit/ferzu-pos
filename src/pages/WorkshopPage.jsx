@@ -690,14 +690,17 @@ export function useWorkOrders(branchId) {
   async function load() {
     if (!branchId) return;
     setLoading(true);
-    const { data } = await supabase
-      .from('work_orders')
-      .select('*, work_order_items(*)')
-      .eq('branch_id', branchId)
-      .not('status', 'eq', 'delivered')
-      .order('created_at', { ascending: false });
-    setOrders(data || []);
-    setLoading(false);
+    try {
+      const { data } = await supabase
+        .from('work_orders')
+        .select('*, work_order_items(*)')
+        .eq('branch_id', branchId)
+        .not('status', 'eq', 'delivered')
+        .order('created_at', { ascending: false });
+      setOrders(data || []);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, [branchId]);

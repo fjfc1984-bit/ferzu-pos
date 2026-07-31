@@ -40,6 +40,7 @@ import reportsRouter    from './routes/reports.routes.js';
 import paymentsRouter   from './routes/payments.routes.js';
 import errorsRouter     from './routes/errors.routes.js';
 import dianRouter       from './routes/dian.routes.js';
+import orgRouter        from './routes/org.routes.js';
 import { registerProcessHandlers } from './routes/errors.routes.js';
 
 // ── CRON ───────────────────────────────────────────────────────────────────────
@@ -89,6 +90,7 @@ app.use('/api/reports',       reportsRouter);
 app.use('/api/payments',      paymentsRouter);
 app.use('/api/errors',        errorsRouter);
 app.use('/api/dian',          dianRouter);
+app.use('/api/org',           orgRouter);
 
 // =============================================================================
 // HEALTH CHECK

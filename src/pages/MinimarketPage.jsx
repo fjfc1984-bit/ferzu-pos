@@ -391,7 +391,7 @@ function ExpiryTracker({ branchId, organizationId }) {
       .select('quantity')
       .eq('product_id', batch.product_id)
       .eq('branch_id', branchId)
-      .single();
+      .maybeSingle();
 
     if (inv) {
       await supabase.from('inventory')
@@ -536,7 +536,7 @@ function BatchManager({ branchId, organizationId }) {
 
       // Sumar al inventario
       const { data: inv } = await supabase.from('inventory')
-        .select('quantity').eq('product_id', form.product_id).eq('branch_id', branchId).single();
+        .select('quantity').eq('product_id', form.product_id).eq('branch_id', branchId).maybeSingle();
 
       const newQty = (inv?.quantity || 0) + Math.round(Number(form.quantity));
       if (inv) {
@@ -716,6 +716,7 @@ function PriceTagPrinter({ organizationId }) {
     ).join('');
 
     const win = window.open('', '_blank');
+    if (!win) { alert('Habilita las ventanas emergentes para imprimir etiquetas'); return; }
     win.document.write(`
       <!DOCTYPE html><html><head>
         <title>Etiquetas FERZU</title>
