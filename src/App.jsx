@@ -7,6 +7,7 @@ import { PlanProvider, ModuleGuard, AdaptiveNav, PricingPage, TrialBanner } from
 import { POSProvider } from './context/POSContext'
 import { SyncProvider } from './context/SyncContext'
 import { OfflineBanner } from './components/OfflineBanner'
+import { AIAssistant }  from './components/AIAssistant'
 
 // --- Landing page pública ---
 import LandingPage             from './pages/LandingPage'
@@ -132,6 +133,7 @@ function AppShell() {
           </Suspense>
         </main>
       </div>
+      <AIAssistant />
     </div>
   )
 }
@@ -147,6 +149,7 @@ function POSShell() {
     <>
       <OfflineBanner />
       <Outlet />
+      <AIAssistant />
     </>
   )
 }

@@ -18,11 +18,11 @@ router.use(aiRateLimit);
 // POST /ai/chat — Conversación con el agente
 router.post('/chat', [
   body('message').notEmpty().isLength({ max: 2000 }),
-  body('branch_id').isUUID(),
+  body('branch_id').optional({ nullable: true }).isUUID(),
   validate,
 ], async (req, res) => {
   try {
-    const { message, branch_id, conversation_history = [] } = req.body;
+    const { message, branch_id, conversation_history = [], page_context } = req.body;
 
     const { data: org } = await supabaseAdmin
       .from('organizations')
@@ -32,35 +32,41 @@ router.post('/chat', [
 
     const context = {
       organization_id: req.organizationId,
-      branch_id,
+      branch_id:       branch_id || null,
       business_type:   org?.business_type,
       business_name:   org?.name,
       user_name:       req.user.full_name,
       user_role:       req.user.role,
+      page_context:    page_context || null,
       supabase:        supabaseAdmin,
     };
 
-    await supabaseAdmin.from('ai_chat_history').insert({
-      organization_id: req.organizationId,
-      user_id:         req.user.id,
-      role:            'user',
-      content:         message,
-    });
+    // Guardar historial (tabla puede no existir en instancias nuevas — ignorar error)
+    try {
+      await supabaseAdmin.from('ai_chat_history').insert({
+        organization_id: req.organizationId,
+        user_id:         req.user.id,
+        role:            'user',
+        content:         message,
+      });
+    } catch (_) {}
 
     const result = await runFerzuAgent(message, conversation_history, context);
 
-    await supabaseAdmin.from('ai_chat_history').insert({
-      organization_id: req.organizationId,
-      user_id:         req.user.id,
-      role:            'assistant',
-      content:         result.text,
-      model:           result.model_used,
-      tokens_used:     result.tokens_used,
-    });
+    try {
+      await supabaseAdmin.from('ai_chat_history').insert({
+        organization_id: req.organizationId,
+        user_id:         req.user.id,
+        role:            'assistant',
+        content:         result.text,
+        model:           result.model_used,
+        tokens_used:     result.tokens_used,
+      });
+    } catch (_) {}
 
     res.json({
       text:              result.text,
-      proposals_created: result.tool_results.filter(t => t.tool === 'create_ai_proposal').length,
+      proposals_created: (result.tool_results || []).filter(t => t.tool === 'create_ai_proposal').length,
       tokens_used:       result.tokens_used,
     });
   } catch (err) {
