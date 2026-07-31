@@ -118,9 +118,9 @@ export default function BarbershopPage() {
         {/* Stats del día */}
         <div className="p-3 border-t border-gray-100 space-y-2">
           {[
-            { label: 'Citas hoy',   value: appointments.length,                          icon: Calendar },
+            { label: 'Citas hoy',   value: appointments.filter(a => isSameDay(parseISO(a.start_at), new Date())).length, icon: Calendar },
             { label: 'En espera',   value: waitingList.filter(w => w.status === 'arrived').length, icon: Timer },
-            { label: 'Completadas', value: appointments.filter(a => a.status === 'completed').length, icon: CheckCircle2 },
+            { label: 'Completadas', value: appointments.filter(a => isSameDay(parseISO(a.start_at), new Date()) && a.status === 'completed').length, icon: CheckCircle2 },
           ].map(({ label, value, icon: Icon }) => (
             <div key={label} className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -892,7 +892,11 @@ export function useAppointments(branchId, date) {
   async function load() {
     if (!branchId) return;
     setLoading(true);
-    const dateStr = format(date, 'yyyy-MM-dd');
+    // Cargar toda la semana visible (lunes a domingo)
+    const weekStart = startOfWeek(date, { weekStartsOn: 1 });
+    const weekEnd   = addDays(weekStart, 6);
+    const startStr  = format(weekStart, 'yyyy-MM-dd');
+    const endStr    = format(weekEnd,   'yyyy-MM-dd');
 
     const { data, error } = await supabase
       .from('appointments')
@@ -902,16 +906,16 @@ export function useAppointments(branchId, date) {
         users!staff_user_id(id, full_name)
       `)
       .eq('branch_id', branchId)
-      .gte('start_at', `${dateStr}T00:00:00`)
-      .lte('start_at', `${dateStr}T23:59:59`)
+      .gte('start_at', `${startStr}T00:00:00`)
+      .lte('start_at', `${endStr}T23:59:59`)
       .order('start_at');
 
     if (!error) setAppointments(data || []);
     setLoading(false);
   }
 
-  // Cargar al montar y cuando cambia la fecha
-  useEffect(() => { load(); }, [branchId, date?.toDateString()]);
+  // Recargar al montar y cuando cambia la semana (no cada día para evitar doble fetch)
+  useEffect(() => { load(); }, [branchId, startOfWeek(date, { weekStartsOn: 1 })?.toDateString()]);
 
   // Suscripción Realtime para la sala de espera
   useEffect(() => {
