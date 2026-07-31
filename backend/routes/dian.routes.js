@@ -16,6 +16,7 @@
 import { Router }            from 'express';
 import { createClient }      from '@supabase/supabase-js';
 import { aiRateLimit }       from '../config/rateLimits.js';
+import { requireAuth }       from '../middleware/auth.js';
 import {
   classifyProductVAT,
   batchClassifyVAT,
@@ -33,7 +34,12 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Middleware: verificar autenticación (req.organizationId se setea en auth middleware global)
+// Aplicar autenticación a TODAS las rutas DIAN.
+// requireAuth inyecta req.user, req.organizationId y req.supabase.
+// /validate-nit no necesita organizationId pero sí se protege contra abuso.
+router.use(requireAuth);
+
+// Middleware: verificar que el usuario tiene organización activa
 function requireOrg(req, res, next) {
   if (!req.organizationId) return res.status(401).json({ error: 'No autenticado' });
   next();
