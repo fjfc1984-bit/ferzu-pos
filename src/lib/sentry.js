@@ -9,6 +9,7 @@
  *   3. Ya está integrado en main.jsx
  */
 
+import React from 'react'
 import * as Sentry from '@sentry/react'
 
 const DSN = import.meta.env.VITE_SENTRY_DSN
@@ -92,17 +93,15 @@ export function captureError(err, context = {}) {
  */
 export function withSentryBoundary(Component, fallback = null) {
   return Sentry.withErrorBoundary(Component, {
-    fallback: fallback || (({ error, resetError }) => (
-      <div className="flex flex-col items-center justify-center p-8 text-center">
-        <p className="text-red-600 font-semibold mb-2">Algo salió mal</p>
-        <p className="text-sm text-gray-500 mb-4">{error?.message}</p>
-        <button
-          onClick={resetError}
-          className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700"
-        >
-          Reintentar
-        </button>
-      </div>
-    )),
+    fallback: fallback || (({ error, resetError }) =>
+      React.createElement('div', { className: 'flex flex-col items-center justify-center p-8 text-center' },
+        React.createElement('p', { className: 'text-red-600 font-semibold mb-2' }, 'Algo salió mal'),
+        React.createElement('p', { className: 'text-sm text-gray-500 mb-4' }, error?.message),
+        React.createElement('button', {
+          onClick: resetError,
+          className: 'px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700'
+        }, 'Reintentar')
+      )
+    ),
   })
 }
