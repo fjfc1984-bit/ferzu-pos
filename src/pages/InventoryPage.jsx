@@ -20,13 +20,14 @@ import {
   ArrowUpCircle, ArrowDownCircle, BarChart3, RefreshCw,
   Tag, DollarSign, Hash, Image as ImageIcon, X, Save,
   Loader2, ChevronRight, ToggleLeft, ToggleRight, QrCode,
-  SlidersHorizontal, Layers
+  SlidersHorizontal, Layers, Sparkles
 } from 'lucide-react';
 import { supabase }      from '../lib/supabase.js';
 import { useAuth }       from '../context/AuthContext.jsx';
 import { formatCOP }     from '../lib/math.js';
 import toast             from 'react-hot-toast';
 import VATClassifier, { RATE_LABELS } from '../components/dian/VATClassifier.jsx';
+import InventoryInsights from '../components/inventory/InventoryInsights.jsx';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -35,13 +36,15 @@ import { es } from 'date-fns/locale';
 // =============================================================================
 
 export default function InventoryPage() {
-  const [tab, setTab] = useState('products'); // 'products' | 'movements' | 'suppliers'
+  const [tab, setTab] = useState('products'); // 'products' | 'movements' | 'suppliers' | 'insights'
+  const [criticalCount, setCriticalCount] = useState(0);
   const { organizationId, branchId } = useAuth();
 
   const TABS = [
     { key: 'products',   label: 'Productos',   icon: Package   },
     { key: 'movements',  label: 'Movimientos', icon: BarChart3 },
     { key: 'suppliers',  label: 'Proveedores', icon: Truck     },
+    { key: 'insights',   label: 'Alertas IA',  icon: Sparkles, badge: criticalCount },
   ];
 
   return (
@@ -55,7 +58,7 @@ export default function InventoryPage() {
           </h1>
         </div>
         <div className="flex gap-1">
-          {TABS.map(({ key, label, icon: Icon }) => (
+          {TABS.map(({ key, label, icon: Icon, badge }) => (
             <button
               key={key}
               onClick={() => setTab(key)}
@@ -66,6 +69,12 @@ export default function InventoryPage() {
               }`}>
               <Icon size={14} />
               {label}
+              {badge > 0 && (
+                <span className="ml-0.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white
+                                 text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -76,6 +85,12 @@ export default function InventoryPage() {
         {tab === 'products'  && <ProductList  organizationId={organizationId} branchId={branchId} />}
         {tab === 'movements' && <StockMovements branchId={branchId} />}
         {tab === 'suppliers' && <SupplierList  organizationId={organizationId} />}
+        {tab === 'insights'  && (
+          <InventoryInsights
+            branchId={branchId}
+            onInsightCountChange={setCriticalCount}
+          />
+        )}
       </div>
     </div>
   );
