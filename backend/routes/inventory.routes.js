@@ -7,6 +7,7 @@ import { supabaseAdmin } from '../config/supabase.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { validate }  from '../middleware/validate.js';
 import { logAudit }  from '../middleware/audit.js';
+import { analyzeInventory } from '../lib/inventoryAI.js';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -27,6 +28,99 @@ router.get('/', async (req, res) => {
     if (error) throw error;
     res.json(data);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /inventory/insights — Análisis IA de stock: alertas críticas, stock muerto, sobrestock
+// Parámetros opcionales: ?branch_id=UUID&skip_ai=true
+router.get('/insights', async (req, res) => {
+  try {
+    const { branch_id, skip_ai } = req.query;
+    const organizationId = req.organizationId;
+    const skipAI = skip_ai === 'true';
+
+    // ── 1. Obtener productos activos con stock actual ──────────────────────
+    let productsQuery = req.supabase
+      .from('products')
+      .select(`
+        id, name, sku, cost_price, min_stock,
+        inventory!inner(quantity, branch_id)
+      `)
+      .eq('organization_id', organizationId)
+      .eq('is_active', true);
+
+    if (branch_id) {
+      productsQuery = productsQuery.eq('inventory.branch_id', branch_id);
+    }
+
+    const { data: productsRaw, error: prodErr } = await productsQuery;
+    if (prodErr) throw prodErr;
+
+    // Aplanar: si un producto tiene stock en varias sucursales, sumar
+    const productMap = new Map();
+    for (const p of productsRaw || []) {
+      if (!productMap.has(p.id)) {
+        const totalStock = Array.isArray(p.inventory)
+          ? p.inventory.reduce((sum, inv) => sum + (inv.quantity || 0), 0)
+          : (p.inventory?.quantity || 0);
+        productMap.set(p.id, {
+          id:          p.id,
+          name:        p.name,
+          sku:         p.sku,
+          cost_price:  p.cost_price,
+          min_stock:   p.min_stock,
+          stock:       totalStock,
+        });
+      }
+    }
+    const products = [...productMap.values()];
+
+    if (products.length === 0) {
+      return res.json({
+        generatedAt: new Date().toISOString(),
+        summary:     'No hay productos activos en tu inventario para analizar.',
+        stats:       { totalProducts: 0, criticalCount: 0, warningCount: 0, infoCount: 0, deadStockCount: 0, deadStockValue: 0 },
+        insights:    [],
+      });
+    }
+
+    // ── 2. Ventas de los últimos 30 días ──────────────────────────────────
+    const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+
+    let salesQuery = req.supabase
+      .from('order_items')
+      .select('product_id, quantity, orders!inner(created_at, status, branch_id, organization_id)')
+      .eq('orders.status', 'completed')
+      .eq('orders.organization_id', organizationId)   // defensa en profundidad: no cruzar tenants
+      .gte('orders.created_at', since);
+
+    if (branch_id) {
+      salesQuery = salesQuery.eq('orders.branch_id', branch_id);
+    }
+
+    const { data: salesRaw, error: salesErr } = await salesQuery;
+    if (salesErr) throw salesErr;
+
+    // Agregar ventas por product_id → { totalQty, lastSaleDate }
+    const salesMap = new Map();
+    for (const item of salesRaw || []) {
+      const existing = salesMap.get(item.product_id) || { totalQty: 0, lastSaleDate: null };
+      existing.totalQty += item.quantity || 0;
+      const saleDate = item.orders?.created_at;
+      if (saleDate && (!existing.lastSaleDate || saleDate > existing.lastSaleDate)) {
+        existing.lastSaleDate = saleDate;
+      }
+      salesMap.set(item.product_id, existing);
+    }
+
+    // ── 3. Analizar con IA ────────────────────────────────────────────────
+    const result = await analyzeInventory(products, salesMap, { skipAI });
+
+    res.json(result);
+
+  } catch (err) {
+    console.error('[inventory/insights]', err);
     res.status(500).json({ error: err.message });
   }
 });
