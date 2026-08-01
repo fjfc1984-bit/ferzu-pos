@@ -734,7 +734,7 @@ export function OnboardingWizard() {
           nit:                org.nit,
           phone:              org.phone,
           email:              org.email,
-          business_type:      org.business_type === 'mixed' ? 'retail' : org.business_type,
+          business_type:      org.business_type === 'mixed' ? 'generic' : org.business_type,
           onboarding_completed: true,
         })
         .select()
@@ -1170,6 +1170,7 @@ export function AuthProvider({ children }) {
       signOut,
       logout: signOut,                                          // alias para POSPage
       isAuthenticated: !!user,
+      loading: false,                                           // si el Provider está montado, loading ya terminó
       pinLocked: showPINLock,                                   // App.jsx necesita esto
       isAdmin: user?.role === 'owner' || user?.role === 'admin', // DiscountModal
     }}>

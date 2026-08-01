@@ -48,15 +48,26 @@ router.post('/create-bold-session', requireAuth, async (req, res) => {
     return res.status(400).json({ error: `Plan inválido: ${planId}` });
   }
 
+  // Verificar que el usuario pertenece a esta organización
+  const { data: userRow, error: userErr } = await supabaseAdmin
+    .from('users')
+    .select('id')
+    .eq('id', req.user.id)
+    .eq('organization_id', organizationId)
+    .single();
+
+  if (userErr || !userRow) {
+    return res.status(403).json({ error: 'No tienes acceso a esta organización' });
+  }
+
   const { data: org, error: orgErr } = await supabaseAdmin
     .from('organizations')
-    .select('id, name, owner_id')
+    .select('id, business_name, email')
     .eq('id', organizationId)
-    .eq('owner_id', req.user.id)
     .single();
 
   if (orgErr || !org) {
-    return res.status(403).json({ error: 'No tienes acceso a esta organización' });
+    return res.status(403).json({ error: 'Organización no encontrada' });
   }
 
   let customerEmail = '';
@@ -72,7 +83,7 @@ router.post('/create-bold-session', requireAuth, async (req, res) => {
   return res.json({
     orderId,
     amountCOP,
-    description:   `${PLAN_NAMES[planId] || planId} — ${org.name}`,
+    description:   `${PLAN_NAMES[planId] || planId} — ${org.business_name}`,
     customerEmail,
   });
 });
@@ -176,39 +187,44 @@ router.post('/bold', express.raw({ type: 'application/json' }), async (req, res)
       return res.status(500).json({ error: 'Error interno actualizando suscripción' });
     }
 
-    await supabaseAdmin
+    const { error: orgUpdateError } = await supabaseAdmin
       .from('organizations')
-      .update({ active_plan: planId, plan_expires_at: periodEnd.toISOString() })
+      .update({ plan_id: planId, plan_expires_at: periodEnd.toISOString() })
       .eq('id', orgId);
 
-    // Email de confirmación (best-effort)
+    if (orgUpdateError) {
+      logger.warn('[BOLD] Error actualizando plan_id en organizations', { error: orgUpdateError.message, orgId });
+    }
+
+    // Email de confirmación (best-effort) — usa columna email de organizations
     ;(async () => {
       try {
-        const { data: org } = await supabaseAdmin
-          .from('organizations').select('name, owner_id').eq('id', orgId).single();
+        const { data: orgData } = await supabaseAdmin
+          .from('organizations')
+          .select('business_name, email')
+          .eq('id', orgId)
+          .single();
 
-        if (org) {
-          const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(org.owner_id);
-          if (user?.email) {
-            await resend.emails.send({
-              from:    process.env.RESEND_FROM_EMAIL || 'FERZU POS <onboarding@resend.dev>',
-              to:      user.email,
-              subject: `✅ Plan ${planId} activado — FERZU POS`,
-              html: `
-                <div style="font-family:Arial,sans-serif;background:#0a0f1a;color:#d1fae5;padding:40px;border-radius:12px;max-width:480px;">
-                  <h2 style="color:#10b981;">¡Suscripción activada! 🎉</h2>
-                  <p>Hola <strong>${org.name}</strong>,</p>
-                  <p>Tu plan <strong style="color:#10b981;">${planId}</strong> está activo hasta el
-                     <strong>${periodEnd.toLocaleDateString('es-CO')}</strong>.</p>
-                  <p>Transacción Bold: <code style="color:#6ee7b7;">${data.id || data.transaction_id}</code></p>
-                  <a href="https://ferzu-pos.vercel.app/pos"
-                     style="display:inline-block;background:#059669;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;margin-top:16px;font-weight:700;">
-                    Ir al POS →
-                  </a>
-                </div>`,
-            });
-            logger.info('[BOLD] Email de confirmación enviado', { email: user.email, orgId });
-          }
+        const recipientEmail = orgData?.email;
+        if (recipientEmail) {
+          await resend.emails.send({
+            from:    process.env.RESEND_FROM_EMAIL || 'FERZU POS <onboarding@resend.dev>',
+            to:      recipientEmail,
+            subject: `✅ Plan ${PLAN_NAMES[planId] || planId} activado — FERZU POS`,
+            html: `
+              <div style="font-family:Arial,sans-serif;background:#0a0f1a;color:#d1fae5;padding:40px;border-radius:12px;max-width:480px;">
+                <h2 style="color:#10b981;">¡Suscripción activada! 🎉</h2>
+                <p>Hola <strong>${orgData.business_name}</strong>,</p>
+                <p>Tu plan <strong style="color:#10b981;">${PLAN_NAMES[planId] || planId}</strong> está activo hasta el
+                   <strong>${periodEnd.toLocaleDateString('es-CO')}</strong>.</p>
+                <p>Transacción Bold: <code style="color:#6ee7b7;">${data.id || data.transaction_id}</code></p>
+                <a href="https://ferzu-pos.vercel.app/pos"
+                   style="display:inline-block;background:#059669;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;margin-top:16px;font-weight:700;">
+                  Ir al POS →
+                </a>
+              </div>`,
+          });
+          logger.info('[BOLD] Email de confirmación enviado', { email: recipientEmail, orgId });
         }
       } catch (emailErr) {
         logger.warn('[BOLD] Error enviando email de confirmación', { error: emailErr.message });
