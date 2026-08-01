@@ -243,7 +243,7 @@ export function RegisterPage() {
           {error && (
             <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
               <AlertCircle size={15} className="text-red-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-red-600">{error}</p>
+              <p className="text-xs text-red-600">{error?.message || (typeof error === 'string' ? error : 'Error desconocido')}</p>
             </div>
           )}
 
