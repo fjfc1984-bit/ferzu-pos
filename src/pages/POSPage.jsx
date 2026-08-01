@@ -1221,7 +1221,7 @@ function CashSessionModal({ onClose, branchId }) {
       toast.success('Caja abierta correctamente');
       onClose();
     } catch (err) {
-      toast.error(err?.error || 'Error al abrir caja');
+      toast.error(err?.response?.data?.error || err?.error || 'Error al abrir caja');
     } finally {
       setLoading(false);
     }
@@ -1239,7 +1239,7 @@ function CashSessionModal({ onClose, branchId }) {
       toast.success('Caja cerrada correctamente');
       onClose();
     } catch (err) {
-      toast.error(err?.error || 'Error al cerrar caja');
+      toast.error(err?.response?.data?.error || err?.error || 'Error al cerrar caja');
     } finally {
       setLoading(false);
     }

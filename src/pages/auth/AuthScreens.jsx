@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase.js';
 import { api } from '../../lib/api.js';
+import { usePOS } from '../../context/POSContext.jsx';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -674,6 +675,7 @@ const NICHES = [
 
 export function OnboardingWizard() {
   const navigate = useNavigate();
+  const { dispatch: posDispatch } = usePOS();
   const [step,    setStep]    = useState(1);
   const TOTAL_STEPS = 5;
 
@@ -766,6 +768,8 @@ export function OnboardingWizard() {
 
       localStorage.setItem('ferzu_branch_id',   result.branchId);
       localStorage.setItem('ferzu_branch_name',  result.branchName);
+      // Sincronizar POSContext inmediatamente — init() ya corrió antes del onboarding
+      posDispatch({ type: 'SET_BRANCH', payload: result.branchId });
       toast.success('¡Organización configurada! Bienvenido a FERZU POS 🎉');
       navigate('/pos');
 
