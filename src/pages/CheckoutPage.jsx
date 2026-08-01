@@ -19,7 +19,7 @@
  *   - Trial gratuito 14 días: activa plan sin pago en modo trial
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
@@ -539,6 +539,54 @@ export function CheckoutPage() {
     city: '',
   })
   const [paymentResult, setPaymentResult] = useState(null)
+  const [prefilling, setPrefilling] = useState(true)
+
+  // Precargar datos del negocio ya guardados en onboarding
+  useEffect(() => {
+    async function prefillFromOrg() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) return
+
+        const { data: userData } = await supabase
+          .from('users')
+          .select('organization_id')
+          .eq('id', session.user.id)
+          .maybeSingle()
+
+        if (!userData?.organization_id) return
+
+        const { data: org } = await supabase
+          .from('organizations')
+          .select('business_name, nit, email, phone')
+          .eq('id', userData.organization_id)
+          .maybeSingle()
+
+        // También buscar ciudad de la sucursal principal
+        const { data: branch } = await supabase
+          .from('branches')
+          .select('city')
+          .eq('organization_id', userData.organization_id)
+          .eq('is_main', true)
+          .maybeSingle()
+
+        if (org) {
+          setContactData({
+            business_name: org.business_name || '',
+            nit:           org.nit           || '',
+            email:         org.email         || session.user.email || '',
+            phone:         org.phone         || '',
+            city:          branch?.city      || '',
+          })
+        }
+      } catch (_) {
+        // silencioso — el usuario puede llenar manualmente
+      } finally {
+        setPrefilling(false)
+      }
+    }
+    prefillFromOrg()
+  }, [])
 
   // Si el plan no existe, redirigir
   if (!plan) {
@@ -570,12 +618,29 @@ export function CheckoutPage() {
           <div className="lg:col-span-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
             {step < 3 && <StepBar step={step} />}
 
-            {step === 1 && (
-              <ContactStep
-                data={contactData}
-                onChange={setContactData}
-                onNext={() => setStep(2)}
-              />
+            {step === 1 && prefilling && (
+              <div className="flex items-center justify-center py-12 gap-3 text-gray-400">
+                <span className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-sm">Cargando tus datos…</span>
+              </div>
+            )}
+
+            {step === 1 && !prefilling && (
+              <>
+                {contactData.business_name && (
+                  <div className="mb-4 flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                    <span className="text-emerald-600 text-sm">✓</span>
+                    <span className="text-xs text-emerald-700 font-medium">
+                      Datos precargados desde tu perfil — puedes editarlos si es necesario
+                    </span>
+                  </div>
+                )}
+                <ContactStep
+                  data={contactData}
+                  onChange={setContactData}
+                  onNext={() => setStep(2)}
+                />
+              </>
             )}
 
             {step === 2 && (
