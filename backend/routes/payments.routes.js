@@ -95,8 +95,13 @@ const BOLD_SECRET_KEY = process.env.BOLD_SECRET_KEY || '';
 
 function verifyBoldSignature(rawBody, signatureHeader) {
   if (!BOLD_SECRET_KEY) {
-    logger.warn('[BOLD] BOLD_SECRET_KEY no configurada — firma no verificada');
-    return true; // permisivo solo en dev
+    // En producción esto es un riesgo crítico — cualquier webhook sería aceptado
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('[BOLD] BOLD_SECRET_KEY no configurada en producción — rechazando webhook por seguridad');
+      return false;  // FIX: rechazar en producción si no hay key
+    }
+    logger.warn('[BOLD] BOLD_SECRET_KEY no configurada — firma no verificada (solo en dev)');
+    return true; // permisivo solo en desarrollo local
   }
   if (!signatureHeader) return false;
 

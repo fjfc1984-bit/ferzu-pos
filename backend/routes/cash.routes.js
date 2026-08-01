@@ -44,14 +44,15 @@ router.post('/open', [
   try {
     const { branch_id, opening_cash } = req.body;
 
-    const { data: existing } = await req.supabase
+    const { data: existing, error: existErr } = await req.supabase
       .from('cash_sessions')
       .select('id')
       .eq('branch_id', branch_id)
       .eq('user_id', req.user.id)
       .eq('status', 'open')
-      .single();
+      .maybeSingle();                                         // FIX: maybeSingle() → no lanza error si no hay filas
 
+    if (existErr) throw existErr;                             // FIX: propagar errores reales de BD
     if (existing) {
       return res.status(409).json({ error: 'Ya tienes una caja abierta', session_id: existing.id });
     }
