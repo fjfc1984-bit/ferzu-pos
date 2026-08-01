@@ -680,7 +680,7 @@ function StockMovements({ branchId }) {
       .from('inventory_movements')
       .select(`
         id, movement_type, quantity_change, quantity_after, notes, created_at,
-        products(name, emoji),
+        products(name, metadata),
         users(full_name)
       `)
       .eq('branch_id', branchId)

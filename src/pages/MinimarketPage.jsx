@@ -106,7 +106,7 @@ function ScaleIntegration({ branchId, organizationId }) {
     const timer = setTimeout(async () => {
       const { data } = await supabase
         .from('products')
-        .select('id, name, emoji, price, metadata')
+        .select('id, name, metadata, price')
         .eq('organization_id', organizationId)
         .ilike('name', `%${search}%`)
         .eq('is_active', true)
@@ -327,7 +327,7 @@ function ExpiryTracker({ branchId, organizationId }) {
     setLoading(true);
     const { data } = await supabase
       .from('product_batches')
-      .select('*, products(id, name, emoji, sku)')
+      .select('*, products(id, name, metadata, sku)')
       .eq('branch_id', branchId)
       .gt('quantity', 0)
       .order('expiry_date');
@@ -509,8 +509,8 @@ function BatchManager({ branchId, organizationId }) {
   async function loadAll() {
     setLoading(true);
     const [batchRes, prodRes] = await Promise.all([
-      supabase.from('product_batches').select('*, products(name, emoji)').eq('branch_id', branchId).gt('quantity', 0).order('expiry_date'),
-      supabase.from('products').select('id, name, emoji').eq('organization_id', organizationId).eq('is_active', true).order('name'),
+      supabase.from('product_batches').select('*, products(name, metadata)').eq('branch_id', branchId).gt('quantity', 0).order('expiry_date'),
+      supabase.from('products').select('id, name, metadata').eq('organization_id', organizationId).eq('is_active', true).order('name'),
     ]);
     setBatches(batchRes.data || []);
     setProducts(prodRes.data || []);
@@ -684,7 +684,7 @@ function PriceTagPrinter({ organizationId }) {
   const [size,      setSize]      = useState('medium'); // 'small'|'medium'|'large'
 
   useEffect(() => {
-    supabase.from('products').select('id, name, emoji, price, sku, barcode')
+    supabase.from('products').select('id, name, metadata, price, sku, barcode')
       .eq('organization_id', organizationId).eq('is_active', true).order('name')
       .then(({ data }) => setProducts(data || []));
   }, [organizationId]);
