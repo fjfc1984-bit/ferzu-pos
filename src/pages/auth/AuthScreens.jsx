@@ -734,7 +734,7 @@ export function OnboardingWizard() {
           nit:                org.nit,
           phone:              org.phone,
           email:              org.email,
-          business_type:      org.business_type,
+          business_type:      org.business_type === 'mixed' ? 'retail' : org.business_type,
           onboarding_completed: true,
         })
         .select()
