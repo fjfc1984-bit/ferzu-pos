@@ -289,7 +289,7 @@ function ProductList({ organizationId, branchId }) {
                         <div className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center text-lg shrink-0 overflow-hidden">
                           {p.image_url
                             ? <img src={p.image_url} alt="" className="w-full h-full object-cover" />
-                            : p.emoji || '📦'}
+                            : p.metadata?.emoji || p.emoji || '📦'}
                         </div>
                         <div>
                           <p className="font-medium text-gray-900 leading-tight">{p.name}</p>
@@ -421,7 +421,7 @@ function ProductForm({ product, organizationId, branchId, categories, onClose, o
     price:        product?.price?.toString()     || '',
     cost:         product?.cost?.toString()      || '',
     category_id:  product?.category_id  || '',
-    emoji:        product?.emoji        || '📦',
+    emoji:        product?.metadata?.emoji || product?.emoji || '📦',
     item_type:    product?.item_type    || 'product',
     vat_rate:     (product?.vat_rate != null ? String(product.vat_rate) : '0'), // 0|5|8|19
     vat_included: product?.vat_included ?? true,             // precio ya incluye IVA
@@ -451,7 +451,7 @@ function ProductForm({ product, organizationId, branchId, categories, onClose, o
         price:           Math.round(Number(form.price)),
         cost:            form.cost ? Math.round(Number(form.cost)) : null,
         category_id:     form.category_id || null,
-        emoji:           form.emoji,
+        metadata:        { ...(product?.metadata || {}), emoji: form.emoji },
         item_type:       form.item_type,
         vat_rate:        parseFloat(form.vat_rate) || 0,    // columna real en DB
         vat_included:    form.vat_included,                  // columna real en DB
@@ -741,7 +741,7 @@ function StockMovements({ branchId }) {
                     </td>
                     <td className="px-4 py-3">
                       <span className="flex items-center gap-1.5 text-xs font-medium text-gray-800">
-                        {m.products?.emoji || '📦'} {m.products?.name || '—'}
+                        {m.products?.metadata?.emoji || m.products?.emoji || '📦'} {m.products?.name || '—'}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -865,7 +865,7 @@ function StockAdjustment({ product, currentStock, branchId, onClose, onSaved }) 
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
             <SlidersHorizontal size={15} className="text-brand-600" />
-            Ajustar inventario — {product.emoji} {product.name}
+            Ajustar inventario — {product.metadata?.emoji || product.emoji || '📦'} {product.name}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>

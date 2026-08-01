@@ -203,7 +203,7 @@ function ScaleIntegration({ branchId, organizationId }) {
     if (!product || weight == null || !calculatedPrice) return;
     // En producción: this.pos.addItem(product.id, weight/1000, calculatedPrice)
     // Por ahora mostrar toast con los datos que se pasarían al POS
-    toast.success(`${product.emoji || '📦'} ${product.name} · ${(weight/1000).toFixed(3)} kg · ${formatCOP(calculatedPrice)}`);
+    toast.success(`${product.metadata?.emoji || product.emoji || '📦'} ${product.name} · ${(weight/1000).toFixed(3)} kg · ${formatCOP(calculatedPrice)}`);
     setWeight(null);
   }
 
@@ -247,7 +247,7 @@ function ScaleIntegration({ branchId, organizationId }) {
             {results.map(p => (
               <button key={p.id} onClick={() => selectProduct(p)}
                 className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between text-sm">
-                <span>{p.emoji || '📦'} {p.name}</span>
+                <span>{p.metadata?.emoji || p.emoji || '📦'} {p.name}</span>
                 <span className="text-gray-400 text-xs">
                   {formatCOP(p.metadata?.price_per_kg || p.price)}/kg
                 </span>
@@ -258,7 +258,7 @@ function ScaleIntegration({ branchId, organizationId }) {
 
         {product && (
           <div className="mt-2 flex items-center gap-2 bg-brand-50 rounded-xl px-3 py-2">
-            <span className="text-lg">{product.emoji || '📦'}</span>
+            <span className="text-lg">{product.metadata?.emoji || product.emoji || '📦'}</span>
             <div className="flex-1">
               <p className="text-sm font-medium text-brand-800">{product.name}</p>
               <p className="text-xs text-brand-600">{formatCOP(pricePerKg)}/kg</p>
@@ -453,7 +453,7 @@ function ExpiryTracker({ branchId, organizationId }) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm truncate">
-                        {b.products?.emoji || '📦'} {b.products?.name || '—'}
+                        {b.products?.metadata?.emoji || b.products?.emoji || '📦'} {b.products?.name || '—'}
                       </span>
                       <span className="text-[10px] opacity-70 shrink-0">
                         Lote: {b.batch_number || 'S/N'}
@@ -593,7 +593,7 @@ function BatchManager({ branchId, organizationId }) {
                 const days = b.expiry_date ? differenceInDays(parseISO(b.expiry_date), new Date()) : null;
                 return (
                   <tr key={b.id} className={`hover:bg-gray-50 ${days != null && days <= 7 ? 'bg-red-50/30' : ''}`}>
-                    <td className="px-4 py-2.5 font-medium text-gray-800">{b.products?.emoji || '📦'} {b.products?.name}</td>
+                    <td className="px-4 py-2.5 font-medium text-gray-800">{b.products?.metadata?.emoji || b.products?.emoji || '📦'} {b.products?.name}</td>
                     <td className="px-4 py-2.5 text-gray-500 font-mono text-xs">{b.batch_number || '—'}</td>
                     <td className="px-4 py-2.5 font-semibold">{b.quantity} uds</td>
                     <td className={`px-4 py-2.5 text-xs ${days != null && days <= 0 ? 'text-red-600 font-bold' : days != null && days <= 30 ? 'text-amber-600' : 'text-gray-500'}`}>
@@ -630,7 +630,7 @@ function BatchManager({ branchId, organizationId }) {
                 <select value={form.product_id} onChange={e => setForm(f => ({...f, product_id: e.target.value}))}
                   className="w-full h-10 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-brand-400">
                   <option value="">Seleccionar...</option>
-                  {products.map(p => <option key={p.id} value={p.id}>{p.emoji || '📦'} {p.name}</option>)}
+                  {products.map(p => <option key={p.id} value={p.id}>{p.metadata?.emoji || p.emoji || '📦'} {p.name}</option>)}
                 </select>
               </div>
               {[
@@ -746,7 +746,7 @@ function PriceTagPrinter({ organizationId }) {
               selected.some(x => x.id === p.id) ? 'bg-brand-50 border border-brand-200' : 'hover:bg-gray-50'
             }`}>
               <input type="checkbox" checked={selected.some(x => x.id === p.id)} onChange={() => toggleSelect(p)} className="accent-brand-600" />
-              <span className="text-sm flex-1 truncate">{p.emoji || '📦'} {p.name}</span>
+              <span className="text-sm flex-1 truncate">{p.metadata?.emoji || p.emoji || '📦'} {p.name}</span>
               <span className="text-xs font-semibold text-gray-700 shrink-0">{formatCOP(p.price)}</span>
             </label>
           ))}
