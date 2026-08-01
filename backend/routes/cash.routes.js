@@ -18,7 +18,7 @@ router.get('/current', async (req, res) => {
     const branchId = req.headers['x-branch-id'];
     if (!branchId) return res.status(400).json({ error: 'x-branch-id header requerido' });
 
-    const { data, error } = await req.supabase
+    const { data, error } = await supabaseAdmin
       .from('cash_sessions')
       .select('*')
       .eq('branch_id', branchId)
@@ -44,20 +44,20 @@ router.post('/open', [
   try {
     const { branch_id, opening_cash } = req.body;
 
-    const { data: existing, error: existErr } = await req.supabase
+    const { data: existing, error: existErr } = await supabaseAdmin
       .from('cash_sessions')
       .select('id')
       .eq('branch_id', branch_id)
       .eq('user_id', req.user.id)
       .eq('status', 'open')
-      .maybeSingle();                                         // FIX: maybeSingle() → no lanza error si no hay filas
+      .maybeSingle();
 
-    if (existErr) throw existErr;                             // FIX: propagar errores reales de BD
+    if (existErr) throw existErr;
     if (existing) {
       return res.status(409).json({ error: 'Ya tienes una caja abierta', session_id: existing.id });
     }
 
-    const { data, error } = await req.supabase
+    const { data, error } = await supabaseAdmin
       .from('cash_sessions')
       .insert({ branch_id, user_id: req.user.id, opening_cash, status: 'open' })
       .select()
