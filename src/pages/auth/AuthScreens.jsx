@@ -53,19 +53,19 @@ export function LoginPage() {
       return;
     }
 
-    // Verificar si la org ya tiene configuración → onboarding o POS
+    // Verificar si el usuario ya tiene organización asignada
     const { data: userData } = await supabase
       .from('users')
-      .select('organization_id, role, organizations(onboarding_completed)')
+      .select('organization_id, role')
       .eq('id', data.user.id)
       .single();
 
-    // Si no tiene org, o el onboarding no está completo → ir a configuración
-    const onboardingDone = userData?.organization_id && userData?.organizations?.onboarding_completed;
-    if (!onboardingDone) {
-      navigate('/onboarding');
-    } else {
+    // Si ya tiene org → ir a selección de sucursal (branch-select se encarga del resto)
+    // Si no tiene org → ir a onboarding para configurar
+    if (userData?.organization_id) {
       navigate('/branch-select');
+    } else {
+      navigate('/onboarding');
     }
   }
 

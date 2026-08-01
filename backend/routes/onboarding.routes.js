@@ -50,6 +50,11 @@ router.post('/setup', requireJWT, async (req, res) => {
         .eq('nit', nit)
         .maybeSingle();
       if (existingOrg) {
+        // Asegurarse de que onboarding_completed esté en true
+        await supabaseAdmin
+          .from('organizations')
+          .update({ onboarding_completed: true })
+          .eq('id', existingOrg.id);
         orgData = existingOrg;
         logger.info('[ONBOARDING] Organización existente reutilizada', { orgId: orgData.id, nit });
       }
