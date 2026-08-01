@@ -39,7 +39,24 @@ import { es } from 'date-fns/locale';
 export default function InventoryPage() {
   const [tab, setTab] = useState('products'); // 'products' | 'movements' | 'suppliers' | 'insights'
   const [criticalCount, setCriticalCount] = useState(0);
-  const { organizationId, branchId } = useAuth();
+  const { organizationId } = useAuth();
+  // branchId vive en POSContext/localStorage — no en AuthContext
+  const [branchId, setBranchId] = useState(localStorage.getItem('ferzu_branch_id') || null);
+
+  // FIX: auto-resolver primera sucursal si localStorage está vacío
+  useEffect(() => {
+    if (branchId || !organizationId) return;
+    supabase.from('branches').select('id')
+      .eq('organization_id', organizationId)
+      .order('created_at', { ascending: true })
+      .limit(1).maybeSingle()
+      .then(({ data }) => {
+        if (data?.id) {
+          setBranchId(data.id);
+          localStorage.setItem('ferzu_branch_id', data.id);
+        }
+      });
+  }, [organizationId]);
 
   const TABS = [
     { key: 'products',   label: 'Productos',   icon: Package   },
@@ -114,7 +131,7 @@ function ProductList({ organizationId, branchId }) {
   const [showAdj,   setShowAdj]   = useState(null); // product para ajuste
   const [showBatchVAT, setShowBatchVAT] = useState(false);
 
-  useEffect(() => { loadAll(); }, [organizationId, branchId]);
+  useEffect(() => { if (organizationId) loadAll(); }, [organizationId, branchId]);
 
   async function loadAll() {
     setLoading(true);

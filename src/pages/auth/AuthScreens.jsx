@@ -724,93 +724,48 @@ export function OnboardingWizard() {
   async function handleFinish() {
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      // Obtener el JWT del usuario autenticado
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('No hay sesión activa. Vuelve a iniciar sesión.');
 
-      // 1. Crear organización
-      const { data: orgData, error: orgError } = await supabase
-        .from('organizations')
-        .insert({
-          business_name:      org.business_name,
-          nit:                org.nit,
-          phone:              org.phone,
-          email:              org.email,
-          business_type:      org.business_type === 'mixed' ? 'generic' : org.business_type,
-          onboarding_completed: true,
-        })
-        .select()
-        .single();
-
-      if (orgError) throw orgError;
-
-      // 2. Crear sucursal principal
-      const { data: branchData, error: branchError } = await supabase
-        .from('branches')
-        .insert({
-          organization_id: orgData.id,
-          name:            org.branch_name,
-          address:         org.address,
-          city:            org.city,
-          department:      org.department,
-          is_main:         true,
-          is_active:       true,
-        })
-        .select()
-        .single();
-
-      if (branchError) throw branchError;
-
-      // 3. Asociar usuario con organización y sucursal
-      await supabase.from('users').update({
-        organization_id: orgData.id,
-        role: 'owner',
-      }).eq('id', user.id);
-
-      await supabase.from('user_branches').insert({
-        user_id:   user.id,
-        branch_id: branchData.id,
-        role:      'owner',
+      // FIX: llamar al backend con supabaseAdmin (bypasea RLS)
+      // El cliente Supabase directo falla porque el usuario nuevo no tiene
+      // organization_id aún → get_user_org_id() = NULL → INSERT bloqueado por RLS
+      const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+      const res = await fetch(`${API_BASE}/onboarding/setup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          business_name:          org.business_name,
+          nit:                    org.nit,
+          phone:                  org.phone,
+          email:                  org.email,
+          business_type:          org.business_type,
+          branch_name:            org.branch_name,
+          address:                org.address,
+          city:                   org.city,
+          department:             org.department,
+          skip_dian:              org.skip_dian,
+          dian_resolution_number: org.dian_resolution_number,
+          dian_prefix:            org.dian_prefix,
+          dian_from_number:       org.dian_from_number,
+          dian_to_number:         org.dian_to_number,
+          dian_resolution_date:   org.dian_resolution_date,
+          pta_provider:           org.pta_provider,
+          first_product_name:     org.first_product_name,
+          first_product_price:    org.first_product_price,
+          first_product_sku:      org.first_product_sku,
+        }),
       });
 
-      // 4. Configuración DIAN (si se proporcionó)
-      if (!org.skip_dian && org.dian_resolution_number) {
-        await supabase.from('dian_configs').insert({
-          organization_id:         orgData.id,
-          branch_id:               branchData.id,
-          resolution_number:       org.dian_resolution_number,
-          prefix:                  org.dian_prefix,
-          from_number:             Number(org.dian_from_number),
-          to_number:               Number(org.dian_to_number),
-          current_number:          Number(org.dian_from_number),
-          resolution_date:         org.dian_resolution_date,
-          pta_provider:            org.pta_provider,
-          is_active:               true,
-        });
-      }
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Error al configurar la organización');
 
-      // 5. Primer producto (si se proporcionó)
-      if (org.first_product_name && org.first_product_price) {
-        const { data: prodData } = await supabase.from('products').insert({
-          organization_id: orgData.id,
-          name:            org.first_product_name,
-          sku:             org.first_product_sku || `PROD-001`,
-          price:           Math.round(Number(org.first_product_price.replace(/\D/g, ''))),
-          is_active:       true,
-          item_type:       'product',
-        }).select().single();
-
-        // Inventario inicial en 0
-        if (prodData) {
-          await supabase.from('inventory').insert({
-            product_id: prodData.id,
-            branch_id:  branchData.id,
-            quantity:   0,
-            min_stock:  5,
-          });
-        }
-      }
-
-      localStorage.setItem('ferzu_branch_id',   branchData.id);
-      localStorage.setItem('ferzu_branch_name',  org.branch_name);
+      localStorage.setItem('ferzu_branch_id',   result.branchId);
+      localStorage.setItem('ferzu_branch_name',  result.branchName);
       toast.success('¡Organización configurada! Bienvenido a FERZU POS 🎉');
       navigate('/pos');
 
