@@ -41,23 +41,38 @@ router.post('/setup', requireJWT, async (req, res) => {
   }
 
   try {
-    // 1. Crear organización
-    const { data: orgData, error: orgError } = await supabaseAdmin
-      .from('organizations')
-      .insert({
-        business_name,
-        nit:        nit || null,
-        phone:      phone || null,
-        email:      email || null,
-        business_type: business_type === 'mixed' ? 'generic' : (business_type || 'generic'),
-        onboarding_completed: true,
-        plan_id: 'free',
-      })
-      .select()
-      .single();
+    // 1. Crear organización — si el NIT ya existe, reusar la organización existente
+    let orgData;
+    if (nit) {
+      const { data: existingOrg } = await supabaseAdmin
+        .from('organizations')
+        .select('id')
+        .eq('nit', nit)
+        .maybeSingle();
+      if (existingOrg) {
+        orgData = existingOrg;
+        logger.info('[ONBOARDING] Organización existente reutilizada', { orgId: orgData.id, nit });
+      }
+    }
 
-    if (orgError) throw orgError;
-    logger.info('[ONBOARDING] Organización creada', { orgId: orgData.id, business_name });
+    if (!orgData) {
+      const { data: newOrg, error: orgError } = await supabaseAdmin
+        .from('organizations')
+        .insert({
+          business_name,
+          nit:        nit || null,
+          phone:      phone || null,
+          email:      email || null,
+          business_type: business_type === 'mixed' ? 'generic' : (business_type || 'generic'),
+          onboarding_completed: true,
+          plan_id: 'free',
+        })
+        .select()
+        .single();
+      if (orgError) throw orgError;
+      orgData = newOrg;
+      logger.info('[ONBOARDING] Organización creada', { orgId: orgData.id, business_name });
+    }
 
     // 2. Crear sucursal principal
     const { data: branchData, error: branchError } = await supabaseAdmin
@@ -127,7 +142,6 @@ router.post('/setup', requireJWT, async (req, res) => {
           product_id: prodData.id,
           branch_id:  branchData.id,
           quantity:   0,
-          min_stock:  5,
         });
         prodCreated = true;
       }
