@@ -24,7 +24,7 @@ import {
   ShoppingCart, Search, Zap, User, ChevronDown,
   Package, BarChart3, LogOut, Wifi, WifiOff,
   Clock, AlertCircle, CheckCircle2, X, Plus, Minus,
-  Percent, DollarSign, CreditCard, Smartphone,
+  Percent, DollarSign, CreditCard, Smartphone, Split,
   Printer, RefreshCw, Settings, ChevronRight
 } from 'lucide-react';
 import { usePOS }                  from '../context/POSContext.jsx';
@@ -693,21 +693,36 @@ function OrderPanel({ onPay, onCustomer, onDiscount, onOpenCashModal }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function PaymentModal({ onClose }) {
-  const { totals, items, customerName, processPayment, isProcessing, clearOrder } = usePOS();
+  const { totals, items, customerName, processPayment, processPaymentMixed, isProcessing, clearOrder } = usePOS();
   const [method,       setMethod]       = useState('cash');
   const [cashReceived, setCashReceived] = useState('');
+  const [mixCash,      setMixCash]      = useState('');
+  const [mixCard,      setMixCard]      = useState('');
   const [step,         setStep]         = useState('select'); // 'select' | 'done' | 'done-offline'
   const [finalChange,  setFinalChange]  = useState(0);       // vuelto fijo para pantalla post-venta
   const cashInputRef = useRef(null);
+  const mixCashRef   = useRef(null);
 
   const total        = totals.total;
   const cashAmt      = Number(cashReceived) || 0;
   const change       = method === 'cash' ? Math.max(0, cashAmt - total) : 0;
   const cashSufficient = method !== 'cash' || (cashAmt >= total && cashAmt >= 0);
 
-  // Auto-focus en el input de efectivo
+  // Mixto: auto-completar card cuando se ingresa cash
+  const mixCashAmt = Number(mixCash) || 0;
+  const mixCardAmt = Number(mixCard) || 0;
+  const mixValid   = method === 'mixed' && mixCashAmt > 0 && mixCardAmt > 0 && (mixCashAmt + mixCardAmt) === total;
+
+  function handleMixCashChange(val) {
+    setMixCash(val)
+    const remaining = total - (Number(val) || 0)
+    setMixCard(remaining > 0 ? String(remaining) : '')
+  }
+
+  // Auto-focus en el input según el método
   useEffect(() => {
-    if (method === 'cash') setTimeout(() => cashInputRef.current?.focus(), 100);
+    if (method === 'cash')  setTimeout(() => cashInputRef.current?.focus(), 100);
+    if (method === 'mixed') setTimeout(() => mixCashRef.current?.focus(), 100);
   }, [method]);
 
   const PAYMENT_METHODS = [
@@ -717,6 +732,7 @@ function PaymentModal({ onClose }) {
     { id: 'nequi',       label: 'Nequi',          icon: Smartphone,   color: 'pink' },
     { id: 'daviplata',   label: 'Daviplata',      icon: Smartphone,   color: 'orange' },
     { id: 'transfer',    label: 'Transferencia',  icon: ChevronRight, color: 'gray' },
+    { id: 'mixed',       label: 'Mixto',          icon: Split,        color: 'indigo' },
   ];
 
   const colorMap = {
@@ -726,9 +742,22 @@ function PaymentModal({ onClose }) {
     pink:   'bg-pink-50 border-pink-200 text-pink-700',
     orange: 'bg-orange-50 border-orange-200 text-orange-700',
     gray:   'bg-gray-50 border-gray-200 text-gray-700',
+    indigo: 'bg-indigo-50 border-indigo-200 text-indigo-700',
   };
 
   async function handleConfirm() {
+    if (method === 'mixed') {
+      if (!mixValid) {
+        toast.error(`La suma debe ser exactamente ${formatCOP(total)}`);
+        return;
+      }
+      try {
+        const order = await processPaymentMixed(mixCashAmt, mixCardAmt);
+        setFinalChange(0);
+        setStep(order?.offline ? 'done-offline' : 'done');
+      } catch {}
+      return;
+    }
     if (method === 'cash' && cashAmt < 0) {
       toast.error('El monto recibido no puede ser negativo');
       return;
@@ -955,10 +984,55 @@ function PaymentModal({ onClose }) {
           </div>
         )}
 
+        {/* Inputs de pago mixto */}
+        {method === 'mixed' && (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1.5 block">Efectivo recibido</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                <input
+                  ref={mixCashRef}
+                  type="number"
+                  min="0"
+                  max={total}
+                  value={mixCash}
+                  onChange={e => handleMixCashChange(e.target.value)}
+                  onFocus={e => e.target.select()}
+                  placeholder="0"
+                  className="w-full pl-7 pr-4 h-12 border-2 border-gray-200 focus:border-indigo-400 rounded-xl text-lg font-semibold outline-none text-right"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1.5 block">Tarjeta débito</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                <input
+                  type="number"
+                  min="0"
+                  max={total}
+                  value={mixCard}
+                  onChange={e => setMixCard(e.target.value)}
+                  onFocus={e => e.target.select()}
+                  placeholder="0"
+                  className="w-full pl-7 pr-4 h-12 border-2 border-gray-200 focus:border-indigo-400 rounded-xl text-lg font-semibold outline-none text-right"
+                />
+              </div>
+            </div>
+            <div className={`rounded-xl p-3 flex justify-between items-center text-sm ${
+              mixValid ? 'bg-indigo-50 text-indigo-700' : 'bg-red-50 text-red-600'
+            }`}>
+              <span>Suma</span>
+              <span className="font-bold">{formatCOP(mixCashAmt + mixCardAmt)} / {formatCOP(total)}</span>
+            </div>
+          </div>
+        )}
+
         {/* Botón confirmar */}
         <button
           onClick={handleConfirm}
-          disabled={isProcessing || (method === 'cash' && !cashSufficient && cashAmt > 0)}
+          disabled={isProcessing || (method === 'cash' && !cashSufficient && cashAmt > 0) || (method === 'mixed' && !mixValid)}
           className="w-full h-12 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-brand-600/25">
           {isProcessing ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
           {isProcessing ? 'Procesando...' : `Confirmar cobro · ${formatCOP(total)}`}

@@ -335,6 +335,61 @@ export function POSProvider({ children }) {
     return order
   }, [state, isOnline, saveOrderOffline])
 
+  // ── PROCESAR PAGO MIXTO (efectivo + tarjeta) ────────────────────────────
+  // Flujo de dos pasos: crea orden sin payment_method → paga cash parcial → paga card resto
+  const processPaymentMixed = useCallback(async (cashAmt, cardAmt) => {
+    if (!state.cashSession) throw new Error('No hay sesión de caja activa')
+    if (state.items.length === 0) throw new Error('El carrito está vacío')
+
+    const orderPayload = {
+      branch_id:       state.branchId,
+      cash_session_id: state.cashSession.id,
+      order_type:      'sale',
+      customer_id:     state.customerId || null,
+      items: state.items.map(i => ({
+        product_id:   i.product_id,
+        product_name: i.product_name,
+        product_sku:  i.product_sku,
+        quantity:     i.quantity,
+        unit_price:   i.unit_price,
+        vat_rate:     i.vat_rate,
+      })),
+      // Sin payment_method: se pagan en pasos separados
+      discount_type:  state.discount?.type === 'pct' ? 'percentage' : (state.discount?.type === 'fixed' ? 'fixed' : undefined),
+      discount_value: state.discount?.value ?? undefined,
+    }
+
+    dispatch({ type: A.SET_PROCESSING, payload: true })
+
+    try {
+      // Paso 1: Crear orden abierta sin pago
+      const { data: order } = await api.post('/orders', orderPayload)
+
+      // Paso 2: Pago parcial en efectivo
+      await api.post(`/orders/${order.id}/payment`, {
+        payment_method: 'cash',
+        amount:         Math.round(cashAmt),
+        cash_received:  Math.round(cashAmt),
+      })
+
+      // Paso 3: Pago restante con tarjeta débito
+      await api.post(`/orders/${order.id}/payment`, {
+        payment_method: 'card_debit',
+        amount:         Math.round(cardAmt),
+      })
+
+      toast.success('¡Venta registrada!', { duration: 2000 })
+      dispatch({ type: A.SET_LAST_ORDER, payload: order.id })
+      dispatch({ type: A.CLEAR_ORDER })
+      dispatch({ type: A.SET_PROCESSING, payload: false })
+      return order
+    } catch (e) {
+      dispatch({ type: A.SET_PROCESSING, payload: false })
+      toast.error(e.response?.data?.message || e.response?.data?.error || 'Error en pago mixto')
+      throw e
+    }
+  }, [state])
+
   // ── VALOR DEL CONTEXTO ───────────────────────────────────────────────────
   return (
     <POSContext.Provider value={{
@@ -361,6 +416,7 @@ export function POSProvider({ children }) {
       openCashSession,
       closeCashSession,
       processPayment,
+      processPaymentMixed,
       // Dispatch directo para casos especiales
       dispatch,
     }}>
