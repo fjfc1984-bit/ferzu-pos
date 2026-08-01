@@ -18,15 +18,21 @@ const router = express.Router();
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const PLAN_PRICES_COP = {
-  starter:     79_000,
+  pos_basic:   49_000,
+  barbershop:  79_000,
+  workshop:    79_000,
+  minimarket:  79_000,
+  restaurant:  89_000,
   pro:        149_000,
-  enterprise: 299_000,
 };
 
 const PLAN_NAMES = {
-  starter:    'FERZU POS Starter',
+  pos_basic:  'FERZU POS Básico',
+  barbershop: 'FERZU POS Barbería',
+  workshop:   'FERZU POS Taller',
+  minimarket: 'FERZU POS Minimarket',
+  restaurant: 'FERZU POS Restaurante',
   pro:        'FERZU POS Pro',
-  enterprise: 'FERZU POS Enterprise',
 };
 
 // POST /api/payments/create-bold-session

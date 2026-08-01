@@ -1,87 +1,39 @@
 // =============================================================================
 // FERZU POS — Bold Checkout Helper
-// Documentación: https://docs.getbold.io/
+// Estrategia: Links estáticos de Bold por plan (sin API key dinámica)
+// Los links nunca vencen y reciben múltiples pagos.
 //
-// Bold usa un checkout hospedado: redirigimos al usuario a la URL de Bold
-// con los parámetros firmados. Bold procesa el pago y llama nuestro webhook.
-//
-// REGLA DE ORO: el cálculo del monto siempre viene del backend.
-// Este módulo solo construye la URL de redirección.
+// REGLA DE ORO: el webhook de Bold confirma el pago al backend.
+// Este módulo solo redirige al link correcto según el plan.
 // =============================================================================
 
-const BOLD_API_KEY     = import.meta.env.VITE_BOLD_API_KEY     || '';
-const BOLD_REDIRECT_URL = import.meta.env.VITE_BOLD_REDIRECT_URL || 'https://ferzu-pos.vercel.app/pricing?payment=success';
-const API              = import.meta.env.VITE_API_URL           || 'http://localhost:3001/api';
+// Mapa de links Bold estáticos por plan
+// Creados en panel.bold.co — nunca vencen, reciben múltiples pagos
+const BOLD_LINKS = {
+  pos_basic:   'https://checkout.bold.co/payment/link/LNK_8DHFYQU0I9',
+  barbershop:  'https://checkout.bold.co/payment/link/LNK_AEH7OB6F3L',
+  workshop:    'https://checkout.bold.co/payment/link/LNK_AEH7OB6F3L',
+  minimarket:  'https://checkout.bold.co/payment/link/LNK_AEH7OB6F3L',
+  restaurant:  'https://checkout.bold.co/payment/link/LNK_YAOFU16XBE',
+  pro:         'https://checkout.bold.co/payment/link/LNK_I6ARFZ8T6Q',
+};
 
 /**
- * Inicia el checkout de Bold para una suscripción.
+ * Redirige al link de pago Bold correspondiente al plan.
+ * Después del pago, Bold llama al webhook del backend para activar el plan.
  *
  * @param {object} params
- * @param {string} params.organizationId - ID de la organización en Supabase
- * @param {string} params.planId         - Identificador del plan ('starter'|'pro'|'enterprise')
- * @param {number} params.amountCOP      - Monto en COP (calculado por el BACKEND, nunca por el cliente)
- * @param {string} params.description    - Descripción del cobro
- * @param {string} params.customerEmail  - Email del cliente
- * @param {string} params.orderId        - ID único del cobro (uuid generado por el backend)
+ * @param {string} params.planId - ID del plan ('pos_basic'|'barbershop'|'workshop'|'minimarket'|'restaurant'|'pro')
  */
-export async function initBoldCheckout({ organizationId, planId, amountCOP, description, customerEmail, orderId }) {
-  if (!BOLD_API_KEY) {
-    console.error('[Bold] VITE_BOLD_API_KEY no configurada');
-    throw new Error('Pasarela de pagos no configurada. Contacta soporte.');
+export function startPlanPayment({ planId }) {
+  const link = BOLD_LINKS[planId];
+
+  if (!link) {
+    throw new Error(`Plan no reconocido: ${planId}. Contacta soporte.`);
   }
 
-  // Parámetros de la sesión de pago Bold
-  // Referencia: https://docs.getbold.io/docs/checkout
-  const params = new URLSearchParams({
-    'order-id':        orderId,
-    'amount':          String(Math.round(amountCOP)),  // Bold espera entero en centavos de COP
-    'currency':        'COP',
-    'api-key':         BOLD_API_KEY,
-    'redirect-url':    BOLD_REDIRECT_URL,
-    'customer-email':  customerEmail,
-    'description':     description,
-    // metadata que Bold nos devolverá en el webhook
-    'metadata[organization_id]': organizationId,
-    'metadata[plan_id]':         planId,
-    'metadata[order_id]':        orderId,
-  });
-
-  // URL del checkout hospedado de Bold (producción)
-  const boldCheckoutUrl = `https://checkout.bold.co/payment/link?${params.toString()}`;
-
-  // Redirigir al usuario al checkout de Bold
-  window.location.href = boldCheckoutUrl;
-}
-
-/**
- * Crea una sesión de pago en el backend y redirige al checkout de Bold.
- * El backend calcula el monto según el plan y devuelve el orderId firmado.
- *
- * @param {object} params
- * @param {string} params.planId        - Plan seleccionado por el usuario
- * @param {string} params.organizationId
- * @param {string} params.token         - JWT del usuario autenticado
- */
-export async function startPlanPayment({ planId, organizationId, token }) {
-  // 1. Solicitar al backend que genere la orden de cobro con monto calculado
-  const res = await fetch(`${API}/payments/create-bold-session`, {
-    method:  'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify({ planId, organizationId }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Error creando sesión de pago');
-  }
-
-  const { orderId, amountCOP, description, customerEmail } = await res.json();
-
-  // 2. Redirigir al checkout de Bold con los datos del backend
-  await initBoldCheckout({ organizationId, planId, amountCOP, description, customerEmail, orderId });
+  // Redirigir al link de pago Bold
+  window.location.href = link;
 }
 
 /**
