@@ -270,18 +270,23 @@ const MODULOS = [
 
 const PLANES = [
   {
-    nombre:'Starter', precio:'$49.900', desc:'Para negocios pequeños que arrancan.',
+    nombre:'Básico', precio:'$49.000', desc:'Para negocios pequeños que arrancan.',
     items:['POS básico','Hasta 2 usuarios','Inventario simple','Soporte por email'],
     cta:'Empezar gratis', hot:false,
   },
   {
-    nombre:'Pro', precio:'$89.900', desc:'El favorito de restaurantes y barberías.',
-    items:['Todo lo de Starter','Hasta 5 usuarios','Módulo especializado','Dashboard IA','Soporte prioritario'],
-    cta:'Empezar con Pro', hot:true,
+    nombre:'Profesional', precio:'$79.000', desc:'Ideal para barberías, talleres y minimarkets.',
+    items:['Todo lo del Básico','Hasta 5 usuarios','Módulo especializado (barbería, taller o minimarket)','Dashboard IA','Soporte prioritario'],
+    cta:'Empezar con Profesional', hot:false,
   },
   {
-    nombre:'Enterprise', precio:'$149.900', desc:'Para negocios con múltiples sucursales.',
-    items:['Todo lo de Pro','Usuarios ilimitados','Múltiples sucursales','Facturación DIAN','Soporte 24/7'],
+    nombre:'Restaurante', precio:'$89.000', desc:'El favorito de restaurantes y fondas.',
+    items:['Todo lo del Básico','Kitchen Display (KDS)','Gestión de mesas','Dashboard IA','Soporte prioritario'],
+    cta:'Empezar con Restaurante', hot:true,
+  },
+  {
+    nombre:'Pro', precio:'$149.000', desc:'Para negocios con múltiples sucursales.',
+    items:['Todo lo anterior','Usuarios ilimitados','Múltiples sucursales','Facturación DIAN','Soporte 24/7'],
     cta:'Contactar ventas', hot:false,
   },
 ];
