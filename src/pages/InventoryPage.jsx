@@ -157,7 +157,7 @@ function ProductList({ organizationId, branchId }) {
     if (!branchId) return;
     const { data } = await supabase
       .from('inventory')
-      .select('product_id, quantity, min_stock')
+      .select('product_id, quantity')
       .eq('branch_id', branchId);
     const map = {};
     for (const r of data || []) map[r.product_id] = r;
@@ -200,8 +200,10 @@ function ProductList({ organizationId, branchId }) {
   function stockBadge(productId) {
     const inv = inventory[productId];
     if (!inv) return null;
-    if (inv.quantity === 0)               return { label: 'SIN STOCK', cls: 'bg-red-100 text-red-700' };
-    if (inv.quantity <= inv.min_stock)    return { label: 'BAJO',      cls: 'bg-amber-100 text-amber-700' };
+    const product = products.find(p => p.id === productId);
+    const minStock = product?.min_stock ?? 0;
+    if (inv.quantity === 0)             return { label: 'SIN STOCK', cls: 'bg-red-100 text-red-700' };
+    if (inv.quantity <= minStock)       return { label: 'BAJO',      cls: 'bg-amber-100 text-amber-700' };
     return { label: `${inv.quantity} uds`, cls: 'bg-green-100 text-green-700' };
   }
 
@@ -456,6 +458,7 @@ function ProductForm({ product, organizationId, branchId, categories, onClose, o
         vat_rate:        parseFloat(form.vat_rate) || 0,    // columna real en DB
         vat_included:    form.vat_included,                  // columna real en DB
         description:     form.description || null,
+        min_stock:       Math.round(Number(form.min_stock || '5')),  // columna en products
         is_active:       true,
       };
 
@@ -475,7 +478,6 @@ function ProductForm({ product, organizationId, branchId, categories, onClose, o
           product_id: productId,
           branch_id:  branchId,
           quantity:   initialQty,
-          min_stock:  Math.round(Number(form.min_stock || '5')),
         });
 
         // Registrar movimiento inicial si > 0
