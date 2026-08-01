@@ -33,7 +33,7 @@ import { useSyncContext }          from '../context/SyncContext.jsx';
 import { useAIProposals }          from '../hooks/useAIProposals.js';
 import { useKeyboardShortcuts }    from '../hooks/useKeyboardShortcuts.js';
 import { formatCOP }               from '../lib/math.js';
-import { cashAPI }                 from '../lib/api.js';
+import { cashAPI, api }            from '../lib/api.js';
 import toast                       from 'react-hot-toast';
 
 // Sub-componentes (definidos en secciones siguientes)
@@ -262,27 +262,30 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
   }, [products]);
 
   async function loadCategories() {
-    const { data } = await import('../lib/api.js').then(m =>
-      m.default.get('/categories')
-    ).catch(() => ({ data: [] }));
-    setCategories(data || []);
+    try {
+      const res = await api.get('/categories');
+      setCategories(res.data || []);
+    } catch {
+      setCategories([]);
+    }
   }
 
   async function loadProducts() {
     setIsLoading(true);
     try {
-      const { productsAPI } = await import('../lib/api.js');
-      const result = await productsAPI.list({
-        branch_id: branchId,
-        category_id: activeCategory || undefined,
-        search: search || undefined,
-        limit: 60,
+      const res = await api.get('/products', {
+        params: {
+          branch_id:   branchId || undefined,
+          category_id: activeCategory || undefined,
+          search:      search || undefined,
+          limit:       60,
+        },
       });
-      setProducts(result.data || []);
+      setProducts(res.data || []);
     } catch {
-      // Fallback a caché local
+      // Fallback a caché local (Dexie IndexedDB)
       const { searchProductsLocally } = await import('../lib/db.js');
-      const local = await searchProductsLocally(search || '');
+      const local = await searchProductsLocally(branchId, search || '');
       setProducts(local);
     } finally {
       setIsLoading(false);
@@ -1404,7 +1407,7 @@ function AIProposalsPanel({ proposals, onClose, branchId }) {
 
               <div className="flex gap-2">
                 <button
-                  onClick={() => approve(p.id)}
+                  onClick={() => approve({ proposalId: p.id })}
                   disabled={isApproving}
                   className="flex-1 h-8 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1 transition-all shadow-sm shadow-brand-700/20">
                   <CheckCircle2 size={12} />
