@@ -110,13 +110,18 @@ export function usePlan() {
  *   lockedByPlan:    el plan no incluye este módulo → UpgradeWall
  */
 export function useModule(moduleKey) {
-  const { modules, activeModules, plan, loading } = usePlan();
-  const inPlan         = hasModule(modules, moduleKey);
+  const { modules, activeModules, plan, trial, loading } = usePlan();
+
+  // Durante el trial activo → todos los módulos están disponibles
+  const isInTrial = trial && new Date(trial) > new Date();
+
+  const inPlan         = isInTrial || hasModule(modules, moduleKey);
   const ownerDisabled  = activeModules?.[moduleKey] === false;
   return {
     enabled:         !loading && inPlan && !ownerDisabled,
     disabledByOwner: !loading && inPlan && ownerDisabled,
     lockedByPlan:    !loading && !inPlan,
+    isInTrial,
     plan,
     loading,
   };

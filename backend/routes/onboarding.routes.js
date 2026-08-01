@@ -61,6 +61,7 @@ router.post('/setup', requireJWT, async (req, res) => {
     }
 
     if (!orgData) {
+      const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
       const { data: newOrg, error: orgError } = await supabaseAdmin
         .from('organizations')
         .insert({
@@ -71,6 +72,7 @@ router.post('/setup', requireJWT, async (req, res) => {
           business_type: business_type === 'mixed' ? 'generic' : (business_type || 'generic'),
           onboarding_completed: true,
           plan_id: 'free',
+          trial_ends_at: trialEndsAt,
         })
         .select()
         .single();
