@@ -6,7 +6,7 @@
 
 import { createContext, useContext, useReducer, useCallback, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { api }      from '../lib/api'
+import { api, cashAPI } from '../lib/api'
 import toast        from 'react-hot-toast'
 import { useSync }  from './SyncContext'
 
@@ -179,13 +179,8 @@ export function POSProvider({ children }) {
 
         dispatch({ type: A.SET_BRANCH, payload: branchId })
 
-        const { data: session } = await supabase
-          .from('cash_sessions')
-          .select('*')
-          .eq('branch_id', branchId)
-          .eq('status', 'open')
-          .maybeSingle()
-
+        // Usar backend (supabaseAdmin) para bypassar RLS en cash_sessions
+        const session = await cashAPI.current().catch(() => null)
         if (session) dispatch({ type: A.SET_CASH_SESSION, payload: session })
       } catch (e) {
         console.warn('[POSContext] init error:', e.message)
@@ -226,27 +221,21 @@ export function POSProvider({ children }) {
 
   // ── SESIÓN DE CAJA ───────────────────────────────────────────────────────
 
-  const openCashSession = useCallback(async ({ openingCash = 0, userId }) => {
+  const openCashSession = useCallback(async ({ openingCash = 0 }) => {
     dispatch({ type: A.SET_PROCESSING, payload: true })
     try {
       const branchId = localStorage.getItem('ferzu_branch_id')
-      const { data: session, error } = await supabase
-        .from('cash_sessions')
-        .insert({
-          branch_id:    branchId,
-          user_id:      userId,
-          opening_cash: Math.round(openingCash),
-          status:       'open',
-        })
-        .select()
-        .single()
-
-      if (error) throw error
+      // Usar backend (supabaseAdmin) para bypassar RLS en cash_sessions
+      const session = await cashAPI.open({
+        branch_id:    branchId,
+        opening_cash: Math.round(openingCash),
+      })
       dispatch({ type: A.SET_CASH_SESSION, payload: session })
       toast.success('Caja abierta')
       return session
     } catch (e) {
-      toast.error('No se pudo abrir la caja')
+      const msg = e?.response?.data?.error || 'No se pudo abrir la caja'
+      toast.error(msg)
       throw e
     } finally {
       dispatch({ type: A.SET_PROCESSING, payload: false })
@@ -257,19 +246,11 @@ export function POSProvider({ children }) {
     if (!state.cashSession) return
     dispatch({ type: A.SET_PROCESSING, payload: true })
     try {
-      const { data, error } = await supabase
-        .from('cash_sessions')
-        .update({
-          status:       'closed',
-          closed_at:    new Date().toISOString(),
-          closing_cash: Math.round(closingCash),
-          notes,
-        })
-        .eq('id', state.cashSession.id)
-        .select()
-        .single()
-
-      if (error) throw error
+      // Usar backend (supabaseAdmin) para bypassar RLS en cash_sessions
+      const data = await cashAPI.close(state.cashSession.id, {
+        closing_cash: Math.round(closingCash),
+        notes,
+      })
       dispatch({ type: A.SET_CASH_SESSION, payload: null })
       toast.success('Caja cerrada')
       return data
