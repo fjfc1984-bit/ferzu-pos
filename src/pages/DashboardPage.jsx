@@ -923,16 +923,17 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
       .order('quantity');
 
     // Fallback: si la vista no existe aún, comparar client-side
+    // min_stock está en products, NO en inventory
     if (!alerts) {
       const { data: raw } = await applyBranchFilter(
-        supabase.from('inventory').select('product_id, quantity, min_stock, products(name)')
+        supabase.from('inventory').select('product_id, quantity, products(name, min_stock)')
       );
-      const lowStock = (raw || []).filter(r => r.quantity <= r.min_stock);
+      const lowStock = (raw || []).filter(r => r.quantity <= (r.products?.min_stock || 0));
       setStockAlerts(lowStock.map(d => ({
         product_id: d.product_id,
         name:       d.products?.name || '—',
         quantity:   d.quantity,
-        min_stock:  d.min_stock,
+        min_stock:  d.products?.min_stock || 0,
         status:     d.quantity === 0 ? 'out_of_stock' : 'low_stock',
       })));
       return;
