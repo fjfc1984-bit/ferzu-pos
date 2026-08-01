@@ -264,7 +264,8 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
   async function loadCategories() {
     try {
       const res = await api.get('/categories');
-      setCategories(res.data || []);
+      const body = res.data;
+      setCategories(Array.isArray(body) ? body : (body?.data ?? []));
     } catch {
       setCategories([]);
     }
@@ -281,7 +282,8 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
           limit:       60,
         },
       });
-      setProducts(res.data || []);
+      const body = res.data;
+      setProducts(Array.isArray(body) ? body : (body?.data ?? []));
     } catch {
       // Fallback a caché local (Dexie IndexedDB)
       const { searchProductsLocally } = await import('../lib/db.js');
