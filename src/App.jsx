@@ -94,7 +94,7 @@ function PageSpinner() {
 // ProtectedRoute — redirige a /login si no hay sesión activa
 // ---------------------------------------------------------------------------
 function ProtectedRoute() {
-  const { user, loading } = useAuth()
+  const { user, loading, organizationId } = useAuth()
   const location = useLocation()
 
   if (loading) {
@@ -110,6 +110,11 @@ function ProtectedRoute() {
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  // Usuario autenticado pero sin organización → forzar onboarding
+  if (!organizationId) {
+    return <Navigate to="/onboarding" replace />
   }
 
   return <Outlet />
