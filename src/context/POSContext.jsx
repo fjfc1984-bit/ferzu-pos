@@ -272,6 +272,7 @@ export function POSProvider({ children }) {
     const orderPayload = {
       branch_id:       state.branchId,
       cash_session_id: state.cashSession.id,
+      order_type:      'sale',
       customer_id:     state.customerId || null,
       items: state.items.map(i => ({
         product_id:   i.product_id,
@@ -281,9 +282,11 @@ export function POSProvider({ children }) {
         unit_price:   i.unit_price,
         vat_rate:     i.vat_rate,
       })),
-      payment_method: paymentMethod,
-      cash_received:  paymentMethod === 'cash' ? Math.round(cashReceived) : null,
-      discount:       state.discount || null,
+      payment_method:  paymentMethod,
+      cash_received:   paymentMethod === 'cash' ? Math.round(cashReceived) : null,
+      // discount del POS → campos separados que espera el backend
+      discount_type:   state.discount?.type === 'pct' ? 'percentage' : (state.discount?.type === 'fixed' ? 'fixed' : undefined),
+      discount_value:  state.discount?.value ?? undefined,
     }
 
     dispatch({ type: A.SET_PROCESSING, payload: true })
