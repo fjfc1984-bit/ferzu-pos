@@ -75,11 +75,22 @@ export function SyncProvider({ children }) {
 
     for (const op of pending) {
       try {
-        await api.post('/sync/push', { operations: [op] })
+        const res = await api.post('/sync/push', { operations: [op] })
         await db.sync_queue.delete(op.id)
+
+        // Marcar offline_orders como synced usando local_id del payload
+        const localId = op.payload?.local_id
+        if (localId) {
+          await db.offline_orders
+            .where('local_id').equals(localId)
+            .modify({ synced: true, server_id: res.data?.results?.[0]?.server_id ?? null })
+        }
         ok++
       } catch {
-        await db.sync_queue.update(op.id, { retries: (op.retries || 0) + 1 })
+        const retries = (op.retries || 0) + 1
+        // Exponential backoff: guardar próximo intento no antes de 2^retries segundos
+        const nextRetryAt = new Date(Date.now() + Math.min(Math.pow(2, retries) * 1000, 300_000)).toISOString()
+        await db.sync_queue.update(op.id, { retries, next_retry_at: nextRetryAt })
       }
     }
 

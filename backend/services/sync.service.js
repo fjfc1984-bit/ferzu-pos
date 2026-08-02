@@ -107,7 +107,18 @@ export async function createOrderFromSync(payload, organizationId, userId) {
   if (itemsErr) throw itemsErr;
 
   // 7. Procesar pago si viene en el payload
-  if (payment_method) {
+  if (payment_method === 'mixed') {
+    // Pago mixto offline: registrar cash + card por separado
+    const cashAmt = payload.cash_amount || 0;
+    const cardAmt = payload.card_amount || 0;
+    if (cashAmt > 0) {
+      await processPaymentInternal(order.id, 'cash', cashAmt, cashAmt, userId);
+    }
+    if (cardAmt > 0) {
+      await processPaymentInternal(order.id, 'card_debit', cardAmt, null, userId);
+    }
+    await markOrderPaid(order.id, organizationId, userId);
+  } else if (payment_method) {
     await processPaymentInternal(order.id, payment_method, total, cash_received, userId);
     await markOrderPaid(order.id, organizationId, userId);
   }

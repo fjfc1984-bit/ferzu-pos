@@ -46,7 +46,7 @@ import toast                       from 'react-hot-toast';
 export default function POSPage() {
   const { user, logout, organizationId }  = useAuth();
   const { cashSession, branchId, dispatch, sessionLoading } = usePOS();
-  const { isOnline, pendingCount }          = useSyncContext();
+  const { isOnline, pendingCount, cacheProducts, getOfflineProducts } = useSyncContext();
   const { proposals }                       = useAIProposals(branchId);
 
   const [showCustomer,  setShowCustomer]  = useState(false);
@@ -206,6 +206,13 @@ export default function POSPage() {
           {pendingCount > 0 && <span className="bg-white text-red-600 rounded-full px-2 py-0.5 text-xs font-bold">{pendingCount}</span>}
         </div>
       )}
+      {/* ── Banner sync pendiente (online pero con ventas offline por subir) ── */}
+      {isOnline && pendingCount > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-sm px-4 py-2 rounded-full flex items-center gap-2 shadow-lg z-50">
+          <span className="animate-pulse">⟳</span>
+          Sincronizando {pendingCount} venta{pendingCount > 1 ? 's' : ''} offline...
+        </div>
+      )}
     </div>
   );
 }
@@ -312,11 +319,15 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
         },
       });
       const body = res.data;
-      setProducts(Array.isArray(body) ? body : (body?.data ?? []));
+      const fetched = Array.isArray(body) ? body : (body?.data ?? []);
+      setProducts(fetched);
+      // Cachear en Dexie solo cuando no hay filtros activos (caché "completa")
+      if (!search && !activeCategory && branchId) {
+        cacheProducts(fetched, branchId).catch(() => {});
+      }
     } catch {
       // Fallback a caché local (Dexie IndexedDB)
-      const { searchProductsLocally } = await import('../lib/db.js');
-      const local = await searchProductsLocally(branchId, search || '');
+      const local = await getOfflineProducts(branchId, search || '');
       setProducts(local);
     } finally {
       setIsLoading(false);

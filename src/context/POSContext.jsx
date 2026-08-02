@@ -391,11 +391,34 @@ export function POSProvider({ children }) {
       dispatch({ type: A.SET_PROCESSING, payload: false })
       return order
     } catch (e) {
-      dispatch({ type: A.SET_PROCESSING, payload: false })
-      toast.error(e.response?.data?.message || e.response?.data?.error || 'Error en pago mixto')
-      throw e
+      const isNetworkError = !e.response
+      if (!isNetworkError) {
+        dispatch({ type: A.SET_PROCESSING, payload: false })
+        toast.error(e.response?.data?.message || e.response?.data?.error || 'Error en pago mixto')
+        throw e
+      }
+      // Sin red → guardar offline con ambos montos para sincronizar después
+      try {
+        const localId = await saveOrderOffline({
+          ...orderPayload,
+          payment_method: 'mixed',
+          cash_amount:    Math.round(cashAmt),
+          card_amount:    Math.round(cardAmt),
+        })
+        const order = { id: localId, offline: true }
+        toast.success('Guardado sin conexión — se sincronizará al reconectar', {
+          duration: 4000, icon: '📦',
+        })
+        dispatch({ type: A.CLEAR_ORDER })
+        dispatch({ type: A.SET_PROCESSING, payload: false })
+        return order
+      } catch (offlineErr) {
+        dispatch({ type: A.SET_PROCESSING, payload: false })
+        toast.error('No se pudo guardar la venta. Intenta de nuevo.')
+        throw offlineErr
+      }
     }
-  }, [state])
+  }, [state, saveOrderOffline])
 
   // ── VALOR DEL CONTEXTO ───────────────────────────────────────────────────
   return (
