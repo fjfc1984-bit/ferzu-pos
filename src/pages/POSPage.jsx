@@ -45,7 +45,7 @@ import toast                       from 'react-hot-toast';
 
 export default function POSPage() {
   const { user, logout, organizationId }  = useAuth();
-  const { cashSession, branchId, dispatch } = usePOS();
+  const { cashSession, branchId, dispatch, sessionLoading } = usePOS();
   const { isOnline, pendingCount }          = useSyncContext();
   const { proposals }                       = useAIProposals(branchId);
 
@@ -70,9 +70,11 @@ export default function POSPage() {
   })
 
   // Si no hay caja abierta al cargar, mostrar modal de apertura
+  // Esperar a que sessionLoading sea false para evitar mostrar el modal
+  // durante los ~200ms que tarda cashAPI.current() en responder
   useEffect(() => {
-    if (!cashSession) setShowCashModal(true);
-  }, [cashSession]);
+    if (!sessionLoading && !cashSession) setShowCashModal(true);
+  }, [sessionLoading, cashSession]);
 
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden">
@@ -225,6 +227,8 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
   const searchRef                  = useRef(null);
   const barcodeBuffer              = useRef('');
   const barcodeTimer               = useRef(null);
+  const lastKeyTime                = useRef(0);
+  const isScanning                 = useRef(false);
   const isFirstLoad                = useRef(true);
 
   // Cargar categorías solo cuando cambia la sucursal
@@ -237,29 +241,54 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
     searchRef.current?.focus();
   }, []);
 
-  // Escáner de código de barras (el escáner actúa como teclado rápido)
+  // Escáner de código de barras — detección por velocidad de teclas (< 50ms = escáner USB)
   useEffect(() => {
     const handleKey = (e) => {
-      // Si el foco está en otro input, ignorar
+      // Ignorar si el foco está en otro input (no el de búsqueda del POS)
       if (e.target.tagName === 'INPUT' && e.target !== searchRef.current) return;
+      if (e.target.tagName === 'TEXTAREA') return;
 
-      if (e.key === 'Enter' && barcodeBuffer.current.length >= 4) {
-        const barcode = barcodeBuffer.current;
-        barcodeBuffer.current = '';
-        handleBarcodeScanned(barcode);
-      } else if (e.key.length === 1) {
-        barcodeBuffer.current += e.key;
+      const now = Date.now();
+      const gap = now - lastKeyTime.current;
+      lastKeyTime.current = now;
+
+      if (e.key === 'Enter') {
+        if (isScanning.current && barcodeBuffer.current.length >= 4) {
+          const barcode = barcodeBuffer.current;
+          barcodeBuffer.current = '';
+          isScanning.current = false;
+          e.preventDefault();
+          handleBarcodeScanned(barcode);
+        }
+        return;
+      }
+
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+        // Interval < 50ms entre teclas consecutivas → es un escáner USB (no humano)
+        if (gap < 50) isScanning.current = true;
+
+        if (isScanning.current) {
+          // Evitar que los chars del escáner contaminen el campo de búsqueda
+          if (e.target === searchRef.current) e.preventDefault();
+          barcodeBuffer.current += e.key;
+        } else {
+          // Tipeo manual del usuario → limpiar buffer de escaneo
+          barcodeBuffer.current = '';
+        }
+
+        // Timeout de seguridad: si el escáner no envía Enter, resetear estado
         clearTimeout(barcodeTimer.current);
         barcodeTimer.current = setTimeout(() => {
-          // Si pasan 100ms sin Enter, asumimos tipeo manual (no escáner)
-          if (barcodeBuffer.current.length < 4) barcodeBuffer.current = '';
-        }, 100);
+          barcodeBuffer.current = '';
+          isScanning.current = false;
+        }, 150);
       }
     };
 
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [products]);
+    // capture: true → interceptar ANTES de que el char llegue al input
+    window.addEventListener('keydown', handleKey, true);
+    return () => window.removeEventListener('keydown', handleKey, true);
+  }, []); // Sin deps en products — handleBarcodeScanned hace fallback al backend
 
   async function loadCategories() {
     try {
@@ -305,12 +334,26 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
     return () => clearTimeout(timer);
   }, [search, activeCategory, branchId]);
 
-  function handleBarcodeScanned(barcode) {
-    const product = products.find(p => p.barcode === barcode || p.sku === barcode);
-    if (product) {
-      addItem(product);
-      toast.success(`${product.name} agregado`, { duration: 1500 });
-    } else {
+  async function handleBarcodeScanned(barcode) {
+    // 1. Buscar en productos ya cargados en la vista actual (instantáneo)
+    const localHit = products.find(p => p.barcode === barcode || p.sku === barcode);
+    if (localHit) {
+      addItem(localHit);
+      toast.success(`${localHit.name} agregado`, { duration: 1500 });
+      return;
+    }
+    // 2. No está en la página actual → buscar directamente en el backend por barcode/sku
+    try {
+      const res  = await api.get('/products', { params: { search: barcode, limit: 1 } });
+      const body = res.data;
+      const hit  = Array.isArray(body) ? body[0] : body?.data?.[0];
+      if (hit) {
+        addItem(hit);
+        toast.success(`${hit.name} agregado`, { duration: 1500 });
+      } else {
+        toast.error(`Código ${barcode} no encontrado`, { duration: 2000 });
+      }
+    } catch {
       toast.error(`Código ${barcode} no encontrado`, { duration: 2000 });
     }
   }
@@ -1137,35 +1180,54 @@ function CustomerSearch({ onClose, organizationId }) {
 function DiscountModal({ onClose }) {
   const { setDiscount, totals } = usePOS();
   const { isAdmin } = useAuth();
-  const [type,   setType]   = useState('percentage');
-  const [value,  setValue]  = useState('');
-  const [reason, setReason] = useState('');
-  const [pin,    setPin]    = useState('');
-  const [needPin, setNeedPin] = useState(false);
+  const [type,       setType]       = useState('percentage');
+  const [value,      setValue]      = useState('');
+  const [reason,     setReason]     = useState('');
+  const [pin,        setPin]        = useState('');
+  const [needPin,    setNeedPin]    = useState(false);
+  const [pinLoading, setPinLoading] = useState(false);
+  const [pinUser,    setPinUser]    = useState(null); // gerente que autorizó
 
-  const maxDiscount = isAdmin ? 100 : 15; // Los cajeros solo pueden hasta 15%
+  const maxDiscount = isAdmin ? 100 : 15; // Cajeros: hasta 15%; admin/gerente: hasta 100%
 
-  function handleApply() {
+  async function handleApply() {
     const numVal = Number(value);
     if (!numVal || numVal <= 0) { toast.error('Ingresa un valor de descuento'); return; }
-
-    // Descuento sobre el límite del cajero → requiere PIN de gerencia
-    if (type === 'percentage' && numVal > maxDiscount && !isAdmin) {
-      if (!needPin) {
-        setNeedPin(true);
-        return;
-      }
-      // Ya se solicitó el PIN — validar que fue ingresado (mínimo 4 dígitos)
-      if (!pin || pin.length < 4) {
-        toast.error('Ingresa el PIN de gerencia (mínimo 4 dígitos)');
-        return;
-      }
-      // En producción: validar PIN contra backend. Por ahora se acepta si tiene ≥4 dígitos.
-    }
-
     if (!reason.trim()) { toast.error('Indica el motivo del descuento'); return; }
 
-    setDiscount({ type: type === 'percentage' ? 'pct' : 'fixed', value: numVal, reason });
+    // Descuento sobre el límite del cajero → requiere autorización de gerencia con PIN real
+    const needsAuth = type === 'percentage' && numVal > maxDiscount && !isAdmin;
+    if (needsAuth) {
+      if (!needPin) { setNeedPin(true); return; }
+      if (!pin || pin.length < 4) {
+        toast.error('Ingresa el PIN de gerencia');
+        return;
+      }
+      // Validar PIN contra backend si todavía no está autorizado
+      if (!pinUser) {
+        setPinLoading(true);
+        try {
+          const { data } = await api.post('/auth/verify-pin', { pin });
+          if (!data.valid) {
+            toast.error('PIN incorrecto');
+            return;
+          }
+          if (!['admin', 'owner', 'manager'].includes(data.user?.role)) {
+            toast.error('Este PIN no tiene permisos para autorizar descuentos');
+            return;
+          }
+          setPinUser(data.user);
+        } catch {
+          toast.error('Error al verificar el PIN. Intenta de nuevo.');
+          return;
+        } finally {
+          setPinLoading(false);
+        }
+      }
+    }
+
+    const authorizedBy = pinUser?.full_name ?? null;
+    setDiscount({ type: type === 'percentage' ? 'pct' : 'fixed', value: numVal, reason, authorizedBy });
     toast.success(`Descuento de ${type === 'percentage' ? numVal + '%' : formatCOP(numVal)} aplicado`);
     onClose();
   }
@@ -1251,24 +1313,35 @@ function DiscountModal({ onClose }) {
         </div>
 
         {needPin && (
-          <div className="bg-amber-50 rounded-xl p-3">
-            <p className="text-xs text-amber-700 mb-2">Descuento mayor al {maxDiscount}% — requiere PIN de gerencia</p>
-            <input
-              type="password"
-              maxLength={6}
-              value={pin}
-              onChange={e => setPin(e.target.value)}
-              placeholder="PIN gerencia"
-              className="w-full h-10 border border-amber-300 rounded-lg px-3 text-sm outline-none focus:ring-2 focus:ring-amber-400 text-center tracking-widest"
-            />
+          <div className="rounded-xl p-3 border border-amber-200 bg-amber-50">
+            {pinUser ? (
+              <p className="text-xs text-green-700 font-semibold">
+                ✓ Autorizado por {pinUser.full_name}
+              </p>
+            ) : (
+              <>
+                <p className="text-xs text-amber-700 mb-2">
+                  Descuento mayor al {maxDiscount}% — requiere PIN de gerencia
+                </p>
+                <input
+                  type="password"
+                  maxLength={6}
+                  value={pin}
+                  onChange={e => { setPin(e.target.value); setPinUser(null); }}
+                  placeholder="PIN gerencia"
+                  autoFocus
+                  className="w-full h-10 border border-amber-300 rounded-lg px-3 text-sm outline-none focus:ring-2 focus:ring-amber-400 text-center tracking-widest"
+                />
+              </>
+            )}
           </div>
         )}
 
         <button
           onClick={handleApply}
-          disabled={!value || !reason}
+          disabled={!value || !reason || pinLoading}
           className="w-full h-11 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-md shadow-brand-600/20">
-          Aplicar descuento
+          {pinLoading ? 'Verificando PIN…' : 'Aplicar descuento'}
         </button>
       </div>
     </Modal>

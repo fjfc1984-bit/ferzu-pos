@@ -826,12 +826,16 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
 
   async function loadSalesChart(from, to) {
     // En modo consolidado, skip la RPC (solo acepta 1 branch_id) y usar fallback directo
-    const { data } = isConsolidated ? { data: null } : await supabase.rpc('get_sales_chart', {
-      p_branch_id: branchId,
-      p_from: from,
-      p_to: to,
-      p_range: range,
-    }).catch(() => ({ data: null }));
+    // Promise.resolve() necesario: supabase.rpc() devuelve PostgrestFilterBuilder
+    // que es "thenable" pero NO expone .catch() directamente en supabase-js v2
+    const { data } = isConsolidated ? { data: null } : await Promise.resolve(
+      supabase.rpc('get_sales_chart', {
+        p_branch_id: branchId,
+        p_from: from,
+        p_to: to,
+        p_range: range,
+      })
+    ).catch(() => ({ data: null }));
 
     // Fallback manual si la RPC no existe o modo consolidado
     if (!data) {

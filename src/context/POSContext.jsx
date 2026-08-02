@@ -14,31 +14,33 @@ import { useSync }  from './SyncContext'
 // TIPOS DE ACCIÓN
 // ---------------------------------------------------------------------------
 const A = {
-  ADD_ITEM:         'ADD_ITEM',
-  REMOVE_ITEM:      'REMOVE_ITEM',
-  UPDATE_QTY:       'UPDATE_QTY',
-  SET_DISCOUNT:     'SET_DISCOUNT',
-  CLEAR_DISCOUNT:   'CLEAR_DISCOUNT',
-  SET_CUSTOMER:     'SET_CUSTOMER',
-  CLEAR_ORDER:      'CLEAR_ORDER',
-  SET_CASH_SESSION: 'SET_CASH_SESSION',
-  SET_BRANCH:       'SET_BRANCH',
-  SET_PROCESSING:   'SET_PROCESSING',
-  SET_LAST_ORDER:   'SET_LAST_ORDER',
+  ADD_ITEM:            'ADD_ITEM',
+  REMOVE_ITEM:         'REMOVE_ITEM',
+  UPDATE_QTY:          'UPDATE_QTY',
+  SET_DISCOUNT:        'SET_DISCOUNT',
+  CLEAR_DISCOUNT:      'CLEAR_DISCOUNT',
+  SET_CUSTOMER:        'SET_CUSTOMER',
+  CLEAR_ORDER:         'CLEAR_ORDER',
+  SET_CASH_SESSION:    'SET_CASH_SESSION',
+  SET_BRANCH:          'SET_BRANCH',
+  SET_PROCESSING:      'SET_PROCESSING',
+  SET_LAST_ORDER:      'SET_LAST_ORDER',
+  SET_SESSION_LOADING: 'SET_SESSION_LOADING',
 }
 
 // ---------------------------------------------------------------------------
 // ESTADO INICIAL
 // ---------------------------------------------------------------------------
 const initialState = {
-  items:        [],     // [{ product_id, product_name, product_sku, unit_price, vat_rate, quantity }]
-  discount:     null,   // { type: 'pct'|'fixed', value, reason }
-  customerId:   null,
-  customerName: null,
-  cashSession:  null,   // objeto completo de cash_sessions
-  branchId:     null,
-  isProcessing: false,
-  lastOrderId:  null,
+  items:          [],     // [{ product_id, product_name, product_sku, unit_price, vat_rate, quantity }]
+  discount:       null,   // { type: 'pct'|'fixed', value, reason }
+  customerId:     null,
+  customerName:   null,
+  cashSession:    null,   // objeto completo de cash_sessions
+  branchId:       null,
+  isProcessing:   false,
+  lastOrderId:    null,
+  sessionLoading: true,   // true mientras init() carga la sesión desde el backend
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +153,9 @@ function posReducer(state, { type, payload }) {
     case A.SET_LAST_ORDER:
       return { ...state, lastOrderId: payload }
 
+    case A.SET_SESSION_LOADING:
+      return { ...state, sessionLoading: payload }
+
     default:
       return state
   }
@@ -184,6 +189,8 @@ export function POSProvider({ children }) {
         if (session) dispatch({ type: A.SET_CASH_SESSION, payload: session })
       } catch (e) {
         console.warn('[POSContext] init error:', e.message)
+      } finally {
+        dispatch({ type: A.SET_SESSION_LOADING, payload: false })
       }
     }
     init()
@@ -398,10 +405,11 @@ export function POSProvider({ children }) {
       discount:     state.discount,
       customerId:   state.customerId,
       customerName: state.customerName,
-      cashSession:  state.cashSession,
-      branchId:     state.branchId,
-      isProcessing: state.isProcessing,
-      lastOrderId:  state.lastOrderId,
+      cashSession:    state.cashSession,
+      branchId:       state.branchId,
+      isProcessing:   state.isProcessing,
+      lastOrderId:    state.lastOrderId,
+      sessionLoading: state.sessionLoading,
       // Totales derivados (BIGINT, sin flotantes)
       totals,
       // Acciones del carrito
