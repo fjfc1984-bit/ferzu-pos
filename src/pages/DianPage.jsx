@@ -24,6 +24,7 @@ import { useAuth }  from '../context/AuthContext.jsx';
 import { format, parseISO, startOfDay, endOfDay, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import toast from 'react-hot-toast';
+import { useTrack } from '../hooks/useTrack.js';
 
 // =============================================================================
 // SECCIÓN 1: DianPage — Layout principal
@@ -33,6 +34,8 @@ export default function DianPage() {
   const [tab, setTab] = useState('overview');
   const { organizationId } = useAuth();
   const navigate = useNavigate();
+  const track = useTrack();
+  useEffect(() => { track('module_view', 'dian') }, [track]);
 
   const TABS = [
     { key: 'overview',     label: 'Resumen',      icon: BarChart3  },

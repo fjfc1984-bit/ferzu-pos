@@ -72,9 +72,18 @@ router.patch('/modules', requireAuth, async (req, res) => {
 
     const enabledByPlan = org?.enabled_modules || ['pos'];
 
+    // FIX: Leer active_modules existente para hacer MERGE, no reemplazar.
+    // Sin esto, enviar { "barbershop": false } borraba todos los demás toggles.
+    const { data: orgFull } = await supabaseAdmin
+      .from('organizations')
+      .select('active_modules')
+      .eq('id', req.organizationId)
+      .single();
+    const existing = orgFull?.active_modules || {};
+
     // Sanitizar: solo permitir cambios en módulos habilitados por el plan
     // y nunca deshabilitar módulos core
-    const sanitized = {};
+    const sanitized = { ...existing };   // partir del estado actual
     for (const [key, val] of Object.entries(active_modules)) {
       if (CORE_MODULES.includes(key)) continue;          // 'pos' siempre activo
       if (!enabledByPlan.includes(key)) continue;        // no puede activar lo que no tiene

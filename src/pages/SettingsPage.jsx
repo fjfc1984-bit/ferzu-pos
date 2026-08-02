@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react'
 import { MessageSquare, CheckCircle2, XCircle, Send, Info, ExternalLink } from 'lucide-react'
 import api from '../api'
+import { useTrack } from '../hooks/useTrack.js'
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 function StatusBadge({ ok, label }) {
@@ -195,6 +196,8 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState(null)
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState(null)
+  const track = useTrack();
+  useEffect(() => { track('module_view', 'settings') }, [track]);
 
   const loadSettings = async () => {
     try {

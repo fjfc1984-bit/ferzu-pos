@@ -31,12 +31,15 @@ import InventoryInsights from '../components/inventory/InventoryInsights.jsx';
 import BatchVATClassifier from '../components/dian/BatchVATClassifier.jsx';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { useTrack } from '../hooks/useTrack.js';
 
 // =============================================================================
 // SECCIÓN 1: InventoryPage — Layout con tabs
 // =============================================================================
 
 export default function InventoryPage() {
+  const track = useTrack();
+  useEffect(() => { track('module_view', 'inventory') }, [track]);
   const [tab, setTab] = useState('products'); // 'products' | 'movements' | 'suppliers' | 'insights'
   const [criticalCount, setCriticalCount] = useState(0);
   const { organizationId } = useAuth();

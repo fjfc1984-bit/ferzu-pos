@@ -23,6 +23,7 @@ import { supabase }  from '../lib/supabase.js';
 import { useAuth }   from '../context/AuthContext.jsx';
 import { formatCOP } from '../lib/math.js';
 import toast         from 'react-hot-toast';
+import { useTrack }  from '../hooks/useTrack.js';
 import { format, parseISO, differenceInDays, isPast, addDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -32,6 +33,8 @@ import { es } from 'date-fns/locale';
 
 export default function MinimarketPage() {
   const { organizationId, branchId } = useAuth();
+  const track = useTrack();
+  useEffect(() => { track('module_view', 'minimarket') }, [track]);
   const [tab, setTab] = useState('scale');
 
   const TABS = [

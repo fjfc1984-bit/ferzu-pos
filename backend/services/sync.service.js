@@ -6,6 +6,7 @@
 // =============================================================================
 import { supabaseAdmin }                          from '../config/supabase.js';
 import { processPaymentInternal, markOrderPaid }  from './orders.service.js';
+import { assertBranchOwnership }                  from '../middleware/auth.js';
 
 /**
  * createOrderFromSync
@@ -20,6 +21,10 @@ export async function createOrderFromSync(payload, organizationId, userId) {
   } = payload;
 
   if (!items.length) throw new Error('Orden offline vacía');
+
+  // 0. Validar que el branch_id pertenece a la organización (FIX: cross-tenant via sync)
+  if (!branch_id) throw new Error('branch_id requerido en payload offline');
+  await assertBranchOwnership(branch_id, organizationId);
 
   // 1. Cargar precios oficiales desde BD — nunca del cliente
   const productIds = [...new Set(items.map(i => i.product_id))];

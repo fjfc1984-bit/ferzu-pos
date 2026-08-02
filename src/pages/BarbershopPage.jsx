@@ -25,6 +25,7 @@ import { supabase }   from '../lib/supabase.js';
 import { useAuth }    from '../context/AuthContext.jsx';
 import { formatCOP }  from '../lib/math.js';
 import toast          from 'react-hot-toast';
+import { useTrack }   from '../hooks/useTrack.js';
 import { addDays, startOfWeek, format, isSameDay, parseISO, differenceInMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -34,6 +35,8 @@ import { es } from 'date-fns/locale';
 
 export default function BarbershopPage() {
   const { organizationId, user }  = useAuth();
+  const track = useTrack();
+  useEffect(() => { track('module_view', 'barbershop') }, [track]);
   // Computed, no useState — se actualiza cuando user carga de forma async
   const branchId = user?.user_branches?.[0]?.branch_id || localStorage.getItem('ferzu_branch_id');
   const [selectedDate, setSelectedDate] = useState(new Date());

@@ -26,6 +26,7 @@ import { supabase }  from '../lib/supabase.js';
 import { useAuth }   from '../context/AuthContext.jsx';
 import { formatCOP } from '../lib/math.js';
 import toast         from 'react-hot-toast';
+import { useTrack }  from '../hooks/useTrack.js';
 import { format, parseISO, differenceInMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -48,6 +49,8 @@ const COLUMNS = {
 
 export default function WorkshopPage() {
   const { organizationId, branchId, user } = useAuth();
+  const track = useTrack();
+  useEffect(() => { track('module_view', 'workshop') }, [track]);
   const [showForm,    setShowForm]    = useState(false);
   const [editOrder,   setEditOrder]   = useState(null);
   const [viewOrder,   setViewOrder]   = useState(null);

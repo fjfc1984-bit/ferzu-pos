@@ -30,6 +30,7 @@ import { formatCOP } from '../lib/math.js';
 import { format, subDays, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ReportExporter } from '../components/ReportExporter.jsx';
+import { useTrack }       from '../hooks/useTrack.js';
 
 // =============================================================================
 // SECCIÓN 1: DashboardPage — Layout principal
@@ -118,6 +119,8 @@ function DIANPromoModal() {
 
 export default function DashboardPage() {
   const { organizationId, branchId, isAdmin } = useAuth();
+  const track = useTrack();
+  useEffect(() => { track('module_view', 'dashboard') }, [track]);
   const [range,        setRange]        = useState('today');   // 'today' | 'week' | 'month'
   const [consolidated, setConsolidated] = useState(false);     // T140: vista todas las sucursales
   const [orgBranchIds, setOrgBranchIds] = useState([]);       // T140: IDs de todas las sucursales
