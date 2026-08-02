@@ -71,6 +71,35 @@ router.post('/open', [
   }
 });
 
+// GET /cash-sessions/:id/summary — totales de la sesión sin cerrarla
+router.get('/:id/summary', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data: orders } = await supabaseAdmin
+      .from('orders')
+      .select('total, payments(payment_method, amount), discount_amount')
+      .eq('cash_session_id', id)
+      .eq('status', 'paid');
+
+    const totals = { total_sales: 0, total_cash: 0, total_card: 0, total_nequi: 0, total_daviplata: 0, total_transfers: 0, total_discounts: 0, order_count: 0 };
+    for (const order of orders || []) {
+      totals.total_sales    += order.total;
+      totals.total_discounts += order.discount_amount || 0;
+      totals.order_count++;
+      for (const p of order.payments || []) {
+        if      (p.payment_method === 'cash')          totals.total_cash      += p.amount;
+        else if (p.payment_method.startsWith('card'))  totals.total_card      += p.amount;
+        else if (p.payment_method === 'nequi')         totals.total_nequi     += p.amount;
+        else if (p.payment_method === 'daviplata')     totals.total_daviplata += p.amount;
+        else if (p.payment_method === 'transfer')      totals.total_transfers += p.amount;
+      }
+    }
+    res.json(totals);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /cash-sessions/:id/close
 router.post('/:id/close', [
   body('closing_cash').isInt({ min: 0 }),

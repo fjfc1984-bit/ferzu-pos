@@ -1364,140 +1364,319 @@ function DiscountModal({ onClose }) {
 // SECCIÓN 7: CashSessionModal.jsx
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Denominaciones colombianas para el conteo físico
+const BILL_DENOMS   = [100000, 50000, 20000, 10000, 5000, 2000, 1000];
+const COIN_DENOMS   = [500, 200, 100, 50];
+
 function CashSessionModal({ onClose, branchId }) {
   const { cashSession, dispatch } = usePOS();
   const { user }           = useAuth();
-  const [cash,    setCash] = useState('');
-  const [notes,   setNotes] = useState('');
-  const [loading, setLoading] = useState(false);
+
+  // ── APERTURA ──
+  const [openCash, setOpenCash] = useState('');
+  // ── CIERRE ──
+  const [step,       setStep]      = useState('summary'); // 'summary' | 'counting' | 'report'
+  const [summary,    setSummary]   = useState(null);
+  const [loadSum,    setLoadSum]   = useState(false);
+  const [closingCash,setClosingCash]= useState('');
+  const [counts,     setCounts]    = useState({});       // { 100000: 0, 50000: 0, ... }
+  const [notes,      setNotes]     = useState('');
+  const [closing,    setClosing]   = useState(false);
+  const [closedData, setClosedData]= useState(null);     // datos retornados al cerrar
+  const [openLoading,setOpenLoading]= useState(false);
+
   const isOpen = !!cashSession;
 
+  // Calcular total desde conteo de billetes/monedas
+  const countedTotal = [...BILL_DENOMS, ...COIN_DENOMS].reduce(
+    (sum, d) => sum + (Number(counts[d]) || 0) * d, 0
+  );
+  // Si hay conteo activo, usa ese total; si no, el campo manual
+  const closingAmt = step === 'counting' ? countedTotal : (Number(closingCash) || 0);
+
+  // Cargar resumen al abrir modal de cierre
+  useEffect(() => {
+    if (!isOpen || !cashSession?.id) return;
+    setLoadSum(true);
+    api.get(`/cash-sessions/${cashSession.id}/summary`)
+      .then(r => setSummary(r.data))
+      .catch(() => setSummary(null))
+      .finally(() => setLoadSum(false));
+  }, [cashSession?.id, isOpen]);
+
+  // ── ABRIR SESIÓN ──────────────────────────────────────────────────────────
   async function openSession() {
     if (!branchId) { toast.error('Selecciona una sucursal primero'); return; }
-    setLoading(true);
+    setOpenLoading(true);
     try {
-      const session = await cashAPI.open({
-        branch_id:    branchId,
-        opening_cash: Number(cash) || 0,
-      });
+      const session = await cashAPI.open({ branch_id: branchId, opening_cash: Number(openCash) || 0 });
       dispatch({ type: 'SET_CASH_SESSION', payload: session });
       toast.success('Caja abierta correctamente');
       onClose();
     } catch (err) {
-      toast.error(err?.response?.data?.error || err?.error || 'Error al abrir caja');
-    } finally {
-      setLoading(false);
-    }
+      toast.error(err?.response?.data?.error || 'Error al abrir caja');
+    } finally { setOpenLoading(false); }
   }
 
+  // ── CERRAR SESIÓN ─────────────────────────────────────────────────────────
   async function closeSession() {
     if (!cashSession?.id) return;
-    setLoading(true);
+    setClosing(true);
     try {
-      await cashAPI.close(cashSession.id, {
-        closing_cash: Number(cash) || 0,
-        notes,
-      });
+      const data = await cashAPI.close(cashSession.id, { closing_cash: Math.round(closingAmt), notes });
       dispatch({ type: 'SET_CASH_SESSION', payload: null });
-      toast.success('Caja cerrada correctamente');
-      onClose();
+      setClosedData(data);
+      setStep('report');
+      toast.success('Caja cerrada');
     } catch (err) {
-      toast.error(err?.response?.data?.error || err?.error || 'Error al cerrar caja');
-    } finally {
-      setLoading(false);
-    }
+      toast.error(err?.response?.data?.error || 'Error al cerrar caja');
+    } finally { setClosing(false); }
   }
 
-  // Datos de resumen para el cierre
-  const openedAt  = cashSession?.opened_at ? new Date(cashSession.opened_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '';
+  const openedAt  = cashSession?.opened_at
+    ? new Date(cashSession.opened_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+    : '';
   const openingCash = cashSession?.opening_cash ?? 0;
-  const closingAmt  = Number(cash) || 0;
-  const expectedCash = openingCash + (cashSession?.total_cash ?? 0);
-  const difference   = closingAmt - expectedCash;
+  const expectedCash = openingCash + (summary?.total_cash ?? 0);
+  const difference   = closingAmt > 0 ? closingAmt - expectedCash : null;
 
-  if (isOpen) {
+  // ── MODAL APERTURA ────────────────────────────────────────────────────────
+  if (!isOpen) {
     return (
-      <Modal title="Cerrar caja" onClose={onClose}>
-        <div className="p-5 space-y-4">
-          {/* Resumen de sesión */}
-          <div className="bg-gray-50 rounded-2xl p-4 space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-gray-500">Cajero</span><span className="font-semibold">{user?.full_name}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Abierta a las</span><span className="font-semibold">{openedAt}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Efectivo inicial</span><span className="font-semibold">{formatCOP(openingCash)}</span></div>
-            <div className="h-px bg-gray-200 my-1" />
-            <div className="flex justify-between text-base font-bold"><span>Total ventas</span><span className="text-brand-700">{formatCOP(cashSession?.total_sales ?? 0)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-500">Efectivo esperado</span><span className="font-semibold">{formatCOP(expectedCash)}</span></div>
+      <Modal title="Abrir caja" hideClose>
+        <div className="p-6 space-y-5">
+          <div className="text-center">
+            <p className="text-sm text-gray-500">Cajero</p>
+            <p className="font-semibold text-gray-900">{user?.full_name}</p>
+            <p className="text-xs text-gray-400">{new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
           </div>
-
-          {/* Efectivo contado */}
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-2 block">Efectivo contado en caja</label>
+            <label className="text-sm font-medium text-gray-700 mb-2 block">Efectivo inicial en caja</label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</span>
-              <input autoFocus type="number" value={cash} onChange={e => setCash(e.target.value)} placeholder="0"
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+              <input autoFocus type="number" value={openCash} onChange={e => setOpenCash(e.target.value)} placeholder="0"
                 className="w-full pl-7 pr-4 h-12 border-2 border-gray-200 focus:border-brand-400 rounded-xl text-xl font-bold text-right outline-none" />
             </div>
+            <p className="text-xs text-gray-400 mt-1">Cuenta el efectivo disponible y digita el monto</p>
           </div>
-
-          {/* Diferencia */}
-          {closingAmt > 0 && (
-            <div className={`flex justify-between items-center px-4 py-3 rounded-xl text-sm font-bold border-2 ${
-              difference === 0 ? 'bg-green-50 border-green-200 text-green-700'
-              : difference > 0 ? 'bg-blue-50 border-blue-200 text-blue-700'
-              : 'bg-red-50 border-red-200 text-red-700'
-            }`}>
-              <span>{difference === 0 ? 'Sin descuadre ✓' : difference > 0 ? 'Sobrante' : 'Faltante'}</span>
-              <span>{formatCOP(Math.abs(difference))}</span>
-            </div>
-          )}
-
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Observaciones (opcional)"
-            rows={2} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none outline-none focus:border-brand-400" />
-
-          <button onClick={closeSession} disabled={loading}
-            className="w-full h-12 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all">
-            {loading ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-            {loading ? 'Cerrando...' : 'Cerrar caja'}
+          <button onClick={openSession} disabled={openLoading}
+            className="w-full h-12 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-brand-600/25">
+            {openLoading ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+            {openLoading ? 'Abriendo...' : 'Abrir caja y empezar'}
           </button>
         </div>
       </Modal>
     );
   }
 
-  return (
-    <Modal title="Abrir caja" hideClose>
-      <div className="p-6 space-y-5">
-        <div className="text-center">
-          <p className="text-sm text-gray-500">Cajero</p>
-          <p className="font-semibold text-gray-900">{user?.full_name}</p>
-          <p className="text-xs text-gray-400">{new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-        </div>
-
-        <div>
-          <label className="text-sm font-medium text-gray-700 mb-2 block">
-            Efectivo inicial en caja
-          </label>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
-            <input
-              autoFocus
-              type="number"
-              value={cash}
-              onChange={e => setCash(e.target.value)}
-              placeholder="0"
-              className="w-full pl-7 pr-4 h-12 border-2 border-gray-200 focus:border-brand-400 rounded-xl text-xl font-bold text-right outline-none"
-            />
+  // ── INFORME POST-CIERRE ───────────────────────────────────────────────────
+  if (step === 'report' && closedData) {
+    const diff = closedData.cash_difference ?? 0;
+    const dur  = closedData.closed_at && closedData.opened_at
+      ? Math.round((new Date(closedData.closed_at) - new Date(closedData.opened_at)) / 60000)
+      : null;
+    return (
+      <Modal title="Informe de turno" onClose={onClose} size="md">
+        <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+          {/* Encabezado */}
+          <div className={`rounded-2xl p-4 text-center ${Math.abs(diff) === 0 ? 'bg-green-50' : Math.abs(diff) > 50000 ? 'bg-red-50' : 'bg-amber-50'}`}>
+            <p className="text-2xl font-black">{formatCOP(closedData.total_sales ?? 0)}</p>
+            <p className="text-sm text-gray-500 mt-1">Total ventas del turno</p>
+            {dur !== null && <p className="text-xs text-gray-400 mt-0.5">Duración: {dur < 60 ? `${dur} min` : `${Math.floor(dur/60)}h ${dur%60}min`}</p>}
           </div>
-          <p className="text-xs text-gray-400 mt-1">Cuenta el efectivo disponible y digita el monto</p>
+
+          {/* Desglose por método de pago */}
+          <div className="bg-gray-50 rounded-2xl p-4 space-y-2 text-sm">
+            <p className="font-semibold text-gray-700 mb-3">Desglose por método de pago</p>
+            {[
+              { label: 'Efectivo',       value: closedData.total_cash       ?? 0, icon: '💵' },
+              { label: 'Tarjeta',        value: closedData.total_card       ?? 0, icon: '💳' },
+              { label: 'Nequi',          value: closedData.total_nequi      ?? 0, icon: '📱' },
+              { label: 'Daviplata',      value: closedData.total_daviplata  ?? 0, icon: '📲' },
+              { label: 'Transferencia',  value: closedData.total_transfers  ?? 0, icon: '🏦' },
+            ].filter(m => m.value > 0).map(m => (
+              <div key={m.label} className="flex justify-between items-center">
+                <span className="text-gray-500">{m.icon} {m.label}</span>
+                <span className="font-semibold">{formatCOP(m.value)}</span>
+              </div>
+            ))}
+            {(closedData.total_discounts ?? 0) > 0 && (
+              <div className="flex justify-between items-center text-red-600 border-t border-gray-200 pt-2 mt-1">
+                <span>🏷️ Descuentos otorgados</span>
+                <span className="font-semibold">-{formatCOP(closedData.total_discounts)}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Cuadre de caja */}
+          <div className="bg-gray-50 rounded-2xl p-4 space-y-2 text-sm">
+            <p className="font-semibold text-gray-700 mb-3">Cuadre de efectivo</p>
+            <div className="flex justify-between"><span className="text-gray-500">Saldo inicial</span><span>{formatCOP(closedData.opening_cash ?? openingCash)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">+ Ventas efectivo</span><span>{formatCOP(closedData.total_cash ?? 0)}</span></div>
+            <div className="flex justify-between font-bold border-t border-gray-200 pt-2 mt-1">
+              <span>= Esperado en caja</span>
+              <span>{formatCOP((closedData.opening_cash ?? openingCash) + (closedData.total_cash ?? 0))}</span>
+            </div>
+            <div className="flex justify-between"><span className="text-gray-500">Contado físicamente</span><span>{formatCOP(closedData.closing_cash ?? 0)}</span></div>
+          </div>
+
+          {/* Diferencia */}
+          <div className={`flex justify-between items-center px-4 py-3 rounded-xl font-bold border-2 ${
+            diff === 0 ? 'bg-green-50 border-green-200 text-green-700'
+            : diff > 0 ? 'bg-blue-50 border-blue-200 text-blue-700'
+            : 'bg-red-50 border-red-200 text-red-700'
+          }`}>
+            <span>{diff === 0 ? '✓ Caja cuadrada' : diff > 0 ? '↑ Sobrante' : '↓ Faltante'}</span>
+            <span>{diff === 0 ? 'Sin diferencia' : formatCOP(Math.abs(diff))}</span>
+          </div>
+
+          {closedData.notes && (
+            <p className="text-xs text-gray-400 italic px-1">Obs: {closedData.notes}</p>
+          )}
+
+          <button onClick={onClose} className="w-full h-11 bg-gray-900 text-white font-bold rounded-2xl">
+            Cerrar
+          </button>
+        </div>
+      </Modal>
+    );
+  }
+
+  // ── MODAL CIERRE: PASO 1 — RESUMEN Y MONTO ───────────────────────────────
+  if (step === 'summary') {
+    return (
+      <Modal title="Cerrar caja" onClose={onClose} size="md">
+        <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+
+          {/* Info del turno */}
+          <div className="bg-gray-50 rounded-2xl p-4 space-y-2 text-sm">
+            <div className="flex justify-between"><span className="text-gray-500">Cajero</span><span className="font-semibold">{user?.full_name}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Apertura</span><span className="font-semibold">{openedAt}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Saldo inicial</span><span className="font-semibold">{formatCOP(openingCash)}</span></div>
+          </div>
+
+          {/* Desglose ventas (del summary) */}
+          {loadSum ? (
+            <div className="flex items-center justify-center py-4 text-gray-400 text-sm gap-2">
+              <RefreshCw size={14} className="animate-spin" /> Cargando totales...
+            </div>
+          ) : summary ? (
+            <div className="bg-gray-50 rounded-2xl p-4 space-y-2 text-sm">
+              <div className="flex justify-between text-base font-bold pb-2 border-b border-gray-200">
+                <span>Total ventas del turno</span>
+                <span className="text-brand-700">{formatCOP(summary.total_sales)}</span>
+              </div>
+              <p className="text-xs text-gray-400">{summary.order_count} orden{summary.order_count !== 1 ? 'es' : ''} pagada{summary.order_count !== 1 ? 's' : ''}</p>
+              {[
+                { label: '💵 Efectivo',      value: summary.total_cash },
+                { label: '💳 Tarjeta',       value: summary.total_card },
+                { label: '📱 Nequi',         value: summary.total_nequi },
+                { label: '📲 Daviplata',     value: summary.total_daviplata },
+                { label: '🏦 Transferencia', value: summary.total_transfers },
+              ].filter(m => m.value > 0).map(m => (
+                <div key={m.label} className="flex justify-between text-xs">
+                  <span className="text-gray-500">{m.label}</span>
+                  <span>{formatCOP(m.value)}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {/* Efectivo esperado */}
+          {summary && (
+            <div className="bg-emerald-50 rounded-xl px-4 py-3 flex justify-between items-center text-sm">
+              <span className="text-emerald-700 font-medium">Efectivo esperado en caja</span>
+              <span className="font-bold text-emerald-800">{formatCOP(expectedCash)}</span>
+            </div>
+          )}
+
+          {/* Campo conteo */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-gray-700">Efectivo contado</label>
+              <button onClick={() => setStep('counting')}
+                className="text-xs text-brand-600 hover:text-brand-700 font-medium">
+                Contar por billetes →
+              </button>
+            </div>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</span>
+              <input autoFocus type="number" value={closingCash} onChange={e => setClosingCash(e.target.value)} placeholder="0"
+                className="w-full pl-7 pr-4 h-12 border-2 border-gray-200 focus:border-brand-400 rounded-xl text-xl font-bold text-right outline-none" />
+            </div>
+          </div>
+
+          {/* Diferencia en tiempo real */}
+          {difference !== null && (
+            <div className={`flex justify-between items-center px-4 py-3 rounded-xl text-sm font-bold border-2 ${
+              difference === 0 ? 'bg-green-50 border-green-200 text-green-700'
+              : difference > 0 ? 'bg-blue-50 border-blue-200 text-blue-700'
+              : 'bg-red-50 border-red-200 text-red-700'
+            }`}>
+              <span>{difference === 0 ? '✓ Sin descuadre' : difference > 0 ? '↑ Sobrante' : '↓ Faltante'}</span>
+              <span>{difference === 0 ? '' : formatCOP(Math.abs(difference))}</span>
+            </div>
+          )}
+
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Observaciones del turno (opcional)"
+            rows={2} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none outline-none focus:border-brand-400" />
+
+          <button onClick={closeSession} disabled={closing || closingAmt === 0}
+            className="w-full h-12 bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all">
+            {closing ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+            {closing ? 'Cerrando...' : 'Cerrar caja y generar informe'}
+          </button>
+        </div>
+      </Modal>
+    );
+  }
+
+  // ── MODAL CIERRE: PASO 2 — CONTADOR DE BILLETES ──────────────────────────
+  return (
+    <Modal title="Contar efectivo" onClose={() => setStep('summary')} size="md">
+      <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+        <p className="text-sm text-gray-500">Ingresa cuántos billetes/monedas hay en caja:</p>
+
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Billetes</p>
+          {BILL_DENOMS.map(d => (
+            <div key={d} className="flex items-center gap-3 py-1.5">
+              <span className="w-24 text-sm font-medium text-gray-700">{formatCOP(d)}</span>
+              <input type="number" min="0" value={counts[d] || ''} onChange={e => setCounts(c => ({ ...c, [d]: e.target.value }))}
+                placeholder="0"
+                className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-center text-sm font-bold outline-none focus:border-brand-400" />
+              <span className="text-xs text-gray-400 flex-1 text-right">{(Number(counts[d]) || 0) > 0 ? formatCOP((Number(counts[d])) * d) : ''}</span>
+            </div>
+          ))}
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide pt-2">Monedas</p>
+          {COIN_DENOMS.map(d => (
+            <div key={d} className="flex items-center gap-3 py-1.5">
+              <span className="w-24 text-sm font-medium text-gray-700">{formatCOP(d)}</span>
+              <input type="number" min="0" value={counts[d] || ''} onChange={e => setCounts(c => ({ ...c, [d]: e.target.value }))}
+                placeholder="0"
+                className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-center text-sm font-bold outline-none focus:border-brand-400" />
+              <span className="text-xs text-gray-400 flex-1 text-right">{(Number(counts[d]) || 0) > 0 ? formatCOP((Number(counts[d])) * d) : ''}</span>
+            </div>
+          ))}
         </div>
 
-        <button
-          onClick={openSession}
-          disabled={loading}
-          className="w-full h-12 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-brand-600/25">
-          {loading ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-          {loading ? 'Abriendo...' : 'Abrir caja y empezar'}
-        </button>
+        {/* Total contado */}
+        <div className="bg-gray-900 text-white rounded-2xl p-4 flex justify-between items-center">
+          <span className="font-medium">Total contado</span>
+          <span className="text-2xl font-black">{formatCOP(countedTotal)}</span>
+        </div>
+
+        <div className="flex gap-3">
+          <button onClick={() => setStep('summary')}
+            className="flex-1 h-11 border-2 border-gray-200 text-gray-700 font-bold rounded-2xl">
+            ← Atrás
+          </button>
+          <button onClick={() => { setClosingCash(String(countedTotal)); setStep('summary'); }}
+            disabled={countedTotal === 0}
+            className="flex-1 h-11 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white font-bold rounded-2xl">
+            Usar este total
+          </button>
+        </div>
       </div>
     </Modal>
   );
