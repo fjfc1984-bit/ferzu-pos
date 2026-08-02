@@ -62,6 +62,7 @@ export function LoginPage() {
 
     // Si ya tiene org → ir a selección de sucursal (branch-select se encarga del resto)
     // Si no tiene org → ir a onboarding para configurar
+    setLoading(false);
     if (userData?.organization_id) {
       navigate('/branch-select');
     } else {
@@ -346,14 +347,33 @@ export function PINLockScreen({ onUnlock, currentUser }) {
   const [loading, setLoading] = useState(false);
   const PIN_LENGTH = 4;
 
-  // Intentos de PIN
-  const [attempts, setAttempts] = useState(0);
-  const LOCK_AFTER = 5;
+  // Intentos de PIN — bloqueo 5 minutos tras LOCK_AFTER intentos fallidos
+  const [attempts,        setAttempts]        = useState(0);
+  const [lockedUntil,     setLockedUntil]     = useState(null); // timestamp ms
+  const [lockCountdown,   setLockCountdown]   = useState(0);   // segundos restantes
+  const LOCK_AFTER  = 5;
+  const LOCK_MS     = 5 * 60 * 1000; // 5 minutos
+
+  // Countdown en tiempo real mientras está bloqueado
+  useEffect(() => {
+    if (!lockedUntil) return;
+    const tick = setInterval(() => {
+      const remaining = Math.ceil((lockedUntil - Date.now()) / 1000);
+      if (remaining <= 0) {
+        setLockedUntil(null);
+        setLockCountdown(0);
+        setAttempts(0);
+      } else {
+        setLockCountdown(remaining);
+      }
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [lockedUntil]);
 
   const keys = [1, 2, 3, 4, 5, 6, 7, 8, 9, null, 0, 'DEL'];
 
   function handleKey(k) {
-    if (loading || attempts >= LOCK_AFTER) return;
+    if (loading || lockedUntil) return;
 
     if (k === 'DEL') {
       setDigits(d => d.slice(0, -1));
@@ -406,7 +426,10 @@ export function PINLockScreen({ onUnlock, currentUser }) {
         setDigits([]);
         setTimeout(() => setShake(false), 600);
         if (newAttempts >= LOCK_AFTER) {
-          toast.error('Demasiados intentos. Bloqueo activado 5 minutos.');
+          const until = Date.now() + LOCK_MS;
+          setLockedUntil(until);
+          setLockCountdown(LOCK_MS / 1000);
+          toast.error('Demasiados intentos. Bloqueado 5 minutos.');
         }
       }
     } catch {
@@ -417,7 +440,7 @@ export function PINLockScreen({ onUnlock, currentUser }) {
     }
   }
 
-  const locked = attempts >= LOCK_AFTER;
+  const locked = !!lockedUntil;
 
   return (
     <div className="fixed inset-0 bg-gray-950/95 backdrop-blur-sm z-50 flex items-center justify-center">
@@ -478,7 +501,13 @@ export function PINLockScreen({ onUnlock, currentUser }) {
           </div>
         )}
 
-        {attempts > 0 && attempts < LOCK_AFTER && (
+        {locked && (
+          <p className="mt-3 text-red-400 text-xs font-medium">
+            🔒 Bloqueado — intenta de nuevo en {Math.floor(lockCountdown / 60)}:{String(lockCountdown % 60).padStart(2, '0')} min
+          </p>
+        )}
+
+        {!locked && attempts > 0 && (
           <p className="mt-3 text-red-400 text-xs">
             PIN incorrecto · {LOCK_AFTER - attempts} intento(s) restante(s)
           </p>
@@ -719,7 +748,7 @@ export function OnboardingWizard() {
     1: org.business_name && org.nit && org.phone,
     2: org.business_type,
     3: org.branch_name && org.address && org.city,
-    4: org.skip_dian || (org.dian_resolution_number && org.dian_prefix && org.dian_from_number && org.dian_to_number),
+    4: org.skip_dian || (org.dian_resolution_number && org.dian_prefix && org.dian_from_number && org.dian_to_number && org.dian_resolution_date),
     5: true, // El primer producto es opcional
   };
 

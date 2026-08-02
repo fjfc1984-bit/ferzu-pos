@@ -5,7 +5,7 @@ import express  from 'express';
 import { body } from 'express-validator';
 import { supabaseAdmin } from '../config/supabase.js';
 import logger   from '../config/logger.js';
-import { requireAuth, requireBranchAccess } from '../middleware/auth.js';
+import { requireAuth, requireBranchAccess, assertBranchOwnership } from '../middleware/auth.js';
 import { validate }    from '../middleware/validate.js';
 import { logAudit }    from '../middleware/audit.js';
 
@@ -17,6 +17,9 @@ router.get('/current', async (req, res) => {
   try {
     const branchId = req.headers['x-branch-id'];
     if (!branchId) return res.status(400).json({ error: 'x-branch-id header requerido' });
+
+    // Validar que la sucursal pertenece a la organización del usuario
+    await assertBranchOwnership(branchId, req.organizationId);
 
     const { data, error } = await supabaseAdmin
       .from('cash_sessions')
@@ -75,6 +78,15 @@ router.post('/open', [
 router.get('/:id/summary', async (req, res) => {
   try {
     const { id } = req.params;
+    // Validar que la sesión pertenece a una sucursal de esta organización
+    const { data: session } = await supabaseAdmin
+      .from('cash_sessions')
+      .select('branch_id, branches!inner(organization_id)')
+      .eq('id', id)
+      .single();
+    if (!session || session.branches.organization_id !== req.organizationId) {
+      return res.status(404).json({ error: 'Sesión no encontrada' });
+    }
     const { data: orders } = await supabaseAdmin
       .from('orders')
       .select('total, payments(payment_method, amount), discount_amount')
@@ -108,6 +120,19 @@ router.post('/:id/close', [
   try {
     const { id } = req.params;
     const { closing_cash, notes } = req.body;
+
+    // Validar ownership antes de cerrar
+    const { data: session } = await supabaseAdmin
+      .from('cash_sessions')
+      .select('branch_id, status, branches!inner(organization_id)')
+      .eq('id', id)
+      .single();
+    if (!session || session.branches.organization_id !== req.organizationId) {
+      return res.status(404).json({ error: 'Sesión no encontrada' });
+    }
+    if (session.status === 'closed') {
+      return res.status(409).json({ error: 'La sesión ya está cerrada' });
+    }
 
     // Calcular totales de la sesión en el BACKEND
     const { data: orders } = await supabaseAdmin

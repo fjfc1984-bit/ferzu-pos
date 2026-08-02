@@ -149,7 +149,8 @@ router.post('/:id/payment', [
     const { id } = req.params;
     const { payment_method, amount, cash_received, transaction_ref, gateway } = req.body;
 
-    const { data: order } = await supabaseAdmin.from('orders').select('*').eq('id', id).single();
+    const { data: order } = await supabaseAdmin
+      .from('orders').select('*').eq('id', id).eq('organization_id', req.organizationId).single();
     if (!order)                    return res.status(404).json({ error: 'Orden no encontrada' });
     if (order.status === 'paid')   return res.status(409).json({ error: 'Orden ya pagada' });
 
@@ -193,7 +194,8 @@ router.post('/:id/refund', requireRole('owner', 'admin'), [
     const { id } = req.params;
     const { amount, reason, refund_method } = req.body;
 
-    const { data: order } = await supabaseAdmin.from('orders').select('total').eq('id', id).single();
+    const { data: order } = await supabaseAdmin
+      .from('orders').select('total').eq('id', id).eq('organization_id', req.organizationId).single();
     if (!order)               return res.status(404).json({ error: 'Orden no encontrada' });
     if (amount > order.total) return res.status(400).json({ error: 'Monto de devolución supera el total' });
 
