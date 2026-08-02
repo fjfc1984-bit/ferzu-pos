@@ -47,17 +47,24 @@ export async function markOrderPaid(orderId, organizationId, userId) {
 
   for (const item of items || []) {
     // Movimiento de inventario (salida = cantidad negativa)
-    await supabaseAdmin.from('inventory_movements').insert({
+    // QA-7 FIX: destructurar { error } — sin esto el error se ignora silenciosamente
+    const { error: movErr } = await supabaseAdmin.from('inventory_movements').insert({
       branch_id:      order.branch_id,
       product_id:     item.product_id,
-      variant_id:     item.variant_id,
+      variant_id:     item.variant_id || null,
       movement_type:  'sale',
       quantity:       -item.quantity,
-      unit_cost:      item.unit_cost,
+      unit_cost:      item.unit_cost || 0,
       reference_type: 'order',
       reference_id:   orderId,
+      notes:          `Venta registrada`,
       created_by:     userId,
     });
+    if (movErr) {
+      logger.error('[markOrderPaid] Error al insertar inventory_movement', {
+        movErr: movErr.message, product_id: item.product_id, orderId,
+      });
+    }
 
     // Actualizar stock con RPC atómica para evitar race conditions.
     // La función SQL decrement_inventory hace: UPDATE SET quantity = quantity - p_qty

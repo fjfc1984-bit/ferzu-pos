@@ -135,21 +135,22 @@ router.post('/setup', requireJWT, async (req, res) => {
     let prodCreated = false;
     if (first_product_name && first_product_price) {
       const price = Math.round(Number(String(first_product_price).replace(/\D/g, '')));
+      // QA-3 FIX: track_inventory=false por defecto en onboarding.
+      // Sin esto, el producto queda con track_inventory=true (default DB) + quantity=0
+      // y aparece inmediatamente como AGOTADO en la pantalla de venta.
       const { data: prodData, error: prodErr } = await supabaseAdmin.from('products').insert({
         organization_id: orgData.id,
         name:       first_product_name,
         sku:        first_product_sku || 'PROD-001',
         price,
-        is_active:  true,
-        item_type:  'product',
+        is_active:       true,
+        item_type:       'product',
+        track_inventory: false,  // el dueño activa el inventario cuando esté listo
       }).select().single();
 
       if (!prodErr && prodData) {
-        await supabaseAdmin.from('inventory').insert({
-          product_id: prodData.id,
-          branch_id:  branchData.id,
-          quantity:   0,
-        });
+        // No insertamos fila de inventory aquí: track_inventory=false,
+        // así que no hay stock que rastrear hasta que el usuario lo active.
         prodCreated = true;
       }
     }

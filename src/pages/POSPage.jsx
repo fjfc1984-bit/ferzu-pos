@@ -55,12 +55,13 @@ export default function POSPage() {
     disconnect:  disconnectPrinter,
   } = useThermalPrinter();
 
-  const [showCustomer,  setShowCustomer]  = useState(false);
-  const [showPayment,   setShowPayment]   = useState(false);
-  const [showDiscount,  setShowDiscount]  = useState(false);
-  const [showCashModal, setShowCashModal] = useState(false);
-  const [showAIPanel,   setShowAIPanel]   = useState(false);
-  const [activeCategory, setActiveCategory] = useState(null);
+  const [showCustomer,      setShowCustomer]      = useState(false);
+  const [showPayment,       setShowPayment]       = useState(false);
+  const [showDiscount,      setShowDiscount]      = useState(false);
+  const [showCashModal,     setShowCashModal]     = useState(false);
+  const [showAIPanel,       setShowAIPanel]       = useState(false);
+  const [activeCategory,    setActiveCategory]    = useState(null);
+  const [productRefreshKey, setProductRefreshKey] = useState(0); // ← QA-6: refresca stock tras venta
 
   // ── Atajos de teclado ─────────────────────────────────────────────────────
   useKeyboardShortcuts({
@@ -167,6 +168,7 @@ export default function POSPage() {
           onCategoryChange={setActiveCategory}
           organizationId={organizationId}
           branchId={branchId}
+          refreshKey={productRefreshKey}
         />
 
         <OrderPanel
@@ -193,7 +195,10 @@ export default function POSPage() {
       )}
 
       {showPayment && (
-        <PaymentModal onClose={() => setShowPayment(false)} />
+        <PaymentModal onClose={() => {
+          setShowPayment(false);
+          setProductRefreshKey(k => k + 1); // QA-6: refresca stock al cerrar modal de pago
+        }} />
       )}
 
       {showCustomer && (
@@ -243,7 +248,7 @@ export default function POSPage() {
 
 // export default function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchId })
 
-function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchId }) {
+function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchId, refreshKey = 0 }) {
   const { addItem }                = usePOS();
   const [search, setSearch]        = useState('');
   const [categories, setCategories]= useState([]);
@@ -361,7 +366,7 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
     }
     const timer = setTimeout(loadProducts, 300);
     return () => clearTimeout(timer);
-  }, [search, activeCategory, branchId]);
+  }, [search, activeCategory, branchId, refreshKey]); // refreshKey: fuerza recarga tras venta (QA-6)
 
   async function handleBarcodeScanned(barcode) {
     // 1. Buscar en productos ya cargados en la vista actual (instantáneo)
@@ -464,7 +469,13 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
             {products.slice(0, 8).map(p => (
               <button
                 key={`fav-${p.id}`}
-                onClick={() => !( (p.track_inventory && (p.current_stock ?? 0) === 0)) && addItem(p)}
+                onClick={() => {
+                  if (p.track_inventory && (p.current_stock ?? 0) === 0) {
+                    toast.error(`${p.name || 'Producto'} está agotado`, { icon: '🚫' });
+                    return;
+                  }
+                  addItem(p);
+                }}
                 disabled={p.track_inventory && (p.current_stock ?? 0) === 0}
                 className="shrink-0 flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl bg-white border border-gray-200 hover:border-brand-400 hover:bg-brand-50 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
                 style={{ minWidth:'72px', maxWidth:'80px' }}>
@@ -503,7 +514,10 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
               return (
                 <button
                   key={product.id}
-                  onClick={() => !isOut && addItem(product)}
+                  onClick={() => {
+                    if (isOut) { toast.error(`${product.name || 'Producto'} está agotado`, { icon: '🚫' }); return; }
+                    addItem(product);
+                  }}
                   disabled={isOut}
                   className={`
                     relative bg-white rounded-2xl p-3 text-left border transition-all duration-150
@@ -772,8 +786,12 @@ function PaymentModal({ onClose }) {
   const [cashReceived, setCashReceived] = useState('');
   const [mixCash,      setMixCash]      = useState('');
   const [mixCard,      setMixCard]      = useState('');
-  const [step,         setStep]         = useState('select'); // 'select' | 'done' | 'done-offline'
-  const [finalChange,  setFinalChange]  = useState(0);       // vuelto fijo para pantalla post-venta
+  const [step,              setStep]              = useState('select'); // 'select' | 'done' | 'done-offline'
+  const [finalChange,       setFinalChange]       = useState(0);       // vuelto fijo para pantalla post-venta
+  // QA-5: congelar valores ANTES de que CLEAR_ORDER vacíe el contexto
+  const [frozenTotal,       setFrozenTotal]       = useState(0);
+  const [frozenItems,       setFrozenItems]       = useState([]);
+  const [frozenCustomer,    setFrozenCustomer]    = useState('');
   const cashInputRef = useRef(null);
   const mixCashRef   = useRef(null);
 
@@ -826,6 +844,10 @@ function PaymentModal({ onClose }) {
         return;
       }
       try {
+        // QA-5: congelar ANTES de CLEAR_ORDER
+        setFrozenTotal(total);
+        setFrozenItems([...items]);
+        setFrozenCustomer(customerName || '');
         const order = await processPaymentMixed(mixCashAmt, mixCardAmt);
         setFinalChange(0);
         setStep(order?.offline ? 'done-offline' : 'done');
@@ -837,6 +859,10 @@ function PaymentModal({ onClose }) {
       return;
     }
     try {
+      // QA-5: congelar ANTES de CLEAR_ORDER
+      setFrozenTotal(total);
+      setFrozenItems([...items]);
+      setFrozenCustomer(customerName || '');
       const order = await processPayment(method, method === 'cash' ? cashAmt : total);
       // Guardar el vuelto ANTES de que el estado cambie
       setFinalChange(change);
@@ -905,11 +931,15 @@ function PaymentModal({ onClose }) {
   }
 
   // Genera texto de recibo para WhatsApp
+  // QA-5: usa valores congelados (items/total ya fueron limpiados por CLEAR_ORDER)
   function buildWhatsAppReceipt() {
+    const receiptItems = frozenItems.length > 0 ? frozenItems : items;
+    const receiptTotal = frozenTotal || totals.total;
+    const receiptCustomer = frozenCustomer || customerName;
     const lines = ['*Recibo de compra — FERZU POS*', '']
-    if (customerName) lines.push(`Cliente: ${customerName}`)
-    items.forEach(i => lines.push(`• ${i.product_name} x${i.quantity}  ${formatCOP(i.unit_price * i.quantity)}`))
-    lines.push('', `*Total:  ${formatCOP(totals.total)}*`)
+    if (receiptCustomer) lines.push(`Cliente: ${receiptCustomer}`)
+    receiptItems.forEach(i => lines.push(`• ${i.product_name} x${i.quantity}  ${formatCOP(i.unit_price * i.quantity)}`))
+    lines.push('', `*Total:  ${formatCOP(receiptTotal)}*`)
     if (finalChange > 0) lines.push(`Vuelto:  ${formatCOP(finalChange)}`)
     lines.push('', `Gracias por su compra 🛍️`)
     return encodeURIComponent(lines.join('\n'))
@@ -960,7 +990,8 @@ function PaymentModal({ onClose }) {
           ) : method !== 'cash' ? (
             <div className="w-full bg-blue-50 border-2 border-blue-200 rounded-2xl px-6 py-4 text-center">
               <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-1">Total cobrado</p>
-              <p className="text-4xl font-black text-blue-700">{formatCOP(total)}</p>
+              {/* QA-5: usar frozenTotal (total ya fue limpiado por CLEAR_ORDER) */}
+              <p className="text-4xl font-black text-blue-700">{formatCOP(frozenTotal || total)}</p>
             </div>
           ) : null}
 

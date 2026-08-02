@@ -877,13 +877,37 @@ async function queryBusinessData(queryInput, context) {
     }
 
     // ── Estado del inventario ─────────────────────────────────────────────
+    // QA-8 FIX: v_inventory_status NO tiene columna organization_id (el view no la expone).
+    // Filtrar por branch_id (sí existe en el view) + RLS de Supabase filtra por org.
+    // Si no hay branchId, hacemos fallback a products+inventory directamente.
     case 'inventory_status': {
-      let q = supabase.from('v_inventory_status').select('*').eq('organization_id', orgId);
-      if (branchId) q = q.eq('branch_id', branchId);
-      q = q.limit(lim);
-      const { data, error } = await q;
-      if (error) return { error: error.message };
-      return { data, count: data?.length, query_type };
+      if (branchId) {
+        let q = supabase.from('v_inventory_status').select('*').eq('branch_id', branchId).limit(lim);
+        const { data, error } = await q;
+        if (error) {
+          // Fallback: consultar inventory + products directamente
+          const { data: inv, error: e2 } = await supabase
+            .from('inventory')
+            .select('quantity, average_cost, branch_id, products(id, name, sku, price, min_stock, track_inventory)')
+            .eq('branch_id', branchId)
+            .eq('products.is_active', true)
+            .limit(lim);
+          if (e2) return { error: e2.message };
+          return { data: inv, count: inv?.length, query_type, source: 'inventory_fallback' };
+        }
+        return { data, count: data?.length, query_type };
+      } else {
+        // Sin branch_id: consultar inventory filtrando por organización via productos
+        const { data: inv, error } = await supabase
+          .from('inventory')
+          .select('quantity, average_cost, branch_id, products!inner(id, name, sku, price, min_stock, organization_id, track_inventory)')
+          .eq('products.organization_id', orgId)
+          .eq('products.is_active', true)
+          .eq('products.track_inventory', true)
+          .limit(lim);
+        if (error) return { error: error.message };
+        return { data: inv, count: inv?.length, query_type };
+      }
     }
 
     // ── Mix de métodos de pago ────────────────────────────────────────────
