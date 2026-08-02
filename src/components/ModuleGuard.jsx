@@ -682,13 +682,17 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
 
   const isAdmin = ['admin', 'owner'].includes(user?.role);
 
+  // Durante trial activo → todos los módulos son accesibles en el nav
+  const isInTrial = trial && new Date(trial) > new Date();
+  const ALL_MAIN = ['pos', 'barbershop', 'kitchen', 'workshop', 'minimarket', 'inventory', 'dashboard'];
+  const effectiveModules = isInTrial ? ALL_MAIN : modules;
+
   // Módulos habilitados por plan Y no desactivados por el dueño
-  const navModules = getNavModules(modules)
+  const navModules = getNavModules(effectiveModules)
     .filter(mod => activeModules?.[mod.key] !== false);
 
-  // Módulos que NO tiene el plan → upgrade hint (máx 3)
-  const ALL_MAIN = ['pos', 'barbershop', 'kitchen', 'workshop', 'minimarket', 'inventory', 'dashboard'];
-  const lockedModules = ALL_MAIN
+  // Módulos que NO tiene el plan → upgrade hint (máx 3); vacío durante trial
+  const lockedModules = isInTrial ? [] : ALL_MAIN
     .filter(key => !modules.includes(key))
     .map(key => MODULE_META[key])
     .filter(Boolean)
