@@ -33,6 +33,7 @@ import { useSyncContext }          from '../context/SyncContext.jsx';
 import { useAIProposals }          from '../hooks/useAIProposals.js';
 import { useKeyboardShortcuts }    from '../hooks/useKeyboardShortcuts.js';
 import { useThermalPrinter }       from '../hooks/useThermalPrinter.js';
+import { useTrack }                from '../hooks/useTrack.js';
 import { formatCOP }               from '../lib/math.js';
 import { cashAPI, api }            from '../lib/api.js';
 import toast                       from 'react-hot-toast';
@@ -782,6 +783,7 @@ function PaymentModal({ onClose }) {
   const { totals, items, customerName, processPayment, processPaymentMixed, isProcessing, clearOrder } = usePOS();
   const { user }                                           = useAuth();
   const { printReceipt, isPrinting: printing, isConnected: printerConnected } = useThermalPrinter();
+  const track = useTrack();
   const [method,       setMethod]       = useState('cash');
   const [cashReceived, setCashReceived] = useState('');
   const [mixCash,      setMixCash]      = useState('');
@@ -851,6 +853,7 @@ function PaymentModal({ onClose }) {
         const order = await processPaymentMixed(mixCashAmt, mixCardAmt);
         setFinalChange(0);
         setStep(order?.offline ? 'done-offline' : 'done');
+        track('sale_completed', 'pos', { method: 'mixed', total: totals.total, items: items.length });
       } catch {}
       return;
     }
@@ -867,6 +870,7 @@ function PaymentModal({ onClose }) {
       // Guardar el vuelto ANTES de que el estado cambie
       setFinalChange(change);
       setStep(order?.offline ? 'done-offline' : 'done');
+      track('sale_completed', 'pos', { method, total, items: items.length });
       // SIN auto-close: el cajero decide cuándo pasar al siguiente cliente
     } catch {}
   }

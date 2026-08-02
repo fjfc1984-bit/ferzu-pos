@@ -947,46 +947,73 @@ export async function checkResolutionExpiry(organizationId) {
     .select('*')
     .eq('organization_id', organizationId)
     .eq('is_active', true)
-    .single();
+    .maybeSingle();
 
-  if (!config) return;
+  if (!config) return null;
+
+  // Columnas reales del schema: from_number, to_number, resolution_end_date
+  const fromNum   = config.from_number    ?? 1;
+  const toNum     = config.to_number      ?? 1;
+  const expiresAt = config.resolution_end_date ?? config.resolution_date;
 
   const today       = new Date();
-  const expiry      = new Date(config.resolution_expires_at);
-  const daysToExpiry = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
-  const rangeUsed   = config.current_number - config.resolution_from;
-  const rangeTotal  = config.resolution_to - config.resolution_from + 1;
-  const rangeLeft   = rangeTotal - rangeUsed;
+  const expiry      = expiresAt ? new Date(expiresAt) : null;
+  const daysLeft    = expiry ? Math.ceil((expiry - today) / (1000 * 60 * 60 * 24)) : 9999;
+
+  const numbersUsed = Math.max(0, (config.current_number ?? fromNum) - fromNum);
+  const numbersLeft = Math.max(0, toNum - (config.current_number ?? fromNum) + 1);
 
   const alerts = [];
 
-  // Alerta: resolución vence en menos de 30 días
-  if (daysToExpiry <= 30 && daysToExpiry > 0) {
+  if (expiry && daysLeft <= 30 && daysLeft > 0) {
     alerts.push({
       organization_id: organizationId,
       alert_type:      'dian_resolution_expiry',
-      severity:        daysToExpiry <= 7 ? 'critical' : 'high',
-      title:           `Resolución DIAN vence en ${daysToExpiry} días`,
+      severity:        daysLeft <= 7 ? 'critical' : 'high',
+      title:           `Resolución DIAN vence en ${daysLeft} días`,
       description:     `La resolución ${config.resolution_number} vence el ${expiry.toLocaleDateString('es-CO')}. Tramita la renovación.`,
-      data:            { days_remaining: daysToExpiry, expires_at: config.resolution_expires_at },
+      data:            { days_remaining: daysLeft, expires_at: expiresAt },
     });
   }
-
-  // Alerta: quedan menos de 100 números de factura
-  if (rangeLeft <= 100) {
+  if (expiry && daysLeft <= 0) {
+    alerts.push({
+      organization_id: organizationId,
+      alert_type:      'dian_resolution_expired',
+      severity:        'critical',
+      title:           'Resolución DIAN VENCIDA',
+      description:     `La resolución ${config.resolution_number} venció. No se pueden emitir nuevas facturas electrónicas hasta renovarla.`,
+      data:            { expires_at: expiresAt },
+    });
+  }
+  if (numbersLeft <= 100) {
     alerts.push({
       organization_id: organizationId,
       alert_type:      'dian_range_exhausting',
-      severity:        rangeLeft <= 20 ? 'critical' : 'high',
-      title:           `Solo quedan ${rangeLeft} números de factura`,
-      description:     `La resolución ${config.resolution_number} va desde ${config.resolution_from} hasta ${config.resolution_to}. Número actual: ${config.current_number}.`,
-      data:            { range_left: rangeLeft, current_number: config.current_number },
+      severity:        numbersLeft <= 20 ? 'critical' : 'high',
+      title:           `Solo quedan ${numbersLeft} números de factura`,
+      description:     `La resolución ${config.resolution_number} va del ${fromNum} al ${toNum}. Número actual: ${config.current_number}.`,
+      data:            { range_left: numbersLeft, current_number: config.current_number },
     });
   }
 
   if (alerts.length) {
-    await supabaseAdmin.from('system_alerts').insert(alerts);
+    await supabaseAdmin.from('system_alerts').insert(alerts).then(() => {});
   }
 
-  return { daysToExpiry, rangeLeft, alerts };
+  // Devolver en el formato que espera DianPage.jsx
+  return {
+    resolution: {
+      number:      config.resolution_number,
+      prefix:      config.prefix,
+      from:        fromNum,
+      to:          toNum,
+      daysLeft,
+      expiresAt,
+      numbersUsed,
+      numbersLeft,
+      pta:         config.pta_provider,
+      environment: config.environment,
+    },
+    alerts,
+  };
 }

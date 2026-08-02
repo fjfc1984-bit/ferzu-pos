@@ -11,11 +11,12 @@
 // =============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   FileText, AlertTriangle, CheckCircle2, RefreshCw, Loader2,
   Hash, Clock, TrendingUp, XCircle, ShieldCheck, Zap,
   RotateCcw, ChevronRight, Info, Calendar, BarChart3,
-  Search, CheckCircle, AlertCircle
+  Search, CheckCircle, AlertCircle, Settings2
 } from 'lucide-react';
 import { api }      from '../lib/api.js';
 import { supabase } from '../lib/supabase.js';
@@ -31,6 +32,7 @@ import toast from 'react-hot-toast';
 export default function DianPage() {
   const [tab, setTab] = useState('overview');
   const { organizationId } = useAuth();
+  const navigate = useNavigate();
 
   const TABS = [
     { key: 'overview',     label: 'Resumen',      icon: BarChart3  },
@@ -51,7 +53,8 @@ export default function DianPage() {
             Ambiente habilitación (DIAN Test)
           </span>
         </div>
-        <div className="flex gap-1">
+        <div className="flex items-center justify-between">
+          <div className="flex gap-1">
           {TABS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -65,6 +68,15 @@ export default function DianPage() {
               {label}
             </button>
           ))}
+          </div>
+          <button
+            onClick={() => navigate('/dian/setup')}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold
+                       text-brand-700 border border-brand-200 hover:bg-brand-50 rounded-xl
+                       transition-colors mb-1">
+            <Settings2 size={13} />
+            Configurar
+          </button>
         </div>
       </div>
 
@@ -626,7 +638,7 @@ function NITValidatorTab() {
                 value={input}
                 onChange={e => { setInput(e.target.value); setResult(null); }}
                 onKeyDown={handleKeyDown}
-                placeholder="Ej: 890903938-8 o 890903938"
+                placeholder="Sin DV: 890903938 | Con DV: 8909039388 (10 dígitos)"
                 className="w-full h-10 pl-9 pr-3 border border-gray-200 rounded-xl text-sm
                            outline-none focus:ring-2 focus:ring-brand-400 font-mono"
               />

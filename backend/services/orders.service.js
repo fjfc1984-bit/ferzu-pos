@@ -4,8 +4,10 @@
 // Funciones compartidas por ordersRouter y syncRouter.
 // REGLA DE ORO: TODO cálculo matemático vive aquí — sin flotantes.
 // =============================================================================
-import { supabaseAdmin } from '../config/supabase.js';
-import logger            from '../config/logger.js';
+import { supabaseAdmin }           from '../config/supabase.js';
+import logger                      from '../config/logger.js';
+import { sendReceiptWhatsApp,
+         isWhatsAppConfigured }     from './whatsapp.service.js';
 
 /**
  * processPaymentInternal
@@ -87,6 +89,41 @@ export async function markOrderPaid(orderId, organizationId, userId) {
         .eq('product_id', item.product_id);
       // Nota: sin RPC, este UPDATE no puede hacer aritmética atómica.
       // Ejecutar views_v1.sql en Supabase para activar decrement_inventory.
+    }
+  }
+
+  // ── WhatsApp: enviar recibo al cliente si está configurado ──────────────────
+  if (isWhatsAppConfigured()) {
+    try {
+      // Obtener datos del pedido y del cliente
+      const { data: fullOrder } = await supabaseAdmin
+        .from('orders')
+        .select(`
+          order_number, total,
+          customers(name, phone),
+          organizations(name)
+        `)
+        .eq('id', orderId)
+        .single();
+
+      const customerPhone = fullOrder?.customers?.phone;
+      if (customerPhone) {
+        // Fire-and-forget — no bloquear el flujo de pago
+        sendReceiptWhatsApp({
+          phone:        customerPhone,
+          customerName: fullOrder.customers?.name  || 'Cliente',
+          businessName: fullOrder.organizations?.name || 'FERZU POS',
+          total:        fullOrder.total,
+          orderNumber:  fullOrder.order_number,
+        }).then(result => {
+          if (!result.success) {
+            logger.warn('[markOrderPaid] WhatsApp recibo fallido:', result.error);
+          }
+        });
+      }
+    } catch (waErr) {
+      // No fallar la transacción por un error de WhatsApp
+      logger.warn('[markOrderPaid] Error iniciando WhatsApp:', waErr.message);
     }
   }
 }

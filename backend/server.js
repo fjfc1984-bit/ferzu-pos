@@ -42,6 +42,8 @@ import errorsRouter     from './routes/errors.routes.js';
 import dianRouter       from './routes/dian.routes.js';
 import orgRouter        from './routes/org.routes.js';
 import onboardingRouter from './routes/onboarding.routes.js';
+import settingsRouter   from './routes/settings.routes.js';
+import analyticsRouter  from './routes/analytics.routes.js';
 import { registerProcessHandlers } from './routes/errors.routes.js';
 
 // ── CRON ───────────────────────────────────────────────────────────────────────
@@ -93,6 +95,8 @@ app.use('/api/errors',        errorsRouter);
 app.use('/api/dian',          dianRouter);
 app.use('/api/org',           orgRouter);
 app.use('/api/onboarding',    onboardingRouter);
+app.use('/api/settings',      settingsRouter);
+app.use('/api/analytics',     analyticsRouter);
 
 // =============================================================================
 // HEALTH CHECK

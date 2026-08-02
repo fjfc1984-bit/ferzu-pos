@@ -291,6 +291,98 @@ router.post('/retry-contingency', requireOrg, async (req, res) => {
 });
 
 
+// =============================================================================
+// GET /api/dian/config
+// Obtiene la configuración DIAN activa de la organización (para el wizard).
+// =============================================================================
+router.get('/config', requireOrg, async (req, res) => {
+  try {
+    const { data: config } = await supabaseAdmin
+      .from('dian_configs')
+      .select('*')
+      .eq('organization_id', req.organizationId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    const { data: org } = await supabaseAdmin
+      .from('organizations')
+      .select('nit, nit_dv, legal_name, name')
+      .eq('id', req.organizationId)
+      .single();
+
+    res.json({ config: config || null, org: org || null });
+  } catch (err) {
+    console.error('[DIAN] config error:', err);
+    res.status(500).json({ error: 'Error consultando configuración DIAN' });
+  }
+});
+
+
+// =============================================================================
+// POST /api/dian/setup
+// Guarda/actualiza la configuración DIAN completa (wizard post-pago).
+// Body: { nit, nit_dv, resolution_number, prefix, from_number, to_number,
+//         resolution_date, resolution_end_date, pta_provider, environment }
+// =============================================================================
+router.post('/setup', requireOrg, [
+  body('resolution_number').notEmpty().trim(),
+  body('from_number').isInt({ min: 1 }),
+  body('to_number').isInt({ min: 1 }),
+  body('resolution_end_date').isISO8601(),
+  validate,
+], async (req, res) => {
+  try {
+    const {
+      nit, nit_dv,
+      resolution_number, prefix,
+      from_number, to_number,
+      resolution_date, resolution_end_date,
+      pta_provider, environment,
+    } = req.body;
+
+    // Actualizar NIT en organizations si se proporcionó
+    if (nit) {
+      await supabaseAdmin
+        .from('organizations')
+        .update({ nit: String(nit).trim(), nit_dv: String(nit_dv ?? '') })
+        .eq('id', req.organizationId);
+    }
+
+    // Desactivar config anterior si existe
+    await supabaseAdmin
+      .from('dian_configs')
+      .update({ is_active: false })
+      .eq('organization_id', req.organizationId);
+
+    // Insertar nueva configuración
+    const { data: newConfig, error } = await supabaseAdmin
+      .from('dian_configs')
+      .insert({
+        organization_id:     req.organizationId,
+        resolution_number:   String(resolution_number).trim(),
+        prefix:              prefix ? String(prefix).trim() : null,
+        from_number:         Number(from_number),
+        to_number:           Number(to_number),
+        current_number:      Number(from_number),   // iniciar en el primer número
+        resolution_date:     resolution_date || null,
+        resolution_end_date: resolution_end_date,
+        pta_provider:        pta_provider || null,
+        environment:         environment || 'test',
+        is_active:           true,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, config: newConfig });
+  } catch (err) {
+    console.error('[DIAN] setup error:', err);
+    res.status(500).json({ error: 'Error guardando configuración DIAN', detail: err.message });
+  }
+});
+
+
 // POST /api/dian/vat-audit-log
 // Registra la decisión del usuario sobre la sugerencia del clasificador IVA.
 // Permite medir tasa de override para detectar sesgo o errores sistemáticos.
