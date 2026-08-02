@@ -32,6 +32,7 @@ import { useAuth }                 from '../context/AuthContext.jsx';
 import { useSyncContext }          from '../context/SyncContext.jsx';
 import { useAIProposals }          from '../hooks/useAIProposals.js';
 import { useKeyboardShortcuts }    from '../hooks/useKeyboardShortcuts.js';
+import { useThermalPrinter }       from '../hooks/useThermalPrinter.js';
 import { formatCOP }               from '../lib/math.js';
 import { cashAPI, api }            from '../lib/api.js';
 import toast                       from 'react-hot-toast';
@@ -48,6 +49,11 @@ export default function POSPage() {
   const { cashSession, branchId, dispatch, sessionLoading } = usePOS();
   const { isOnline, pendingCount, cacheProducts, getOfflineProducts } = useSyncContext();
   const { proposals }                       = useAIProposals(branchId);
+  const {
+    isConnected: printerConnected,
+    connect:     connectPrinter,
+    disconnect:  disconnectPrinter,
+  } = useThermalPrinter();
 
   const [showCustomer,  setShowCustomer]  = useState(false);
   const [showPayment,   setShowPayment]   = useState(false);
@@ -112,6 +118,18 @@ export default function POSPage() {
               {proposals.length}
             </span>
           )}
+        </button>
+
+        {/* Impresora térmica */}
+        <button
+          onClick={printerConnected ? disconnectPrinter : connectPrinter}
+          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+            printerConnected
+              ? 'bg-blue-50 text-blue-600 ring-1 ring-blue-100 shadow-sm'
+              : 'text-gray-400 hover:bg-gray-50 hover:text-gray-700'
+          }`}
+          title={printerConnected ? 'Impresora conectada — clic para desconectar' : 'Conectar impresora térmica'}>
+          <Printer size={17} />
         </button>
 
         <div className="flex-1" />
@@ -748,6 +766,8 @@ function OrderPanel({ onPay, onCustomer, onDiscount, onOpenCashModal }) {
 
 function PaymentModal({ onClose }) {
   const { totals, items, customerName, processPayment, processPaymentMixed, isProcessing, clearOrder } = usePOS();
+  const { user }                                           = useAuth();
+  const { printReceipt, isPrinting: printing, isConnected: printerConnected } = useThermalPrinter();
   const [method,       setMethod]       = useState('cash');
   const [cashReceived, setCashReceived] = useState('');
   const [mixCash,      setMixCash]      = useState('');
@@ -830,17 +850,42 @@ function PaymentModal({ onClose }) {
     onClose();
   }
 
-  function handlePrint() {
-    // Inyectar div de recibo en el DOM para que @media print lo muestre
+  async function handlePrint() {
+    // ── Ruta 1: Impresora térmica ESC/POS via Web USB ──────────────────────
+    const businessName = user?.organizations?.business_name
+      || localStorage.getItem('ferzu_org_name')
+      || 'FERZU POS';
+    const branchName  = localStorage.getItem('ferzu_branch_name') || '';
+    const cashierName = user?.full_name || '';
+
+    const orderData = {
+      order_number:    null,
+      order_items:     items.map(i => ({
+        product_name: i.product_name,
+        quantity:     i.quantity,
+        unit_price:   i.unit_price,
+      })),
+      subtotal:        totals.subtotal,
+      discount_amount: totals.discount_amount,
+      tax_amount:      totals.tax_total,
+      total:           totals.total,
+      payment_method:  method,
+      cash_received:   method === 'cash' ? cashAmt : null,
+      change_amount:   finalChange,
+      created_at:      new Date().toISOString(),
+    };
+
+    const printed = await printReceipt({ order: orderData, businessName, branchName, cashierName });
+    if (printed) return;
+
+    // ── Ruta 2: Fallback window.print() con CSS de recibo ──────────────────
     const existing = document.getElementById('print-receipt');
     if (existing) existing.remove();
-
     const lines = [];
     if (customerName) lines.push(`<div class="receipt-row"><span>Cliente</span><span>${customerName}</span></div>`);
     items.forEach(i => {
       lines.push(`<div class="receipt-row"><span>${i.product_name} x${i.quantity}</span><span>$${(i.unit_price * i.quantity).toLocaleString('es-CO')}</span></div>`);
     });
-
     const div = document.createElement('div');
     div.id = 'print-receipt';
     div.style.display = 'none';
@@ -942,12 +987,19 @@ function PaymentModal({ onClose }) {
               Enviar recibo por WhatsApp
             </a>
 
-            {/* Imprimir — usa window.print() con CSS de recibo */}
+            {/* Imprimir — térmica ESC/POS si conectada, sino window.print() */}
             <button
               onClick={handlePrint}
-              className="w-full h-10 border border-gray-200 text-gray-500 hover:bg-gray-50 font-medium rounded-xl flex items-center justify-center gap-2 text-sm transition-all">
-              <Printer size={15} />
-              Imprimir recibo
+              disabled={printing}
+              className="w-full h-10 border border-gray-200 text-gray-500 hover:bg-gray-50 font-medium rounded-xl flex items-center justify-center gap-2 text-sm transition-all disabled:opacity-50">
+              {printing
+                ? <RefreshCw size={15} className="animate-spin" />
+                : <Printer size={15} />}
+              {printing
+                ? 'Imprimiendo...'
+                : printerConnected
+                  ? 'Imprimir recibo (térmica)'
+                  : 'Imprimir recibo'}
             </button>
           </div>
         </div>
@@ -1370,7 +1422,8 @@ const COIN_DENOMS   = [500, 200, 100, 50];
 
 function CashSessionModal({ onClose, branchId }) {
   const { cashSession, dispatch } = usePOS();
-  const { user }           = useAuth();
+  const { user }                  = useAuth();
+  const { printCashReport, isPrinting: printingReport, isConnected: printerConnected } = useThermalPrinter();
 
   // ── APERTURA ──
   const [openCash, setOpenCash] = useState('');
@@ -1532,6 +1585,32 @@ function CashSessionModal({ onClose, branchId }) {
 
           {closedData.notes && (
             <p className="text-xs text-gray-400 italic px-1">Obs: {closedData.notes}</p>
+          )}
+
+          {/* Imprimir informe de turno (solo si hay impresora conectada) */}
+          {printerConnected && (
+            <button
+              onClick={() => {
+                const businessName = user?.organizations?.business_name
+                  || localStorage.getItem('ferzu_org_name') || 'FERZU POS';
+                printCashReport({
+                  session: {
+                    opening_amount: closedData.opening_cash    ?? 0,
+                    cash_sales:     closedData.total_cash      ?? 0,
+                    closing_amount: closedData.closing_cash    ?? 0,
+                    difference:     closedData.cash_difference ?? 0,
+                  },
+                  businessName,
+                  type: 'close',
+                });
+              }}
+              disabled={printingReport}
+              className="w-full h-10 border border-blue-200 text-blue-600 hover:bg-blue-50 font-medium rounded-xl flex items-center justify-center gap-2 text-sm transition-all disabled:opacity-50">
+              {printingReport
+                ? <RefreshCw size={15} className="animate-spin" />
+                : <Printer size={15} />}
+              {printingReport ? 'Imprimiendo...' : 'Imprimir informe de turno'}
+            </button>
           )}
 
           <button onClick={onClose} className="w-full h-11 bg-gray-900 text-white font-bold rounded-2xl">
