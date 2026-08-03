@@ -53,19 +53,26 @@ export function LoginPage() {
       return;
     }
 
-    // Verificar si el usuario ya tiene organización asignada
+    // Verificar si el usuario ya tiene organización asignada Y si el onboarding está completo
     const { data: userData } = await supabase
       .from('users')
-      .select('organization_id, role')
+      .select(`
+        organization_id, role,
+        organizations(onboarding_completed)
+      `)
       .eq('id', data.user.id)
       .single();
 
-    // Si ya tiene org → ir a selección de sucursal (branch-select se encarga del resto)
-    // Si no tiene org → ir a onboarding para configurar
     setLoading(false);
-    if (userData?.organization_id) {
+
+    const hasOrg       = !!userData?.organization_id;
+    const doneSetup    = !!userData?.organizations?.onboarding_completed;
+
+    if (hasOrg && doneSetup) {
+      // Organización configurada → selección de sucursal (branch-select redirige a /pos)
       navigate('/branch-select');
     } else {
+      // Sin org o setup incompleto → completar onboarding
       navigate('/onboarding');
     }
   }
@@ -707,6 +714,39 @@ export function OnboardingWizard() {
   const { dispatch: posDispatch } = usePOS();
   const [step,    setStep]    = useState(1);
   const TOTAL_STEPS = 5;
+
+  // ── Guard: si el negocio y los productos ya están guardados, saltar onboarding ──
+  useEffect(() => {
+    async function checkAlreadySetup() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Verificar si ya tiene org con onboarding completo
+      const { data: userData } = await supabase
+        .from('users')
+        .select('organization_id, organizations(onboarding_completed)')
+        .eq('id', user.id)
+        .single();
+
+      const orgId     = userData?.organization_id;
+      const doneSetup = userData?.organizations?.onboarding_completed;
+
+      if (!orgId || !doneSetup) return; // Debe completar el wizard normalmente
+
+      // Verificar si ya tiene al menos 1 producto registrado
+      const { count } = await supabase
+        .from('products')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', orgId)
+        .eq('is_active', true);
+
+      if (count > 0) {
+        // Negocio y productos ya configurados → entrar directo a la app
+        navigate('/branch-select', { replace: true });
+      }
+    }
+    checkAlreadySetup();
+  }, [navigate]);
 
   const [org, setOrg] = useState({
     // Paso 1 — Empresa
