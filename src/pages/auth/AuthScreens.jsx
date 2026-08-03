@@ -557,7 +557,8 @@ export function BranchSelector() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { navigate('/login'); return; }
 
-      const { data } = await supabase
+      // Intento 1: user_branches (puede fallar por RLS en cuentas nuevas)
+      const { data: ubData } = await supabase
         .from('user_branches')
         .select(`
           branch_id,
@@ -565,12 +566,30 @@ export function BranchSelector() {
         `)
         .eq('user_id', user.id);
 
-      const activeBranches = (data || [])
+      let activeBranches = (ubData || [])
         .map(r => r.branches)
         .filter(b => b?.is_active);
 
+      // Intento 2 (fallback): si user_branches vació por RLS, buscar via organización
       if (activeBranches.length === 0) {
-        // No tiene sucursales → ir a onboarding a completar configuración
+        const { data: userData } = await supabase
+          .from('users')
+          .select('organization_id')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (userData?.organization_id) {
+          const { data: orgBranches } = await supabase
+            .from('branches')
+            .select('id, name, address, city, is_active, metadata')
+            .eq('organization_id', userData.organization_id)
+            .eq('is_active', true);
+          activeBranches = orgBranches || [];
+        }
+      }
+
+      if (activeBranches.length === 0) {
+        // Realmente no tiene sucursales → completar onboarding
         navigate('/onboarding');
         return;
       }
