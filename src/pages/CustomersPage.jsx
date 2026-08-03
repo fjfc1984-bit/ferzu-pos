@@ -1,4 +1,10 @@
-/**
+cd C:/Users/fjfc1/Downloads/ferzu-pos
+rm -f .git/index.lock
+git checkout main
+git merge fix/client-errors-aug2026 --no-ff -m "fix: errores criticos cliente Said + customers RLS"
+git add package-lock.json backend/package-lock.json
+git commit -m "fix: regenerar package-lock.json con Node 22 — corrige CI"
+git push origin main/**
  * FERZU POS — Módulo de Clientes / CRM Básico
  * ============================================
  * Incluye:
