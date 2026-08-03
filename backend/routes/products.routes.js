@@ -16,7 +16,7 @@ router.use(requireAuth);
 router.get('/', async (req, res) => {
   try {
     const { branch_id, category_id, search, page = 1, limit = 50 } = req.query;
-    await assertBranchOwnership(branch_id, req.organizationId);
+    await assertBranchOwnership(branch_id, req.organizationId, { optional: true });
     const offset = (page - 1) * limit;
 
     // FIX: Usar supabaseAdmin con filtro explícito de organization_id.

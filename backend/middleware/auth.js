@@ -49,6 +49,11 @@ export async function requireAuth(req, res, next) {
  */
 export function requireRole(...roles) {
   return (req, res, next) => {
+    if (!req.user) {
+      // Guardia defensiva: requireRole sin requireAuth previo
+      logger.error('requireRole invocado sin req.user — falta requireAuth en la cadena');
+      return res.status(500).json({ error: 'Error de configuración del servidor' });
+    }
     if (!roles.includes(req.user.role)) {
       return res.status(403).json({ error: `Requiere rol: ${roles.join(' o ')}` });
     }
@@ -57,13 +62,29 @@ export function requireRole(...roles) {
 }
 
 /**
- * assertBranchOwnership(branchId, organizationId)
+ * assertBranchOwnership(branchId, organizationId, options?)
  * Verifica que una sucursal pertenece a la organización del usuario.
  * Lanza Error si no pertenece o no existe.
- * Usar dentro de handlers: await assertBranchOwnership(branch_id, req.organizationId)
+ *
+ * @param {string}  branchId        UUID de la sucursal
+ * @param {string}  organizationId  UUID de la organización del usuario autenticado
+ * @param {object}  [options]
+ * @param {boolean} [options.optional=false]
+ *   Si true, permite branchId undefined/null (filtro de toda la org).
+ *   Si false (por defecto), lanza 400 cuando branchId está ausente — usa esto
+ *   en endpoints donde branch_id es SIEMPRE requerido.
+ *
+ * Uso:
+ *   await assertBranchOwnership(branch_id, req.organizationId)              // requerido
+ *   await assertBranchOwnership(branch_id, req.organizationId, { optional: true }) // filtro opcional
  */
-export async function assertBranchOwnership(branchId, organizationId) {
-  if (!branchId) return; // branch_id opcional en algunos endpoints
+export async function assertBranchOwnership(branchId, organizationId, { optional = false } = {}) {
+  if (!branchId) {
+    if (optional) return; // caller declaró explícitamente que branch_id es opcional
+    const err = new Error('branch_id es requerido');
+    err.status = 400;
+    throw err;
+  }
   const { data, error } = await supabaseAdmin
     .from('branches')
     .select('id')
@@ -84,11 +105,11 @@ export async function assertBranchOwnership(branchId, organizationId) {
  * Para query params: requireBranchAccess(req => req.query.branch_id)
  * Debe usarse DESPUÉS de requireAuth.
  */
-export function requireBranchAccess(getter = (req) => req.body.branch_id) {
+export function requireBranchAccess(getter = (req) => req.body.branch_id, { optional = false } = {}) {
   return async (req, res, next) => {
     try {
       const branchId = getter(req);
-      await assertBranchOwnership(branchId, req.organizationId);
+      await assertBranchOwnership(branchId, req.organizationId, { optional });
       next();
     } catch (err) {
       logger.warn('Branch access denied', { err: err.message, org: req.organizationId });
