@@ -42,20 +42,22 @@ router.post('/login', [
 });
 
 // POST /auth/welcome-email
-router.post('/welcome-email', [
+// requireAuth: evita user enumeration — solo el propio usuario recién registrado
+// puede disparar su email de bienvenida.
+router.post('/welcome-email', requireAuth, [
   body('email').isEmail().normalizeEmail(),
   validate,
 ], async (req, res) => {
   try {
     const { email, name } = req.body;
-    if (!email) return res.status(400).json({ error: 'email requerido' });
 
-    const { data: userRecord } = await supabaseAdmin
-      .from('users').select('id').eq('email', email).maybeSingle();
-    if (!userRecord) return res.json({ sent: false });
+    // Solo puede enviarse al email del usuario autenticado (anti-abuse)
+    if (req.user.email !== email) {
+      return res.status(403).json({ error: 'Solo puedes solicitar tu propio email de bienvenida' });
+    }
 
     const { sendWelcomeEmail } = await import('../lib/emails.js');
-    await sendWelcomeEmail({ to: email, name: name || 'Usuario' });
+    await sendWelcomeEmail({ to: email, name: name || req.user.full_name || 'Usuario' });
     res.json({ sent: true });
   } catch (err) {
     logger.warn('Welcome email error (non-critical)', { err: err.message });
