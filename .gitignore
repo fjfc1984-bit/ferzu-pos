@@ -12,6 +12,10 @@ COMMIT_*.bat
 FIX*.bat
 FIX*.ps1
 PUSH_*.ps1
+push_*.bat
+push_*.ps1
+fix_*.bat
+fix_*.ps1
 
 # Scripts legacy en raíz (reemplazados por FERZU.bat)
 ABRIR.bat
