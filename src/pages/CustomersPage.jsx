@@ -47,11 +47,11 @@ function getSegment(totalOrders, daysSinceLastPurchase) {
 // ---------------------------------------------------------------------------
 // Hook principal de clientes
 // ---------------------------------------------------------------------------
-function useCustomers(branchId, search = '') {
+function useCustomers(branchId, organizationId, search = '') {
   const qc = useQueryClient()
 
   const query = useQuery({
-    queryKey: ['customers', branchId, search],
+    queryKey: ['customers', branchId, organizationId, search],
     queryFn: async () => {
       let q = supabase
         .from('customers')
@@ -72,7 +72,7 @@ function useCustomers(branchId, search = '') {
       return data
     },
     staleTime: 1000 * 60 * 2,
-    enabled: !!branchId,
+    enabled: !!branchId && !!organizationId,
   })
 
   const upsertMutation = useMutation({
@@ -93,9 +93,17 @@ function useCustomers(branchId, search = '') {
         if (error) throw error
         return data
       } else {
+        // FIX: organization_id es obligatorio para pasar la política RLS de INSERT
         const { data, error } = await supabase
           .from('customers')
-          .insert({ ...customer })
+          .insert({
+            name:            customer.name,
+            phone:           customer.phone,
+            email:           customer.email || null,
+            document_number: customer.document_number || null,
+            notes:           customer.notes || null,
+            organization_id: organizationId,
+          })
           .select()
           .single()
         if (error) throw error
@@ -591,7 +599,7 @@ export function CustomersPage() {
     return () => clearTimeout(t)
   }, [search])
 
-  const { data: customers = [], isLoading, upsertMutation, deleteMutation } = useCustomers(branchId, debouncedSearch)
+  const { data: customers = [], isLoading, upsertMutation, deleteMutation } = useCustomers(branchId, organizationId, debouncedSearch)
 
   async function handleSave(customer) {
     await upsertMutation.mutateAsync(customer)
