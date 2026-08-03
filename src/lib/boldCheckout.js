@@ -20,20 +20,34 @@ const BOLD_LINKS = {
 
 /**
  * Redirige al link de pago Bold correspondiente al plan.
- * Después del pago, Bold llama al webhook del backend para activar el plan.
+ * Incluye organization_id y plan_id como metadata en la URL para que Bold
+ * los propague en el webhook al backend.
  *
  * @param {object} params
- * @param {string} params.planId - ID del plan ('pos_basic'|'barbershop'|'workshop'|'minimarket'|'restaurant'|'pro')
+ * @param {string} params.planId          - ID del plan ('pos_basic'|'barbershop'|...)
+ * @param {string} params.organizationId  - UUID de la organización (REQUERIDO para activar plan)
  */
-export function startPlanPayment({ planId }) {
-  const link = BOLD_LINKS[planId];
+export function startPlanPayment({ planId, organizationId }) {
+  const baseLink = BOLD_LINKS[planId];
 
-  if (!link) {
+  if (!baseLink) {
     throw new Error(`Plan no reconocido: ${planId}. Contacta soporte.`);
   }
 
-  // Redirigir al link de pago Bold
-  window.location.href = link;
+  if (!organizationId) {
+    throw new Error('organizationId requerido para procesar el pago.');
+  }
+
+  // Bold Links propagan query params como metadata en el webhook.
+  // Esto permite que el webhook sepa a qué org activar sin almacenar estado.
+  const url = new URL(baseLink);
+  url.searchParams.set('metadata[organization_id]', organizationId);
+  url.searchParams.set('metadata[plan_id]', planId);
+  // redirect_url para que Bold nos devuelva al cliente con el order-id
+  const origin = window.location.origin;
+  url.searchParams.set('redirect_url', `${origin}/checkout/resultado?plan=${planId}`);
+
+  window.location.href = url.toString();
 }
 
 /**
