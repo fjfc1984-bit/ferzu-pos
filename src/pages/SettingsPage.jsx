@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react'
 import { MessageSquare, CheckCircle2, XCircle, Send, Info, ExternalLink } from 'lucide-react'
-import api from '../api'
+import { api } from '../lib/api.js'
 import { useTrack } from '../hooks/useTrack.js'
 
 // ── Helper ────────────────────────────────────────────────────────────────────

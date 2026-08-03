@@ -11,7 +11,7 @@
 
 import { useCallback }  from 'react'
 import { useAuth }      from '../context/AuthContext'
-import api              from '../api'
+import { api }          from '../lib/api.js'
 
 // Caché de sesión: evitar registrar el mismo evento más de una vez por sesión
 const _sent = new Set()
