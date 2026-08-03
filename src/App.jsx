@@ -14,9 +14,9 @@ import LandingPage             from './pages/LandingPage'
 
 // --- Auth pages (no lazy: se necesitan antes de autenticar) ---
 import { LoginPage }           from './pages/auth/LoginPage'
-import { RegisterPage,
-         ForgotPasswordPage,
-         ResetPasswordPage }   from './pages/auth/AuthScreens'
+import { RegisterPage }        from './pages/auth/RegisterPage'
+import { ForgotPasswordPage }  from './pages/auth/ForgotPasswordPage'
+import { ResetPasswordPage }   from './pages/auth/ResetPasswordPage'
 import { OnboardingWizard }    from './pages/auth/OnboardingWizard'
 import { BranchSelector }      from './pages/auth/BranchSelector'
 
