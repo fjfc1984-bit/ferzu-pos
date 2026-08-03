@@ -37,6 +37,7 @@ const DianPage           = lazy(() => import('./pages/DianPage'))
 const DianSetupWizard    = lazy(() => import('./pages/DianSetupWizard'))
 const ModulesPage        = lazy(() => import('./pages/ModulesPage'))
 const SettingsPage       = lazy(() => import('./pages/SettingsPage'))
+const DailyReportPage    = lazy(() => import('./pages/DailyReportPage'))
 
 // ---------------------------------------------------------------------------
 // ErrorBoundary global — evita pantalla blanca en errores no capturados
@@ -230,6 +231,7 @@ export default function App() {
                   <Route path="/settings"  element={<SettingsPage />} />
                   <Route path="/modules"   element={<ModulesPage />} />
                   <Route path="/checkout" element={<CheckoutPage />} />
+                  <Route path="/reporte"  element={<DailyReportPage />} />
 
                 </Route>
               </Route>
