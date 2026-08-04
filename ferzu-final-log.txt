@@ -157,3 +157,511 @@ Aborting
 [5] Log origin/main (top 3): 
 fatal: your current branch 'master' does not have any commits yet
 [6] git add -A (todos los archivos actuales): 
+warning: in the working copy of '.env.example', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.github/workflows/ci.yml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ARRANCAR.vbs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'AUTOSTART.bat', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'BACKUP_EXCLUDE.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'CLEANUP_AND_PUSH.bat', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'DEPLOY_SCHEMA.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FERZU.bat', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FERZU_POS_Guia_Completa.pdf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'FERZU_POS_Guia_Completa_v2.pdf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'HANDOVER.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'INICIAR.bat', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'INSTALAR.bat', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'PLAN_RECUPERACION.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/.env.example', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/check_and_run.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/config/logger.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/config/rateLimits.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/config/supabase.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/db/rls_policies.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/ferzu_claude_tools.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/guardian.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/lib/claudeTools.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/lib/dian.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/lib/dianAI.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/lib/emails.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/lib/inventoryAI.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/lib/sentry.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/middleware/audit.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/middleware/validate.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/migrate.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/package-lock.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/ai.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/analytics.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/cash.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/dian.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/errors.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/integrations.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/loyalty.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/onboarding.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/orders.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/org.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/payments.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/reports.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/settings.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/shifts.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/sync.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/routes/tables.routes.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/scripts/test-bold-webhook.sh', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/server.new.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/server.original.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/services/orders.service.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/services/sync.service.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/services/trial.service.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/services/whatsapp.service.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/bold-webhook.test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/hmac.test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/orders-math.test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/plans.test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/tests/security.test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'commit_log.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/migrations/001_schema_inicial.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/migrations/002_schema_v2.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/migrations/003_views.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/migrations/004_rls_policies.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/migrations/005_migration_v3.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/migrations/006_features_bcd.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/migrations/006_fix_missing_tables.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'database/migrations/007_rls_audit_fix.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ferzu-commit.bat', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ferzu-final-log.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ferzu-final-push.bat', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ferzu-recover-log.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ferzu-recover.bat', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ferzu-reinit-log.txt', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ferzu-reinit.bat', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'fix_user_branches_rls.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'index.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'migration_active_modules.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'migration_courtesy.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'migration_loyalty.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'migration_shifts.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'migration_v3.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'migration_variants.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'package-lock.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'postcss.config.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/logo-ferzu.svg', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'public/sw-background-sync.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'push-fix.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'run-migrations.mjs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'run-migrations.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'schema.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'seed_dev.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/__tests__/ErrorBoundary.test.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/__tests__/boldCheckout.test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/__tests__/posCore.test.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/__tests__/setup.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/AIAssistant.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/AIBusinessChat.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/BarcodeScanner.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/CustomerPicker.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/ErrorBoundary.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/ModuleGuard.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/OfflineBanner.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/ReportExporter.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/SplitPayment.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/ThermalPrintButton.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/WhatsAppReceipt.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/dian/BatchVATClassifier.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/dian/VATClassifier.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/inventory/InventoryInsights.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/context/POSContext.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/context/SyncContext.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/hooks/useAIProposals.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/hooks/useKeyboardShortcuts.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/hooks/useThermalPrinter.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/hooks/useTrack.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/index.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/api.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/boldCheckout.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/db.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/exportReports.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/math.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/offlineCache.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/plansConfig.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/sentry.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/supabase.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/lib/thermalPrinter.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/BarbershopPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/CheckoutPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/CustomersPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/DailyReportPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/DashboardPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/DianPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/DianSetupWizard.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/IntegrationsPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/InventoryPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/KitchenDisplayPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/LandingPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/MinimarketPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/ModulesPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/POSPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/SettingsPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/ShiftsPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/TablesPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/pages/WorkshopPage.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tailwind.config.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'vite.config.js', LF will be replaced by CRLF the next time Git touches it
+Add OK 
+[7] Status resumido: 
+A  .env.example
+A  .github/workflows/ci.yml
+A  .gitignore
+A  ARRANCAR.vbs
+A  AUTOSTART.bat
+A  BACKUP_EXCLUDE.txt
+A  Bold
+A  CLEANUP_AND_PUSH.bat
+A  DEPLOY_SCHEMA.html
+A  FERZU.bat
+A  FERZU_POS_Guia_Completa.pdf
+A  FERZU_POS_Guia_Completa_v2.pdf
+A  HANDOVER.md
+A  INICIAR.bat
+A  INSTALAR.bat
+A  New
+A  PLAN_RECUPERACION.md
+A  absoluta
+A  backend/.env.example
+A  backend/check_and_run.mjs
+A  backend/config/logger.js
+A  backend/config/rateLimits.js
+A  backend/config/supabase.js
+A  backend/db/rls_policies.sql
+A  backend/ferzu_claude_tools.js
+A  backend/guardian.js
+A  backend/lib/claudeTools.js
+A  backend/lib/dian.js
+A  backend/lib/dianAI.js
+A  backend/lib/emails.js
+A  backend/lib/inventoryAI.js
+A  backend/lib/sentry.js
+A  backend/logs/.gitkeep
+A  backend/middleware/audit.js
+A  backend/middleware/auth.js
+A  backend/middleware/validate.js
+A  backend/migrate.mjs
+A  backend/package-lock.json
+A  backend/package.json
+A  backend/railway.toml
+A  backend/routes/ai.routes.js
+A  backend/routes/analytics.routes.js
+A  backend/routes/auth.routes.js
+A  backend/routes/cash.routes.js
+A  backend/routes/dian.routes.js
+A  backend/routes/errors.routes.js
+A  backend/routes/integrations.routes.js
+A  backend/routes/inventory.routes.js
+A  backend/routes/loyalty.routes.js
+A  backend/routes/onboarding.routes.js
+A  backend/routes/orders.routes.js
+A  backend/routes/org.routes.js
+A  backend/routes/payments.routes.js
+A  backend/routes/products.routes.js
+A  backend/routes/reports.routes.js
+A  backend/routes/settings.routes.js
+A  backend/routes/shifts.routes.js
+A  backend/routes/sync.routes.js
+A  backend/routes/tables.routes.js
+A  backend/scripts/test-bold-webhook.sh
+A  backend/server.js
+A  backend/server.new.js
+A  backend/server.original.js
+A  backend/services/orders.service.js
+A  backend/services/sync.service.js
+A  backend/services/trial.service.js
+A  backend/services/whatsapp.service.js
+A  backend/tests/bold-webhook.test.js
+A  backend/tests/hmac.test.js
+A  backend/tests/orders-math.test.js
+A  backend/tests/plans.test.js
+A  backend/tests/security.test.js
+A  commit_log.txt
+A  database/README.md
+A  database/migrations/001_schema_inicial.sql
+A  database/migrations/002_schema_v2.sql
+A  database/migrations/003_views.sql
+A  database/migrations/004_rls_policies.sql
+A  database/migrations/005_migration_v3.sql
+A  database/migrations/006_features_bcd.sql
+A  database/migrations/006_fix_missing_tables.sql
+A  database/migrations/007_rls_audit_fix.sql
+A  ferzu-commit.bat
+AM ferzu-final-log.txt
+A  ferzu-final-push.bat
+A  ferzu-recover-log.txt
+A  ferzu-recover.bat
+A  ferzu-reinit-log.txt
+A  ferzu-reinit.bat
+A  fix_user_branches_rls.sql
+A  index.html
+A  migration_active_modules.sql
+A  migration_courtesy.sql
+A  migration_loyalty.sql
+A  migration_shifts.sql
+A  migration_v3.sql
+A  migration_variants.sql
+A  package-lock.json
+A  package.json
+A  postcss.config.js
+A  public/logo-ferzu.svg
+A  public/sw-background-sync.js
+A  push-fix.ps1
+A  push_log.txt
+A  run-migrations.mjs
+A  run-migrations.ps1
+A  schema.sql
+A  seed_dev.sql
+A  src/App.jsx
+A  src/__tests__/ErrorBoundary.test.jsx
+A  src/__tests__/boldCheckout.test.js
+A  src/__tests__/posCore.test.js
+A  src/__tests__/setup.js
+A  src/components/AIAssistant.jsx
+A  src/components/AIBusinessChat.jsx
+A  src/components/BarcodeScanner.jsx
+A  src/components/CustomerPicker.jsx
+A  src/components/ErrorBoundary.jsx
+A  src/components/ModuleGuard.jsx
+A  src/components/OfflineBanner.jsx
+A  src/components/ReportExporter.jsx
+A  src/components/SplitPayment.jsx
+A  src/components/ThermalPrintButton.jsx
+A  src/components/WhatsAppReceipt.jsx
+A  src/components/dian/BatchVATClassifier.jsx
+A  src/components/dian/VATClassifier.jsx
+A  src/components/inventory/InventoryInsights.jsx
+A  src/context/AuthContext.jsx
+A  src/context/POSContext.jsx
+A  src/context/SyncContext.jsx
+A  src/hooks/useAIProposals.js
+A  src/hooks/useKeyboardShortcuts.js
+A  src/hooks/useThermalPrinter.js
+A  src/hooks/useTrack.js
+A  src/index.css
+A  src/lib/api.js
+A  src/lib/boldCheckout.js
+A  src/lib/db.js
+A  src/lib/exportReports.js
+A  src/lib/math.js
+A  src/lib/offlineCache.js
+A  src/lib/plansConfig.js
+A  src/lib/sentry.js
+A  src/lib/supabase.js
+A  src/lib/thermalPrinter.js
+A  src/main.jsx
+A  src/pages/BarbershopPage.jsx
+A  src/pages/CheckoutPage.jsx
+A  src/pages/CustomersPage.jsx
+A  src/pages/DailyReportPage.jsx
+A  src/pages/DashboardPage.jsx
+A  src/pages/DianPage.jsx
+A  src/pages/DianSetupWizard.jsx
+A  src/pages/IntegrationsPage.jsx
+A  src/pages/InventoryPage.jsx
+A  src/pages/KitchenDisplayPage.jsx
+A  src/pages/LandingPage.jsx
+A  src/pages/MinimarketPage.jsx
+A  src/pages/ModulesPage.jsx
+A  src/pages/POSPage.jsx
+A  src/pages/SettingsPage.jsx
+A  src/pages/ShiftsPage.jsx
+A  src/pages/TablesPage.jsx
+A  src/pages/WorkshopPage.jsx
+A  src/pages/auth/AuthScreens.jsx
+A  src/pages/auth/BranchSelector.jsx
+A  src/pages/auth/LoginPage.jsx
+A  src/pages/auth/OnboardingWizard.jsx
+A  src/pages/auth/PINLockScreen.jsx
+A  tailwind.config.js
+A  vercel.json
+A  vite.config.js
+[8] Commit: 
+[master (root-commit) 2f47aa4] feat: F9-C variantes + F10 cortesias + F11 asistente IA dual-modo (Haiku/Sonnet)
+ 172 files changed, 58573 insertions(+)
+ create mode 100644 .env.example
+ create mode 100644 .github/workflows/ci.yml
+ create mode 100644 .gitignore
+ create mode 100644 ARRANCAR.vbs
+ create mode 100644 AUTOSTART.bat
+ create mode 100644 BACKUP_EXCLUDE.txt
+ create mode 100644 Bold
+ create mode 100644 CLEANUP_AND_PUSH.bat
+ create mode 100644 DEPLOY_SCHEMA.html
+ create mode 100644 FERZU.bat
+ create mode 100644 FERZU_POS_Guia_Completa.pdf
+ create mode 100644 FERZU_POS_Guia_Completa_v2.pdf
+ create mode 100644 HANDOVER.md
+ create mode 100644 INICIAR.bat
+ create mode 100644 INSTALAR.bat
+ create mode 100644 New
+ create mode 100644 PLAN_RECUPERACION.md
+ create mode 100644 absoluta
+ create mode 100644 backend/.env.example
+ create mode 100644 backend/check_and_run.mjs
+ create mode 100644 backend/config/logger.js
+ create mode 100644 backend/config/rateLimits.js
+ create mode 100644 backend/config/supabase.js
+ create mode 100644 backend/db/rls_policies.sql
+ create mode 100644 backend/ferzu_claude_tools.js
+ create mode 100644 backend/guardian.js
+ create mode 100644 backend/lib/claudeTools.js
+ create mode 100644 backend/lib/dian.js
+ create mode 100644 backend/lib/dianAI.js
+ create mode 100644 backend/lib/emails.js
+ create mode 100644 backend/lib/inventoryAI.js
+ create mode 100644 backend/lib/sentry.js
+ create mode 100644 backend/logs/.gitkeep
+ create mode 100644 backend/middleware/audit.js
+ create mode 100644 backend/middleware/auth.js
+ create mode 100644 backend/middleware/validate.js
+ create mode 100644 backend/migrate.mjs
+ create mode 100644 backend/package-lock.json
+ create mode 100644 backend/package.json
+ create mode 100644 backend/railway.toml
+ create mode 100644 backend/routes/ai.routes.js
+ create mode 100644 backend/routes/analytics.routes.js
+ create mode 100644 backend/routes/auth.routes.js
+ create mode 100644 backend/routes/cash.routes.js
+ create mode 100644 backend/routes/dian.routes.js
+ create mode 100644 backend/routes/errors.routes.js
+ create mode 100644 backend/routes/integrations.routes.js
+ create mode 100644 backend/routes/inventory.routes.js
+ create mode 100644 backend/routes/loyalty.routes.js
+ create mode 100644 backend/routes/onboarding.routes.js
+ create mode 100644 backend/routes/orders.routes.js
+ create mode 100644 backend/routes/org.routes.js
+ create mode 100644 backend/routes/payments.routes.js
+ create mode 100644 backend/routes/products.routes.js
+ create mode 100644 backend/routes/reports.routes.js
+ create mode 100644 backend/routes/settings.routes.js
+ create mode 100644 backend/routes/shifts.routes.js
+ create mode 100644 backend/routes/sync.routes.js
+ create mode 100644 backend/routes/tables.routes.js
+ create mode 100644 backend/scripts/test-bold-webhook.sh
+ create mode 100644 backend/server.js
+ create mode 100644 backend/server.new.js
+ create mode 100644 backend/server.original.js
+ create mode 100644 backend/services/orders.service.js
+ create mode 100644 backend/services/sync.service.js
+ create mode 100644 backend/services/trial.service.js
+ create mode 100644 backend/services/whatsapp.service.js
+ create mode 100644 backend/tests/bold-webhook.test.js
+ create mode 100644 backend/tests/hmac.test.js
+ create mode 100644 backend/tests/orders-math.test.js
+ create mode 100644 backend/tests/plans.test.js
+ create mode 100644 backend/tests/security.test.js
+ create mode 100644 commit_log.txt
+ create mode 100644 database/README.md
+ create mode 100644 database/migrations/001_schema_inicial.sql
+ create mode 100644 database/migrations/002_schema_v2.sql
+ create mode 100644 database/migrations/003_views.sql
+ create mode 100644 database/migrations/004_rls_policies.sql
+ create mode 100644 database/migrations/005_migration_v3.sql
+ create mode 100644 database/migrations/006_features_bcd.sql
+ create mode 100644 database/migrations/006_fix_missing_tables.sql
+ create mode 100644 database/migrations/007_rls_audit_fix.sql
+ create mode 100644 ferzu-commit.bat
+ create mode 100644 ferzu-final-log.txt
+ create mode 100644 ferzu-final-push.bat
+ create mode 100644 ferzu-recover-log.txt
+ create mode 100644 ferzu-recover.bat
+ create mode 100644 ferzu-reinit-log.txt
+ create mode 100644 ferzu-reinit.bat
+ create mode 100644 fix_user_branches_rls.sql
+ create mode 100644 index.html
+ create mode 100644 migration_active_modules.sql
+ create mode 100644 migration_courtesy.sql
+ create mode 100644 migration_loyalty.sql
+ create mode 100644 migration_shifts.sql
+ create mode 100644 migration_v3.sql
+ create mode 100644 migration_variants.sql
+ create mode 100644 package-lock.json
+ create mode 100644 package.json
+ create mode 100644 postcss.config.js
+ create mode 100644 public/logo-ferzu.svg
+ create mode 100644 public/sw-background-sync.js
+ create mode 100644 push-fix.ps1
+ create mode 100644 push_log.txt
+ create mode 100644 run-migrations.mjs
+ create mode 100644 run-migrations.ps1
+ create mode 100644 schema.sql
+ create mode 100644 seed_dev.sql
+ create mode 100644 src/App.jsx
+ create mode 100644 src/__tests__/ErrorBoundary.test.jsx
+ create mode 100644 src/__tests__/boldCheckout.test.js
+ create mode 100644 src/__tests__/posCore.test.js
+ create mode 100644 src/__tests__/setup.js
+ create mode 100644 src/components/AIAssistant.jsx
+ create mode 100644 src/components/AIBusinessChat.jsx
+ create mode 100644 src/components/BarcodeScanner.jsx
+ create mode 100644 src/components/CustomerPicker.jsx
+ create mode 100644 src/components/ErrorBoundary.jsx
+ create mode 100644 src/components/ModuleGuard.jsx
+ create mode 100644 src/components/OfflineBanner.jsx
+ create mode 100644 src/components/ReportExporter.jsx
+ create mode 100644 src/components/SplitPayment.jsx
+ create mode 100644 src/components/ThermalPrintButton.jsx
+ create mode 100644 src/components/WhatsAppReceipt.jsx
+ create mode 100644 src/components/dian/BatchVATClassifier.jsx
+ create mode 100644 src/components/dian/VATClassifier.jsx
+ create mode 100644 src/components/inventory/InventoryInsights.jsx
+ create mode 100644 src/context/AuthContext.jsx
+ create mode 100644 src/context/POSContext.jsx
+ create mode 100644 src/context/SyncContext.jsx
+ create mode 100644 src/hooks/useAIProposals.js
+ create mode 100644 src/hooks/useKeyboardShortcuts.js
+ create mode 100644 src/hooks/useThermalPrinter.js
+ create mode 100644 src/hooks/useTrack.js
+ create mode 100644 src/index.css
+ create mode 100644 src/lib/api.js
+ create mode 100644 src/lib/boldCheckout.js
+ create mode 100644 src/lib/db.js
+ create mode 100644 src/lib/exportReports.js
+ create mode 100644 src/lib/math.js
+ create mode 100644 src/lib/offlineCache.js
+ create mode 100644 src/lib/plansConfig.js
+ create mode 100644 src/lib/sentry.js
+ create mode 100644 src/lib/supabase.js
+ create mode 100644 src/lib/thermalPrinter.js
+ create mode 100644 src/main.jsx
+ create mode 100644 src/pages/BarbershopPage.jsx
+ create mode 100644 src/pages/CheckoutPage.jsx
+ create mode 100644 src/pages/CustomersPage.jsx
+ create mode 100644 src/pages/DailyReportPage.jsx
+ create mode 100644 src/pages/DashboardPage.jsx
+ create mode 100644 src/pages/DianPage.jsx
+ create mode 100644 src/pages/DianSetupWizard.jsx
+ create mode 100644 src/pages/IntegrationsPage.jsx
+ create mode 100644 src/pages/InventoryPage.jsx
+ create mode 100644 src/pages/KitchenDisplayPage.jsx
+ create mode 100644 src/pages/LandingPage.jsx
+ create mode 100644 src/pages/MinimarketPage.jsx
+ create mode 100644 src/pages/ModulesPage.jsx
+ create mode 100644 src/pages/POSPage.jsx
+ create mode 100644 src/pages/SettingsPage.jsx
+ create mode 100644 src/pages/ShiftsPage.jsx
+ create mode 100644 src/pages/TablesPage.jsx
+ create mode 100644 src/pages/WorkshopPage.jsx
+ create mode 100644 src/pages/auth/AuthScreens.jsx
+ create mode 100644 src/pages/auth/BranchSelector.jsx
+ create mode 100644 src/pages/auth/LoginPage.jsx
+ create mode 100644 src/pages/auth/OnboardingWizard.jsx
+ create mode 100644 src/pages/auth/PINLockScreen.jsx
+ create mode 100644 tailwind.config.js
+ create mode 100644 vercel.json
+ create mode 100644 vite.config.js
+[9] Push a origin/main: 
+error: src refspec main does not match any
+error: failed to push some refs to 'https://github.com/fjfc1984-bit/ferzu-pos.git'
+[10] Ultimo commit: 
+2f47aa4 feat: F9-C variantes + F10 cortesias + F11 asistente IA dual-modo (Haiku/Sonnet)
+================================ 
+FIN - Revisar ferzu-final-log.txt 

@@ -1,0 +1,124 @@
+FERZU POS - Push main final 
+mar 04/08/2026 15:02:55,73 
+================================ 
+[1] Ramas actuales: 
+* master
+  remotes/origin/HEAD -> origin/main
+  remotes/origin/fix/auth-security-hardening
+  remotes/origin/fix/client-errors-aug2026
+  remotes/origin/fix/rls-audit-007
+  remotes/origin/main
+  remotes/origin/refactor/split-auth-screens
+  remotes/origin/staging
+[2] Log actual: 
+2f47aa4 feat: F9-C variantes + F10 cortesias + F11 asistente IA dual-modo (Haiku/Sonnet)
+[3] Renombrar master a main: 
+[4] Soft reset a origin/main (mantiene cambios staged): 
+[5] Status tras reset: 
+M  .github/workflows/ci.yml
+A  FERZU_POS_Guia_Completa.pdf
+A  FERZU_POS_Guia_Completa_v2.pdf
+A  HANDOVER.md
+M  New
+M  backend/lib/claudeTools.js
+M  backend/lib/dian.js
+M  backend/package-lock.json
+M  backend/routes/ai.routes.js
+M  backend/routes/cash.routes.js
+M  backend/routes/dian.routes.js
+A  backend/routes/integrations.routes.js
+A  backend/routes/loyalty.routes.js
+M  backend/routes/orders.routes.js
+M  backend/routes/products.routes.js
+M  backend/routes/reports.routes.js
+A  backend/routes/shifts.routes.js
+A  backend/routes/tables.routes.js
+M  backend/server.js
+M  backend/services/orders.service.js
+M  commit_log.txt
+A  database/migrations/007_rls_audit_fix.sql
+A  ferzu-commit.bat
+AM ferzu-final-log.txt
+A  ferzu-final-push.bat
+A  ferzu-recover-log.txt
+A  ferzu-recover.bat
+A  ferzu-reinit-log.txt
+A  ferzu-reinit.bat
+A  migration_courtesy.sql
+A  migration_loyalty.sql
+A  migration_shifts.sql
+A  migration_variants.sql
+M  package-lock.json
+A  public/sw-background-sync.js
+A  push-fix.ps1
+A  run-migrations.mjs
+A  run-migrations.ps1
+M  src/App.jsx
+M  src/components/AIAssistant.jsx
+A  src/components/AIBusinessChat.jsx
+M  src/components/ModuleGuard.jsx
+M  src/components/OfflineBanner.jsx
+M  src/context/POSContext.jsx
+M  src/context/SyncContext.jsx
+M  src/lib/db.js
+M  src/lib/exportReports.js
+A  src/lib/offlineCache.js
+M  src/pages/CustomersPage.jsx
+M  src/pages/DailyReportPage.jsx
+M  src/pages/DashboardPage.jsx
+M  src/pages/DianPage.jsx
+A  src/pages/IntegrationsPage.jsx
+M  src/pages/InventoryPage.jsx
+M  src/pages/POSPage.jsx
+A  src/pages/ShiftsPage.jsx
+A  src/pages/TablesPage.jsx
+M  vercel.json
+M  vite.config.js
+?? ferzu-push-main-log.txt
+?? ferzu-push-main.bat
+[6] Commit final: 
+[main 5be1173] feat: F9-C variantes + F10 cortesias + F11 asistente IA dual-modo (Haiku/Sonnet)
+ 59 files changed, 12437 insertions(+), 502 deletions(-)
+ create mode 100644 FERZU_POS_Guia_Completa.pdf
+ create mode 100644 FERZU_POS_Guia_Completa_v2.pdf
+ create mode 100644 HANDOVER.md
+ create mode 100644 backend/routes/integrations.routes.js
+ create mode 100644 backend/routes/loyalty.routes.js
+ create mode 100644 backend/routes/shifts.routes.js
+ create mode 100644 backend/routes/tables.routes.js
+ create mode 100644 database/migrations/007_rls_audit_fix.sql
+ create mode 100644 ferzu-commit.bat
+ create mode 100644 ferzu-final-log.txt
+ create mode 100644 ferzu-final-push.bat
+ create mode 100644 ferzu-recover-log.txt
+ create mode 100644 ferzu-recover.bat
+ create mode 100644 ferzu-reinit-log.txt
+ create mode 100644 ferzu-reinit.bat
+ create mode 100644 migration_courtesy.sql
+ create mode 100644 migration_loyalty.sql
+ create mode 100644 migration_shifts.sql
+ create mode 100644 migration_variants.sql
+ create mode 100644 public/sw-background-sync.js
+ create mode 100644 push-fix.ps1
+ create mode 100644 run-migrations.mjs
+ create mode 100644 run-migrations.ps1
+ create mode 100644 src/components/AIBusinessChat.jsx
+ create mode 100644 src/lib/offlineCache.js
+ create mode 100644 src/pages/IntegrationsPage.jsx
+ create mode 100644 src/pages/ShiftsPage.jsx
+ create mode 100644 src/pages/TablesPage.jsx
+[7] Log post-commit: 
+5be1173 feat: F9-C variantes + F10 cortesias + F11 asistente IA dual-modo (Haiku/Sonnet)
+20d1b60 Refactor CustomersPage for organization support and UI fixes
+c02d57d Update Node.js version and npm install command
+347a887 Remove unnecessary git commands from comments
+[8] Push origin main: 
+To https://github.com/fjfc1984-bit/ferzu-pos.git
+   20d1b60..5be1173  main -> main
+[9] Verificacion final: 
+5be1173 feat: F9-C variantes + F10 cortesias + F11 asistente IA dual-modo (Haiku/Sonnet)
+20d1b60 Refactor CustomersPage for organization support and UI fixes
+c02d57d Update Node.js version and npm install command
+347a887 Remove unnecessary git commands from comments
+================================ 
+FIN 
