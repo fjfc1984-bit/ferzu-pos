@@ -9,7 +9,7 @@ import {
   ChevronLeft, ChevronRight, Mail, RefreshCw, TrendingUp,
   ShoppingBag, DollarSign, Clock, Tag, Percent, CheckCircle2,
   Loader2, AlertCircle, Calendar, BarChart3, CreditCard,
-  Package, ArrowUp, ArrowDown,
+  Package, ArrowUp, ArrowDown, BarChart2, Archive,
 } from 'lucide-react';
 import { api }         from '../lib/api.js';
 import { formatCOP }   from '../lib/math.js';
@@ -265,6 +265,382 @@ function TopProducts({ products }) {
 }
 
 // =============================================================================
+// Hook semanal
+// =============================================================================
+
+function useWeeklyReport(branchId, weekStart) {
+  const [data,    setData]    = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState(null);
+
+  const load = useCallback(async () => {
+    if (!branchId) return;
+    setLoading(true); setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (branchId)  params.set('branch_id',  branchId);
+      if (weekStart) params.set('week_start',  weekStart);
+      const res = await api.get(`/reports/weekly?${params}`);
+      setData(res.data);
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+    } finally { setLoading(false); }
+  }, [branchId, weekStart]);
+
+  useEffect(() => { load(); }, [load]);
+  return { data, loading, error, reload: load };
+}
+
+// =============================================================================
+// WeeklyView — Vista semanal con comparativa WoW
+// =============================================================================
+
+const DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+function WoWCard({ label, current, prev, delta_pct, format: fmt }) {
+  const up = delta_pct >= 0;
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+      <p className="text-xs text-gray-500 font-medium mb-2">{label}</p>
+      <p className="text-xl font-bold text-gray-900">{fmt(current)}</p>
+      <div className="flex items-center justify-between mt-2">
+        <p className="text-xs text-gray-400">Sem. anterior: {fmt(prev)}</p>
+        {delta_pct !== null && (
+          <span className={`flex items-center gap-0.5 text-xs font-semibold px-2 py-0.5 rounded-full ${
+            up ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'
+          }`}>
+            {up ? <ArrowUp size={10}/> : <ArrowDown size={10}/>}
+            {Math.abs(delta_pct)}%
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WeeklyView({ branchId, weekStart, onWeekChange }) {
+  const { data, loading, error, reload } = useWeeklyReport(branchId, weekStart);
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-16">
+      <Loader2 size={24} className="animate-spin text-emerald-600" />
+    </div>
+  );
+  if (error) return (
+    <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-2xl text-sm text-red-700">
+      {error} — <button onClick={reload} className="underline">Reintentar</button>
+    </div>
+  );
+  if (!data) return null;
+
+  const { comparison, current, prev, current_dates, prev_dates } = data;
+
+  // Altura máxima de las barras (px) para escalar
+  const maxRev = Math.max(...current.map(d => d.total_revenue), ...prev.map(d => d.total_revenue), 1);
+
+  return (
+    <div className="space-y-5">
+      {/* Comparativa WoW */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <WoWCard
+          label="Ventas semana"
+          current={comparison.revenue.current}
+          prev={comparison.revenue.prev}
+          delta_pct={comparison.revenue.delta_pct}
+          format={formatCOP}
+        />
+        <WoWCard
+          label="Órdenes semana"
+          current={comparison.orders.current}
+          prev={comparison.orders.prev}
+          delta_pct={comparison.orders.delta_pct}
+          format={n => n}
+        />
+        <WoWCard
+          label="Ticket promedio"
+          current={comparison.avg_ticket.current}
+          prev={comparison.avg_ticket.prev}
+          delta_pct={comparison.avg_ticket.delta_pct}
+          format={formatCOP}
+        />
+      </div>
+
+      {/* Gráfica de barras comparativa — current (verde) vs prev (gris) */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+            <BarChart2 size={15} className="text-emerald-600" />
+            Ventas por día — semana vs semana anterior
+          </h3>
+          <div className="flex items-center gap-3 text-xs text-gray-500">
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-emerald-500 inline-block"/>{data.week_start ? 'Esta semana' : 'Semana actual'}</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-gray-300 inline-block"/>Semana anterior</span>
+          </div>
+        </div>
+
+        <div className="flex items-end gap-2 h-36">
+          {DAY_LABELS.map((day, i) => {
+            const curH = Math.max(4, (current[i]?.total_revenue / maxRev) * 120);
+            const prvH = Math.max(4, (prev[i]?.total_revenue    / maxRev) * 120);
+            return (
+              <div key={day} className="flex-1 flex flex-col items-center gap-1 group">
+                <div className="w-full flex items-end gap-0.5 justify-center">
+                  {/* Barra semana anterior */}
+                  <div
+                    style={{ height: `${prvH}px` }}
+                    className="flex-1 bg-gray-200 rounded-t transition-all group-hover:bg-gray-300"
+                    title={`${day} ant.: ${formatCOP(prev[i]?.total_revenue || 0)}`}
+                  />
+                  {/* Barra semana actual */}
+                  <div
+                    style={{ height: `${curH}px` }}
+                    className="flex-1 bg-emerald-500 rounded-t transition-all group-hover:bg-emerald-600"
+                    title={`${day}: ${formatCOP(current[i]?.total_revenue || 0)}`}
+                  />
+                </div>
+                <span className="text-[10px] text-gray-400 font-medium">{day}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Tabla día a día */}
+      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+        <div className="px-5 py-3 border-b border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-800">Detalle por día</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+                <th className="px-5 py-2.5 text-left font-semibold">Día</th>
+                <th className="px-4 py-2.5 text-right font-semibold">Ventas</th>
+                <th className="px-4 py-2.5 text-right font-semibold">Órdenes</th>
+                <th className="px-4 py-2.5 text-right font-semibold">Ticket prom.</th>
+                <th className="px-4 py-2.5 text-right font-semibold">vs sem. ant.</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {current.map((day, i) => {
+                const prevRev = prev[i]?.total_revenue || 0;
+                const delta = prevRev === 0
+                  ? null
+                  : Math.round(((day.total_revenue - prevRev) / prevRev) * 100);
+                const up = delta !== null && delta >= 0;
+                return (
+                  <tr key={i} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-5 py-3 font-medium text-gray-800">
+                      <span className="font-semibold">{DAY_LABELS[i]}</span>
+                      <span className="ml-2 text-xs text-gray-400">
+                        {format(new Date(current_dates[i] + 'T12:00:00Z'), 'd MMM', { locale: es })}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-gray-900">
+                      {formatCOP(day.total_revenue)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-700">{day.total_orders}</td>
+                    <td className="px-4 py-3 text-right text-gray-700">
+                      {day.total_orders > 0 ? formatCOP(day.avg_ticket) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {delta === null ? (
+                        <span className="text-gray-300 text-xs">—</span>
+                      ) : (
+                        <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${up ? 'text-emerald-600' : 'text-red-500'}`}>
+                          {up ? <ArrowUp size={10}/> : <ArrowDown size={10}/>}
+                          {Math.abs(delta)}%
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// CashSessionsView — Historial de sesiones de caja
+// =============================================================================
+
+function useCashSessions(branchId) {
+  const [data,    setData]    = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState(null);
+
+  const load = useCallback(async () => {
+    if (!branchId) return;
+    setLoading(true); setError(null);
+    try {
+      const res = await api.get(`/cash-sessions?branch_id=${branchId}&limit=15`);
+      setData(res.data || []);
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+    } finally { setLoading(false); }
+  }, [branchId]);
+
+  useEffect(() => { load(); }, [load]);
+  return { data, loading, error, reload: load };
+}
+
+function CashSessionsView({ branchId }) {
+  const { data: sessions, loading, error, reload } = useCashSessions(branchId);
+  const [expanded, setExpanded] = useState(null);
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-16">
+      <Loader2 size={24} className="animate-spin text-emerald-600" />
+    </div>
+  );
+  if (error) return (
+    <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-2xl text-sm text-red-700">
+      {error} — <button onClick={reload} className="underline">Reintentar</button>
+    </div>
+  );
+  if (!branchId) return (
+    <div className="text-center py-12 bg-white rounded-2xl border border-gray-200">
+      <Archive size={36} className="mx-auto text-gray-300 mb-3" />
+      <p className="text-sm font-medium text-gray-600">Selecciona una sucursal para ver el historial de caja</p>
+    </div>
+  );
+  if (sessions.length === 0) return (
+    <div className="text-center py-12 bg-white rounded-2xl border border-gray-200">
+      <Archive size={36} className="mx-auto text-gray-300 mb-3" />
+      <p className="text-sm font-medium text-gray-600">Sin sesiones de caja registradas</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-gray-700">Últimas {sessions.length} sesiones</h2>
+        <button onClick={reload} className="p-1.5 text-gray-400 hover:text-gray-600">
+          <RefreshCw size={14} />
+        </button>
+      </div>
+
+      {sessions.map(s => {
+        const diff    = s.cash_difference ?? null;
+        const dur     = s.closed_at && s.opened_at
+          ? Math.round((new Date(s.closed_at) - new Date(s.opened_at)) / 60000) : null;
+        const isOpen  = s.status === 'open';
+        const isExp   = expanded === s.id;
+
+        return (
+          <div
+            key={s.id}
+            className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+            {/* Cabecera */}
+            <button
+              onClick={() => setExpanded(isExp ? null : s.id)}
+              className="w-full flex items-center gap-3 px-5 py-4 hover:bg-gray-50 transition-colors text-left">
+
+              {/* Estado */}
+              <span className={`shrink-0 w-2.5 h-2.5 rounded-full ${isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`} />
+
+              {/* Cajero + fecha */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">
+                  {s.users?.full_name || 'Cajero'}
+                  {isOpen && <span className="ml-2 text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded-full">ABIERTA</span>}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {format(new Date(s.opened_at), "d MMM · HH:mm", { locale: es })}
+                  {s.closed_at && ` → ${format(new Date(s.closed_at), "HH:mm")}`}
+                  {dur !== null && ` (${dur < 60 ? `${dur}min` : `${Math.floor(dur/60)}h${dur%60}m`})`}
+                </p>
+              </div>
+
+              {/* Ventas */}
+              <div className="text-right shrink-0">
+                <p className="text-sm font-bold text-gray-900">{formatCOP(s.total_sales || 0)}</p>
+                {diff !== null && (
+                  <p className={`text-[11px] font-semibold ${
+                    diff === 0 ? 'text-emerald-600' : diff > 0 ? 'text-blue-600' : 'text-red-500'
+                  }`}>
+                    {diff === 0 ? '✓ Cuadrado' : diff > 0 ? `+${formatCOP(diff)}` : formatCOP(diff)}
+                  </p>
+                )}
+              </div>
+
+              <ChevronRight size={14} className={`text-gray-300 transition-transform ${isExp ? 'rotate-90' : ''}`} />
+            </button>
+
+            {/* Detalle expandido */}
+            {isExp && (
+              <div className="border-t border-gray-100 px-5 py-4 bg-gray-50 space-y-3 text-sm">
+                {/* Desglose métodos */}
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: '💵 Efectivo',      v: s.total_cash      },
+                    { label: '💳 Tarjeta',        v: s.total_card      },
+                    { label: '📱 Nequi',          v: s.total_nequi     },
+                    { label: '📲 Daviplata',      v: s.total_daviplata },
+                    { label: '🏦 Transferencia',  v: s.total_transfers },
+                  ].filter(m => (m.v || 0) > 0).map(m => (
+                    <div key={m.label} className="flex justify-between bg-white rounded-xl px-3 py-2 border border-gray-100">
+                      <span className="text-gray-500 text-xs">{m.label}</span>
+                      <span className="font-semibold text-xs">{formatCOP(m.v)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Cuadre de efectivo */}
+                {!isOpen && s.closing_cash != null && (
+                  <div className="bg-white rounded-xl p-3 border border-gray-100 space-y-1.5 text-xs">
+                    <p className="font-semibold text-gray-700 mb-2">Cuadre de efectivo</p>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Saldo inicial</span>
+                      <span>{formatCOP(s.opening_cash || 0)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">+ Ventas efectivo</span>
+                      <span>{formatCOP(s.total_cash || 0)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold border-t border-gray-100 pt-1 mt-1">
+                      <span>= Esperado</span>
+                      <span>{formatCOP((s.opening_cash || 0) + (s.total_cash || 0))}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Contado</span>
+                      <span>{formatCOP(s.closing_cash || 0)}</span>
+                    </div>
+                    <div className={`flex justify-between font-bold border-t border-gray-100 pt-1 mt-1 ${
+                      diff === 0 ? 'text-emerald-600' : diff > 0 ? 'text-blue-600' : 'text-red-500'
+                    }`}>
+                      <span>{diff === 0 ? '✓ Sin diferencia' : diff > 0 ? '↑ Sobrante' : '↓ Faltante'}</span>
+                      <span>{diff === 0 ? '—' : formatCOP(Math.abs(diff))}</span>
+                    </div>
+                  </div>
+                )}
+
+                {s.total_discounts > 0 && (
+                  <p className="text-xs text-gray-400">
+                    🏷️ Descuentos otorgados: <span className="font-semibold text-red-500">−{formatCOP(s.total_discounts)}</span>
+                  </p>
+                )}
+                {/* F10: Cortesías */}
+                {s.total_courtesy > 0 && (
+                  <p className="text-xs text-gray-400">
+                    🎁 Cortesías otorgadas: <span className="font-semibold text-purple-600">−{formatCOP(s.total_courtesy)}</span>
+                  </p>
+                )}
+                {s.notes && <p className="text-xs text-gray-400 italic">Obs: {s.notes}</p>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// =============================================================================
 // Componente principal
 // =============================================================================
 
@@ -274,6 +650,7 @@ export default function DailyReportPage() {
   // Inicializar la fecha desde URL param si existe
   const params = new URLSearchParams(window.location.search);
   const [date,         setDate]         = useState(params.get('date') || todayStr());
+  const [view,         setView]         = useState('day'); // 'day' | 'week' | 'cash'
   const [sendingEmail, setSendingEmail] = useState(false);
   const [emailStatus,  setEmailStatus]  = useState(null); // 'sent' | 'error' | null
 
@@ -317,16 +694,44 @@ export default function DailyReportPage() {
   const peakHour = data?.by_hour?.reduce((a, b) => b.revenue > a.revenue ? b : a, { hour: 0, revenue: 0 });
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-5">
+    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-5">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Reporte Diario</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Resumen de ventas, productos y métodos de pago</p>
+          <h1 className="text-xl font-bold text-gray-900">
+            {view === 'week' ? 'Reporte Semanal' : view === 'cash' ? 'Sesiones de Caja' : 'Reporte Diario'}
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {view === 'week' ? 'Comparativa semana vs semana anterior' : view === 'cash' ? 'Historial de aperturas y cierres de caja' : 'Resumen de ventas, productos y métodos de pago'}
+          </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Tab switcher Día / Semana */}
+          <div className="flex bg-gray-100 rounded-xl overflow-hidden">
+            <button
+              onClick={() => setView('day')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                view === 'day' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              }`}>
+              <Calendar size={12} /> Día
+            </button>
+            <button
+              onClick={() => setView('week')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                view === 'week' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              }`}>
+              <BarChart2 size={12} /> Semana
+            </button>
+            <button
+              onClick={() => setView('cash')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                view === 'cash' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              }`}>
+              <Archive size={12} /> Caja
+            </button>
+          </div>
           {/* Email button */}
           <button
             onClick={handleSendEmail}
@@ -362,8 +767,8 @@ export default function DailyReportPage() {
         </div>
       )}
 
-      {/* ── Selector de fecha ── */}
-      <div className="flex items-center justify-between bg-white border border-gray-200 rounded-2xl px-5 py-3 shadow-sm">
+      {/* ── Selector de fecha — solo en vista día ── */}
+      {view === 'day' && <div className="flex items-center justify-between bg-white border border-gray-200 rounded-2xl px-5 py-3 shadow-sm">
         <button
           onClick={prevDay}
           className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors text-gray-500">
@@ -391,10 +796,10 @@ export default function DailyReportPage() {
           className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors text-gray-500 disabled:opacity-30 disabled:cursor-not-allowed">
           <ChevronRight size={18} />
         </button>
-      </div>
+      </div>}
 
-      {/* ── Loading / Error ── */}
-      {loading && (
+      {/* ── Loading / Error (solo vista día) ── */}
+      {view === 'day' && loading && (
         <div className="flex items-center justify-center py-16">
           <div className="flex flex-col items-center gap-3">
             <Loader2 size={28} className="animate-spin text-emerald-600" />
@@ -403,7 +808,7 @@ export default function DailyReportPage() {
         </div>
       )}
 
-      {error && !loading && (
+      {view === 'day' && error && !loading && (
         <div className="flex items-center gap-3 px-5 py-4 bg-red-50 border border-red-200 rounded-2xl text-red-700">
           <AlertCircle size={18} className="shrink-0" />
           <div>
@@ -414,8 +819,8 @@ export default function DailyReportPage() {
         </div>
       )}
 
-      {/* ── Sin sucursal seleccionada ── */}
-      {!branchId && !loading && (
+      {/* ── Sin sucursal seleccionada (solo vista día) ── */}
+      {view === 'day' && !branchId && !loading && (
         <div className="text-center py-12 bg-white rounded-2xl border border-gray-200">
           <BarChart3 size={36} className="mx-auto text-gray-300 mb-3" />
           <p className="text-sm font-medium text-gray-600">Selecciona una sucursal para ver el reporte</p>
@@ -423,8 +828,8 @@ export default function DailyReportPage() {
         </div>
       )}
 
-      {/* ── Contenido ── */}
-      {data && !loading && branchId && (
+      {/* ── Contenido (solo vista día) ── */}
+      {view === 'day' && data && !loading && branchId && (
         <>
           {/* Sin ventas */}
           {data.total_orders === 0 && (
@@ -483,6 +888,25 @@ export default function DailyReportPage() {
                   color="text-red-500"
                   bg="bg-red-50"
                 />
+                {data.total_tips > 0 && (
+                  <KPICard
+                    icon={DollarSign}
+                    label="Propinas"
+                    value={formatCOP(data.total_tips)}
+                    color="text-amber-600"
+                    bg="bg-amber-50"
+                  />
+                )}
+                {/* F10: Cortesías en KPIs del día */}
+                {data.total_courtesy > 0 && (
+                  <KPICard
+                    icon={Tag}
+                    label="Cortesías"
+                    value={formatCOP(data.total_courtesy)}
+                    color="text-purple-600"
+                    bg="bg-purple-50"
+                  />
+                )}
                 <KPICard
                   icon={Clock}
                   label="Hora pico"
@@ -507,6 +931,22 @@ export default function DailyReportPage() {
             </>
           )}
         </>
+      )}
+
+      {/* ── Vista semanal ── */}
+      {view === 'week' && branchId && (
+        <WeeklyView branchId={branchId} weekStart={null} />
+      )}
+      {view === 'week' && !branchId && (
+        <div className="text-center py-12 bg-white rounded-2xl border border-gray-200">
+          <BarChart3 size={36} className="mx-auto text-gray-300 mb-3" />
+          <p className="text-sm font-medium text-gray-600">Selecciona una sucursal para ver el reporte semanal</p>
+        </div>
+      )}
+
+      {/* ── Vista caja ── */}
+      {view === 'cash' && (
+        <CashSessionsView branchId={branchId} />
       )}
     </div>
   );

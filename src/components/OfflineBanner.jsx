@@ -12,11 +12,12 @@
 import { useState, useEffect } from 'react'
 import { WifiOff, Wifi, RefreshCw, Clock } from 'lucide-react'
 
-// Leer la cola de Dexie si está disponible
+// Leer la cola de Dexie (tabla correcta: sync_queue)
 async function getPendingCount() {
   try {
     const { db } = await import('../lib/db.js')
-    const count = await db.table('pending_orders').count().catch(() => 0)
+    // sync_queue contiene las operaciones pendientes de subir al backend
+    const count = await db.sync_queue.count().catch(() => 0)
     return count
   } catch {
     return 0

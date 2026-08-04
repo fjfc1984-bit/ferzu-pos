@@ -44,6 +44,14 @@ import orgRouter        from './routes/org.routes.js';
 import onboardingRouter from './routes/onboarding.routes.js';
 import settingsRouter   from './routes/settings.routes.js';
 import analyticsRouter  from './routes/analytics.routes.js';
+import tablesRouter     from './routes/tables.routes.js';
+import shiftsRouter     from './routes/shifts.routes.js';
+import loyaltyRouter       from './routes/loyalty.routes.js';
+import integrationsRouter, {
+  handleRappiWebhook,
+  handleUberEatsWebhook,
+  handleDidiWebhook,
+} from './routes/integrations.routes.js';
 import { registerProcessHandlers } from './routes/errors.routes.js';
 
 // ── CRON ───────────────────────────────────────────────────────────────────────
@@ -71,8 +79,11 @@ app.use(cors({
   credentials: true,
 }));
 
-// El webhook de Bold necesita el body RAW → se monta ANTES de express.json()
-// La ruta específica usa express.raw() internamente en payments.routes.js
+// Los webhooks necesitan body RAW → se montan ANTES de express.json()
+// Middleware para capturar rawBody en webhooks de delivery
+app.use('/webhooks/rappi',    express.json(), (req, res, next) => { req.rawBody = JSON.stringify(req.body); next(); }, (req, res) => handleRappiWebhook(req, res));
+app.use('/webhooks/ubereats', express.json(), (req, res, next) => { req.rawBody = JSON.stringify(req.body); next(); }, (req, res) => handleUberEatsWebhook(req, res));
+app.use('/webhooks/didi',     express.json(), (req, res, next) => { req.rawBody = JSON.stringify(req.body); next(); }, (req, res) => handleDidiWebhook(req, res));
 app.use('/webhooks', paymentsRouter);
 
 app.use(express.json({ limit: '2mb' }));
@@ -97,6 +108,10 @@ app.use('/api/org',           orgRouter);
 app.use('/api/onboarding',    onboardingRouter);
 app.use('/api/settings',      settingsRouter);
 app.use('/api/analytics',     analyticsRouter);
+app.use('/api/tables',        tablesRouter);
+app.use('/api/shifts',        shiftsRouter);
+app.use('/api/integrations',  integrationsRouter);
+app.use('/api/loyalty',       loyaltyRouter);
 
 // =============================================================================
 // HEALTH CHECK

@@ -61,6 +61,7 @@ export default function POSPage() {
   const [showDiscount,      setShowDiscount]      = useState(false);
   const [showCashModal,     setShowCashModal]     = useState(false);
   const [showAIPanel,       setShowAIPanel]       = useState(false);
+  const [showCourtesy,      setShowCourtesy]      = useState(false);  // F10
   const [activeCategory,    setActiveCategory]    = useState(null);
   const [productRefreshKey, setProductRefreshKey] = useState(0); // ← QA-6: refresca stock tras venta
 
@@ -176,6 +177,7 @@ export default function POSPage() {
           onPay={()          => setShowPayment(true)}
           onCustomer={()     => setShowCustomer(true)}
           onDiscount={()     => setShowDiscount(true)}
+          onCourtesy={()     => setShowCourtesy(true)}
           onOpenCashModal={() => setShowCashModal(true)}
         />
       </div>
@@ -211,6 +213,11 @@ export default function POSPage() {
 
       {showDiscount && (
         <DiscountModal onClose={() => setShowDiscount(false)} />
+      )}
+
+      {/* F10: Cortesías */}
+      {showCourtesy && (
+        <CourtesyModal onClose={() => setShowCourtesy(false)} />
       )}
 
       {/* ── Panel IA lateral ── */}
@@ -250,17 +257,30 @@ export default function POSPage() {
 // export default function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchId })
 
 function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchId, refreshKey = 0 }) {
-  const { addItem }                = usePOS();
-  const [search, setSearch]        = useState('');
-  const [categories, setCategories]= useState([]);
-  const [products, setProducts]    = useState([]);
-  const [isLoading, setIsLoading]  = useState(false);
-  const searchRef                  = useRef(null);
-  const barcodeBuffer              = useRef('');
-  const barcodeTimer               = useRef(null);
-  const lastKeyTime                = useRef(0);
-  const isScanning                 = useRef(false);
-  const isFirstLoad                = useRef(true);
+  const { addItem }                    = usePOS();
+  const [search, setSearch]            = useState('');
+  const [categories, setCategories]    = useState([]);
+  const [products, setProducts]        = useState([]);
+  const [isLoading, setIsLoading]      = useState(false);
+  const [variantProduct, setVariantProduct] = useState(null); // producto seleccionado para VariantPickerModal
+  const searchRef                      = useRef(null);
+  const barcodeBuffer                  = useRef('');
+  const barcodeTimer                   = useRef(null);
+  const lastKeyTime                    = useRef(0);
+  const isScanning                     = useRef(false);
+  const isFirstLoad                    = useRef(true);
+
+  // Determina si un producto tiene variantes activas
+  const hasVariants = (p) => Array.isArray(p.product_variants) && p.product_variants.length > 0;
+
+  // Manejador unificado de clic en producto
+  function handleProductClick(product) {
+    if (hasVariants(product)) {
+      setVariantProduct(product);
+    } else {
+      addItem(product);
+    }
+  }
 
   // Cargar categorías solo cuando cambia la sucursal
   useEffect(() => {
@@ -373,8 +393,8 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
     // 1. Buscar en productos ya cargados en la vista actual (instantáneo)
     const localHit = products.find(p => p.barcode === barcode || p.sku === barcode);
     if (localHit) {
-      addItem(localHit);
-      toast.success(`${localHit.name} agregado`, { duration: 1500 });
+      handleProductClick(localHit);
+      if (!hasVariants(localHit)) toast.success(`${localHit.name} agregado`, { duration: 1500 });
       return;
     }
     // 2. No está en la página actual → buscar directamente en el backend por barcode/sku
@@ -383,8 +403,8 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
       const body = res.data;
       const hit  = Array.isArray(body) ? body[0] : body?.data?.[0];
       if (hit) {
-        addItem(hit);
-        toast.success(`${hit.name} agregado`, { duration: 1500 });
+        handleProductClick(hit);
+        if (!hasVariants(hit)) toast.success(`${hit.name} agregado`, { duration: 1500 });
       } else {
         toast.error(`Código ${barcode} no encontrado`, { duration: 2000 });
       }
@@ -475,7 +495,7 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
                     toast.error(`${p.name || 'Producto'} está agotado`, { icon: '🚫' });
                     return;
                   }
-                  addItem(p);
+                  handleProductClick(p);
                 }}
                 disabled={p.track_inventory && (p.current_stock ?? 0) === 0}
                 className="shrink-0 flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl bg-white border border-gray-200 hover:border-brand-400 hover:bg-brand-50 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
@@ -517,7 +537,7 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
                   key={product.id}
                   onClick={() => {
                     if (isOut) { toast.error(`${product.name || 'Producto'} está agotado`, { icon: '🚫' }); return; }
-                    addItem(product);
+                    handleProductClick(product);
                   }}
                   disabled={isOut}
                   className={`
@@ -528,6 +548,12 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
                     }
                   `}>
 
+                  {/* Badge de variantes */}
+                  {hasVariants(product) && !isOut && (
+                    <div className="absolute top-2 left-2 bg-brand-100 text-brand-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                      {product.product_variants.length} vars
+                    </div>
+                  )}
                   {/* Badge de stock */}
                   {status === 'low' && (
                     <div className="absolute top-2 right-2 w-2 h-2 bg-amber-400 rounded-full" title="Stock bajo" />
@@ -568,6 +594,285 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
           </div>
         )}
       </div>
+
+      {/* ── VariantPickerModal ── */}
+      {variantProduct && (
+        <VariantPickerModal
+          product={variantProduct}
+          branchId={branchId}
+          onSelect={(variant) => {
+            addItem(variantProduct, variant);
+            setVariantProduct(null);
+          }}
+          onClose={() => setVariantProduct(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECCIÓN 2b: VariantPickerModal
+// Muestra variantes del producto para seleccionar antes de agregar al carrito
+// ─────────────────────────────────────────────────────────────────────────────
+
+function VariantPickerModal({ product, branchId, onSelect, onClose }) {
+  const [variants, setVariants]   = useState([]);
+  const [loading, setLoading]     = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      try {
+        const res = await api.get(`/products/${product.id}/variants`, {
+          params: { branch_id: branchId || undefined },
+        });
+        if (!cancelled) setVariants(res.data || []);
+      } catch {
+        if (!cancelled) setVariants([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [product.id, branchId]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <p className="font-bold text-gray-900 text-sm">{product.name}</p>
+            <p className="text-xs text-gray-400 mt-0.5">Selecciona una variante</p>
+          </div>
+          <button onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Lista de variantes */}
+        <div className="p-3 max-h-[60vh] overflow-y-auto space-y-2">
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <RefreshCw size={20} className="text-gray-300 animate-spin" />
+            </div>
+          ) : variants.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">Sin variantes disponibles</p>
+          ) : (
+            variants.map(v => {
+              const price        = v.price ?? product.price_with_vat ?? product.price;
+              const outOfStock   = product.track_inventory && (v.current_stock ?? 0) === 0;
+              const lowStock     = product.track_inventory && v.current_stock != null && v.current_stock > 0 && v.current_stock <= (product.min_stock || 0);
+              return (
+                <button
+                  key={v.id}
+                  disabled={outOfStock}
+                  onClick={() => onSelect(v)}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all ${
+                    outOfStock
+                      ? 'opacity-40 cursor-not-allowed border-gray-100 bg-gray-50'
+                      : 'border-gray-200 hover:border-brand-400 hover:bg-brand-50 active:scale-[0.98]'
+                  }`}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{v.name}</p>
+                    {v.sku && <p className="text-[10px] text-gray-400">SKU: {v.sku}</p>}
+                    {outOfStock && <p className="text-[10px] font-bold text-red-500">Agotado</p>}
+                    {lowStock   && <p className="text-[10px] font-medium text-amber-500">Quedan {v.current_stock}</p>}
+                    {!outOfStock && !lowStock && v.current_stock != null && (
+                      <p className="text-[10px] text-gray-400">Stock: {v.current_stock}</p>
+                    )}
+                  </div>
+                  <div className="ml-3 text-right">
+                    <p className="text-sm font-bold text-brand-700">{formatCOP(price)}</p>
+                    <Plus size={14} className="ml-auto text-brand-500 mt-1" />
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECCIÓN 2c: CourtesyModal — F10
+// Modal para aplicar cortesías (orden completa o ítems individuales)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CourtesyModal({ onClose }) {
+  const { items, courtesy, setCourtesy, clearCourtesy, toggleItemCourtesy } = usePOS();
+  const { user } = useAuth();
+
+  const AUTHORIZERS = ['Dueño', 'Gerente', 'Socio', 'Administrador', 'Otro'];
+
+  const [scope,       setScope]       = useState(courtesy?.scope || 'order');
+  const [authorizedBy,setAuthorizedBy]= useState(courtesy?.authorizedBy || '');
+  const [customAuth,  setCustomAuth]  = useState('');
+  const [reason,      setReason]      = useState(courtesy?.reason || '');
+  // Para scope=items: track cuáles están seleccionados
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set(items.filter(i => i.is_courtesy).map(i => i.cartKey)));
+
+  const effectiveAuth = authorizedBy === 'Otro' ? customAuth.trim() : authorizedBy;
+  const canApply = effectiveAuth.trim().length > 0;
+
+  function toggleKey(key) {
+    setSelectedKeys(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
+  function handleApply() {
+    if (!canApply) { toast.error('Indica quién autoriza la cortesía'); return; }
+    if (scope === 'order') {
+      setCourtesy({ scope: 'order', authorizedBy: effectiveAuth, reason: reason.trim() });
+    } else {
+      // Ítems individuales: aplicar toggleItemCourtesy para cada ítem según selección
+      clearCourtesy();
+      for (const item of items) {
+        const shouldBeCourtesy = selectedKeys.has(item.cartKey);
+        if (shouldBeCourtesy !== !!item.is_courtesy) {
+          toggleItemCourtesy(item.cartKey, effectiveAuth);
+        }
+      }
+    }
+    toast.success('Cortesía aplicada', { icon: '🎁' });
+    onClose();
+  }
+
+  function handleClear() {
+    clearCourtesy();
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-purple-50">
+          <div>
+            <p className="font-bold text-purple-900 flex items-center gap-2">🎁 Aplicar cortesía</p>
+            <p className="text-xs text-purple-600 mt-0.5">El cliente paga $0 — el costo queda registrado</p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+
+          {/* Alcance: orden completa o ítems */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 mb-2">Alcance</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[['order','Toda la mesa / orden'],['items','Ítems específicos']].map(([s, label]) => (
+                <button key={s} type="button" onClick={() => setScope(s)}
+                  className={`py-2.5 rounded-xl text-xs font-semibold border transition-colors ${
+                    scope === s
+                      ? 'bg-purple-600 text-white border-purple-600'
+                      : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-purple-300'
+                  }`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Selección de ítems (scope=items) */}
+          {scope === 'items' && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 mb-2">Selecciona los ítems en cortesía</p>
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {items.map(item => (
+                  <label key={item.cartKey}
+                    className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer transition-colors ${
+                      selectedKeys.has(item.cartKey)
+                        ? 'bg-purple-50 border-purple-300'
+                        : 'bg-gray-50 border-gray-100 hover:border-gray-200'
+                    }`}>
+                    <input type="checkbox" checked={selectedKeys.has(item.cartKey)}
+                      onChange={() => toggleKey(item.cartKey)}
+                      className="accent-purple-600 w-4 h-4 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-gray-900 truncate">{item.product_name}</p>
+                      {item.variant_name && <p className="text-[10px] text-gray-400">{item.variant_name}</p>}
+                    </div>
+                    <p className="text-xs font-bold text-gray-500 shrink-0">{formatCOP(item.unit_price * item.quantity)}</p>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Quién autoriza */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 mb-2">Autorizado por *</p>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {AUTHORIZERS.map(a => (
+                <button key={a} type="button" onClick={() => setAuthorizedBy(a)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${
+                    authorizedBy === a
+                      ? 'bg-purple-600 text-white border-purple-600'
+                      : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-purple-300'
+                  }`}>
+                  {a}
+                </button>
+              ))}
+            </div>
+            {authorizedBy === 'Otro' && (
+              <input
+                type="text"
+                value={customAuth}
+                onChange={e => setCustomAuth(e.target.value)}
+                placeholder="Nombre del autorizador"
+                className="w-full h-9 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-purple-400"
+                autoFocus
+              />
+            )}
+          </div>
+
+          {/* Motivo (opcional) */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 mb-1.5">Motivo (opcional)</p>
+            <input
+              type="text"
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="Ej: Cliente VIP, error en cocina, cumpleaños…"
+              className="w-full h-9 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-purple-400"
+            />
+          </div>
+
+          {/* Acciones */}
+          <div className="flex gap-2 pt-1">
+            {(courtesy || items.some(i => i.is_courtesy)) && (
+              <button onClick={handleClear}
+                className="px-4 h-10 rounded-xl border border-gray-200 text-xs text-gray-500 hover:bg-gray-50 transition-colors">
+                Quitar cortesía
+              </button>
+            )}
+            <button
+              onClick={handleApply}
+              disabled={!canApply}
+              className="flex-1 h-10 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-semibold rounded-xl text-sm transition-colors">
+              Aplicar cortesía
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -578,12 +883,16 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
 // src/components/pos/OrderPanel.jsx
 // ─────────────────────────────────────────────────────────────────────────────
 
-function OrderPanel({ onPay, onCustomer, onDiscount, onOpenCashModal }) {
+function OrderPanel({ onPay, onCustomer, onDiscount, onCourtesy, onOpenCashModal }) {
   const {
     items, totals, customerId, cashSession,
-    updateQty, removeItem, isProcessing
+    updateQty, removeItem, isProcessing,
+    courtesy, clearCourtesy,              // F10
   } = usePOS();
   const { isOnline } = useSyncContext();
+
+  const isOrderCourtesy  = courtesy?.scope === 'order';
+  const hasItemCourtesy  = items.some(i => i.is_courtesy);
 
   const isEmpty = items.length === 0;
 
@@ -649,26 +958,56 @@ function OrderPanel({ onPay, onCustomer, onDiscount, onOpenCashModal }) {
           </div>
         ) : (
           <div className="p-3 space-y-2">
-            {items.map((item, idx) => (
-              <div key={`${item.product_id}-${idx}`}
-                className="flex items-center gap-2 bg-gray-50 rounded-xl p-2.5 group border border-gray-100/80">
+            {/* Banner cortesía de orden completa */}
+            {isOrderCourtesy && (
+              <div className="mx-3 mt-3 flex items-center justify-between gap-2 bg-purple-50 border border-purple-200 rounded-xl px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm">🎁</span>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold text-purple-800 truncate">CORTESÍA — {courtesy.authorizedBy}</p>
+                    {courtesy.reason && <p className="text-[10px] text-purple-600 truncate">{courtesy.reason}</p>}
+                  </div>
+                </div>
+                <button onClick={clearCourtesy} className="text-purple-400 hover:text-purple-700 shrink-0"><X size={13} /></button>
+              </div>
+            )}
+
+            {items.map(item => {
+              const itemIsCourtesy = isOrderCourtesy || item.is_courtesy;
+              return (
+              <div key={item.cartKey}
+                className={`flex items-center gap-2 rounded-xl p-2.5 group border transition-colors ${
+                  itemIsCourtesy
+                    ? 'bg-purple-50 border-purple-100'
+                    : 'bg-gray-50 border-gray-100/80'
+                }`}>
 
                 {/* Nombre */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-900 truncate">{item.product_name}</p>
-                  <p className="text-[11px] text-gray-400">{formatCOP(item.unit_price)} c/u</p>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <p className={`text-xs font-medium truncate ${itemIsCourtesy ? 'text-purple-900' : 'text-gray-900'}`}>
+                      {item.product_name}
+                    </p>
+                    {itemIsCourtesy && <span className="shrink-0 text-[9px] font-bold text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded-full">CORTESÍA</span>}
+                  </div>
+                  {item.variant_name && (
+                    <p className="text-[10px] font-medium text-brand-600 truncate">{item.variant_name}</p>
+                  )}
+                  <p className="text-[11px] text-gray-400">
+                    {itemIsCourtesy ? <span className="line-through">{formatCOP(item.unit_price)}</span> : formatCOP(item.unit_price)} c/u
+                  </p>
                 </div>
 
                 {/* Controles de cantidad */}
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => updateQty(item.product_id, item.quantity - 1)}
+                    onClick={() => updateQty(item.cartKey, item.quantity - 1)}
                     className="w-6 h-6 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors">
                     <Minus size={10} />
                   </button>
                   <span className="text-xs font-semibold w-5 text-center">{item.quantity}</span>
                   <button
-                    onClick={() => updateQty(item.product_id, item.quantity + 1)}
+                    onClick={() => updateQty(item.cartKey, item.quantity + 1)}
                     className="w-6 h-6 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-green-50 hover:text-green-500 hover:border-green-200 transition-colors">
                     <Plus size={10} />
                   </button>
@@ -676,17 +1015,22 @@ function OrderPanel({ onPay, onCustomer, onDiscount, onOpenCashModal }) {
 
                 {/* Total del ítem */}
                 <div className="text-right">
-                  <p className="text-xs font-semibold text-gray-900">
-                    {formatCOP(item.unit_price * item.quantity)}
-                  </p>
+                  {itemIsCourtesy ? (
+                    <p className="text-xs font-bold text-purple-600">$0</p>
+                  ) : (
+                    <p className="text-xs font-semibold text-gray-900">
+                      {formatCOP(item.unit_price * item.quantity)}
+                    </p>
+                  )}
                   <button
-                    onClick={() => removeItem(item.product_id)}
+                    onClick={() => removeItem(item.cartKey)}
                     className="text-[10px] text-gray-300 hover:text-red-400 transition-colors">
                     quitar
                   </button>
                 </div>
               </div>
-            ))}
+            );})}
+
           </div>
         )}
       </div>
@@ -712,20 +1056,41 @@ function OrderPanel({ onPay, onCustomer, onDiscount, onOpenCashModal }) {
               <span>- {formatCOP(totals.discount_amount)}</span>
             </div>
           )}
+          {/* F10: Cortesía en totales */}
+          {totals.courtesy_amount > 0 && (
+            <div className="flex justify-between text-xs text-purple-600">
+              <span>🎁 Cortesía</span>
+              <span>- {formatCOP(totals.courtesy_amount)}</span>
+            </div>
+          )}
           <div className="flex justify-between font-bold text-gray-900 text-base pt-2 mt-0.5 border-t border-gray-200">
             <span>Total</span>
-            <span className="text-brand-700">{formatCOP(totals.total)}</span>
+            <span className={isOrderCourtesy ? 'text-purple-700' : 'text-brand-700'}>
+              {isOrderCourtesy ? '$0 (cortesía)' : formatCOP(totals.total)}
+            </span>
           </div>
         </div>
 
-        {/* Botón descuento */}
-        <button
-          onClick={onDiscount}
-          disabled={isEmpty}
-          className="w-full flex items-center justify-center gap-1.5 py-2.5 border border-dashed border-gray-300 rounded-xl text-xs text-gray-500 hover:border-brand-400 hover:text-brand-600 hover:bg-brand-50/50 disabled:opacity-40 transition-all">
-          <Percent size={12} />
-          Aplicar descuento
-        </button>
+        {/* Botones: descuento + cortesía */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={onDiscount}
+            disabled={isEmpty || isOrderCourtesy}
+            className="flex items-center justify-center gap-1.5 py-2.5 border border-dashed border-gray-300 rounded-xl text-xs text-gray-500 hover:border-brand-400 hover:text-brand-600 hover:bg-brand-50/50 disabled:opacity-40 transition-all">
+            <Percent size={12} />
+            Descuento
+          </button>
+          <button
+            onClick={onCourtesy}
+            disabled={isEmpty}
+            className={`flex items-center justify-center gap-1.5 py-2.5 border border-dashed rounded-xl text-xs font-medium transition-all disabled:opacity-40 ${
+              isOrderCourtesy || hasItemCourtesy
+                ? 'border-purple-400 text-purple-700 bg-purple-50'
+                : 'border-gray-300 text-gray-500 hover:border-purple-400 hover:text-purple-600 hover:bg-purple-50/50'
+            }`}>
+            🎁 Cortesía
+          </button>
+        </div>
 
         {/* Botón COBRAR — CTA principal */}
         <button
@@ -780,7 +1145,7 @@ function OrderPanel({ onPay, onCustomer, onDiscount, onOpenCashModal }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function PaymentModal({ onClose }) {
-  const { totals, items, customerName, processPayment, processPaymentMixed, isProcessing, clearOrder } = usePOS();
+  const { totals, items, customerName, customerId, processPayment, processPaymentMixed, isProcessing, clearOrder } = usePOS();
   const { user }                                           = useAuth();
   const { printReceipt, isPrinting: printing, isConnected: printerConnected } = useThermalPrinter();
   const track = useTrack();
@@ -794,22 +1159,50 @@ function PaymentModal({ onClose }) {
   const [frozenTotal,       setFrozenTotal]       = useState(0);
   const [frozenItems,       setFrozenItems]       = useState([]);
   const [frozenCustomer,    setFrozenCustomer]    = useState('');
+  // F1: Propinas
+  const [tipPct,            setTipPct]            = useState(null); // null | 5 | 10 | 15 | 20 | 'custom'
+  const [tipCustom,         setTipCustom]         = useState('');
+  const [frozenTip,         setFrozenTip]         = useState(0);
+  // F9-A: Fidelización
+  const [loyaltyData,       setLoyaltyData]       = useState(null);   // { balance, value_cop, settings }
+  const [redeemEnabled,     setRedeemEnabled]     = useState(false);  // toggle del cajero
+  const [redeemPoints,      setRedeemPoints]      = useState(0);      // puntos a canjear
   const cashInputRef = useRef(null);
   const mixCashRef   = useRef(null);
 
   const total        = totals.total;
+  // Propina calculada (display y validación — el backend la recalcula y almacena)
+  const tipAmount    = tipPct === 'custom'
+    ? Math.round(Math.max(0, Number(tipCustom) || 0))
+    : tipPct ? Math.round(total * tipPct / 100) : 0;
+  const totalWithTip = total + tipAmount;
+
+  // F9-A: descuento en COP por los puntos a canjear
+  const loyaltyDiscount    = redeemEnabled && loyaltyData
+    ? Math.min(redeemPoints * (loyaltyData.settings?.point_value_cop ?? 10), totalWithTip)
+    : 0;
+  const totalFinal = totalWithTip - loyaltyDiscount;
+
+  // F9-A: cargar saldo de puntos al montar (si hay cliente)
+  useEffect(() => {
+    if (!customerId) { setLoyaltyData(null); setRedeemEnabled(false); return; }
+    api.get(`/loyalty/customer/${customerId}`)
+      .then(r => setLoyaltyData(r.data))
+      .catch(() => setLoyaltyData(null));
+  }, [customerId]);
+
   const cashAmt      = Number(cashReceived) || 0;
-  const change       = method === 'cash' ? Math.max(0, cashAmt - total) : 0;
-  const cashSufficient = method !== 'cash' || (cashAmt >= total && cashAmt >= 0);
+  const change       = method === 'cash' ? Math.max(0, cashAmt - totalFinal) : 0;
+  const cashSufficient = method !== 'cash' || (cashAmt >= totalFinal && cashAmt >= 0);
 
   // Mixto: auto-completar card cuando se ingresa cash
   const mixCashAmt = Number(mixCash) || 0;
   const mixCardAmt = Number(mixCard) || 0;
-  const mixValid   = method === 'mixed' && mixCashAmt > 0 && mixCardAmt > 0 && (mixCashAmt + mixCardAmt) === total;
+  const mixValid   = method === 'mixed' && mixCashAmt > 0 && mixCardAmt > 0 && (mixCashAmt + mixCardAmt) === totalFinal;
 
   function handleMixCashChange(val) {
     setMixCash(val)
-    const remaining = total - (Number(val) || 0)
+    const remaining = totalFinal - (Number(val) || 0)
     setMixCard(remaining > 0 ? String(remaining) : '')
   }
 
@@ -840,20 +1233,24 @@ function PaymentModal({ onClose }) {
   };
 
   async function handleConfirm() {
+    const loyaltyOpts = redeemEnabled && loyaltyDiscount > 0
+      ? { loyaltyDiscount, loyaltyPoints: redeemPoints }
+      : {};
+
     if (method === 'mixed') {
       if (!mixValid) {
-        toast.error(`La suma debe ser exactamente ${formatCOP(total)}`);
+        toast.error(`La suma debe ser exactamente ${formatCOP(totalFinal)}`);
         return;
       }
       try {
-        // QA-5: congelar ANTES de CLEAR_ORDER
-        setFrozenTotal(total);
+        setFrozenTotal(totalFinal);
         setFrozenItems([...items]);
         setFrozenCustomer(customerName || '');
-        const order = await processPaymentMixed(mixCashAmt, mixCardAmt);
+        setFrozenTip(tipAmount);
+        const order = await processPaymentMixed(mixCashAmt, mixCardAmt, tipAmount);
         setFinalChange(0);
         setStep(order?.offline ? 'done-offline' : 'done');
-        track('sale_completed', 'pos', { method: 'mixed', total: totals.total, items: items.length });
+        track('sale_completed', 'pos', { method: 'mixed', total: totalFinal, tip: tipAmount, loyalty_discount: loyaltyDiscount, items: items.length });
       } catch {}
       return;
     }
@@ -862,16 +1259,14 @@ function PaymentModal({ onClose }) {
       return;
     }
     try {
-      // QA-5: congelar ANTES de CLEAR_ORDER
-      setFrozenTotal(total);
+      setFrozenTotal(totalFinal);
       setFrozenItems([...items]);
       setFrozenCustomer(customerName || '');
-      const order = await processPayment(method, method === 'cash' ? cashAmt : total);
-      // Guardar el vuelto ANTES de que el estado cambie
+      setFrozenTip(tipAmount);
+      const order = await processPayment(method, method === 'cash' ? cashAmt : totalFinal, tipAmount, loyaltyOpts);
       setFinalChange(change);
       setStep(order?.offline ? 'done-offline' : 'done');
-      track('sale_completed', 'pos', { method, total, items: items.length });
-      // SIN auto-close: el cajero decide cuándo pasar al siguiente cliente
+      track('sale_completed', 'pos', { method, total: totalFinal, tip: tipAmount, loyalty_discount: loyaltyDiscount, items: items.length });
     } catch {}
   }
 
@@ -898,7 +1293,8 @@ function PaymentModal({ onClose }) {
       subtotal:        totals.subtotal,
       discount_amount: totals.discount_amount,
       tax_amount:      totals.tax_total,
-      total:           totals.total,
+      tip_amount:      frozenTip,
+      total:           frozenTotal || totals.total,
       payment_method:  method,
       cash_received:   method === 'cash' ? cashAmt : null,
       change_amount:   finalChange,
@@ -924,7 +1320,8 @@ function PaymentModal({ onClose }) {
       <div class="receipt-divider"></div>
       ${lines.join('')}
       <div class="receipt-divider"></div>
-      <div class="receipt-row receipt-total"><span>TOTAL</span><span>$${totals.total.toLocaleString('es-CO')}</span></div>
+      ${frozenTip > 0 ? `<div class="receipt-row"><span>Propina</span><span>+$${frozenTip.toLocaleString('es-CO')}</span></div>` : ''}
+      <div class="receipt-row receipt-total"><span>TOTAL</span><span>$${(frozenTotal || totals.total).toLocaleString('es-CO')}</span></div>
       ${finalChange > 0 ? `<div class="receipt-change">Vuelto: $${finalChange.toLocaleString('es-CO')}</div>` : ''}
       <div class="receipt-divider"></div>
       <div class="receipt-footer">¡Gracias por su compra!</div>
@@ -943,6 +1340,7 @@ function PaymentModal({ onClose }) {
     const lines = ['*Recibo de compra — FERZU POS*', '']
     if (receiptCustomer) lines.push(`Cliente: ${receiptCustomer}`)
     receiptItems.forEach(i => lines.push(`• ${i.product_name} x${i.quantity}  ${formatCOP(i.unit_price * i.quantity)}`))
+    if (frozenTip > 0) lines.push(`Propina:  ${formatCOP(frozenTip)}`)
     lines.push('', `*Total:  ${formatCOP(receiptTotal)}*`)
     if (finalChange > 0) lines.push(`Vuelto:  ${formatCOP(finalChange)}`)
     lines.push('', `Gracias por su compra 🛍️`)
@@ -990,12 +1388,18 @@ function PaymentModal({ onClose }) {
               <p className={`text-5xl font-black ${isOffline ? 'text-amber-600' : 'text-green-600'}`}>
                 {formatCOP(finalChange)}
               </p>
+              {frozenTip > 0 && (
+                <p className="text-xs text-amber-600 mt-2">Propina {formatCOP(frozenTip)} incluida en el cobro</p>
+              )}
             </div>
           ) : method !== 'cash' ? (
             <div className="w-full bg-blue-50 border-2 border-blue-200 rounded-2xl px-6 py-4 text-center">
               <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-1">Total cobrado</p>
               {/* QA-5: usar frozenTotal (total ya fue limpiado por CLEAR_ORDER) */}
               <p className="text-4xl font-black text-blue-700">{formatCOP(frozenTotal || total)}</p>
+              {frozenTip > 0 && (
+                <p className="text-xs text-amber-600 mt-1">Incluye propina {formatCOP(frozenTip)}</p>
+              )}
             </div>
           ) : null}
 
@@ -1049,8 +1453,63 @@ function PaymentModal({ onClose }) {
         {/* Total a cobrar */}
         <div className="bg-gradient-to-br from-brand-50 to-emerald-50 rounded-2xl p-4 text-center border border-brand-100">
           <p className="text-[11px] font-semibold text-brand-600 mb-1 uppercase tracking-wide">Total a cobrar</p>
-          <p className="text-3xl font-bold text-gray-900">{formatCOP(total)}</p>
+          <p className="text-3xl font-bold text-gray-900">{formatCOP(totalFinal)}</p>
+          {(tipAmount > 0 || loyaltyDiscount > 0) && (
+            <p className="text-xs text-amber-600 mt-1 flex items-center justify-center gap-2 flex-wrap">
+              {tipAmount > 0 && <span>Propina +{formatCOP(tipAmount)}</span>}
+              {loyaltyDiscount > 0 && <span className="text-emerald-600">Puntos −{formatCOP(loyaltyDiscount)}</span>}
+            </p>
+          )}
         </div>
+
+        {/* F9-A: Canjear puntos de fidelización */}
+        {loyaltyData && loyaltyData.balance >= (loyaltyData.settings?.min_redeem_points ?? 100) && (
+          <div className={`rounded-2xl border p-3 transition-all ${
+            redeemEnabled ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-gray-200'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-gray-800 flex items-center gap-1.5">
+                  ⭐ Canjear puntos
+                </p>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  {loyaltyData.balance} pts · vale {formatCOP(loyaltyData.value_cop)}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setRedeemEnabled(v => !v);
+                  if (!redeemEnabled) setRedeemPoints(Math.min(loyaltyData.balance, Math.floor(totalWithTip / (loyaltyData.settings?.point_value_cop ?? 10))));
+                  else setRedeemPoints(0);
+                }}
+                className={`relative w-10 h-6 rounded-full transition-colors ${redeemEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}>
+                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${redeemEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            {redeemEnabled && (
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={loyaltyData.settings?.min_redeem_points ?? 100}
+                    max={Math.min(loyaltyData.balance, Math.floor(totalWithTip / (loyaltyData.settings?.point_value_cop ?? 10)))}
+                    step={loyaltyData.settings?.min_redeem_points ?? 100}
+                    value={redeemPoints}
+                    onChange={e => setRedeemPoints(Number(e.target.value))}
+                    className="flex-1 accent-emerald-600"
+                  />
+                  <span className="text-sm font-bold text-emerald-700 w-20 text-right">
+                    {redeemPoints} pts
+                  </span>
+                </div>
+                <div className="bg-emerald-100 rounded-xl px-3 py-2 flex justify-between text-xs">
+                  <span className="text-emerald-700 font-medium">Descuento aplicado</span>
+                  <span className="font-bold text-emerald-700">−{formatCOP(loyaltyDiscount)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Métodos de pago */}
         <div>
@@ -1072,6 +1531,54 @@ function PaymentModal({ onClose }) {
           </div>
         </div>
 
+        {/* F1: Propina */}
+        <div>
+          <p className="text-xs font-medium text-gray-500 mb-2">Propina (opcional)</p>
+          <div className="flex gap-1.5 mb-2">
+            {[5, 10, 15, 20].map(pct => (
+              <button
+                key={pct}
+                onClick={() => { setTipPct(tipPct === pct ? null : pct); setTipCustom(''); }}
+                className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                  tipPct === pct
+                    ? 'bg-amber-50 border-amber-400 text-amber-700'
+                    : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}>
+                {pct}%
+              </button>
+            ))}
+            <button
+              onClick={() => setTipPct(tipPct === 'custom' ? null : 'custom')}
+              className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                tipPct === 'custom'
+                  ? 'bg-amber-50 border-amber-400 text-amber-700'
+                  : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+              }`}>
+              $Otro
+            </button>
+          </div>
+          {tipPct === 'custom' && (
+            <div className="relative mb-2">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+              <input
+                type="number"
+                min="0"
+                value={tipCustom}
+                onChange={e => setTipCustom(e.target.value)}
+                onFocus={e => e.target.select()}
+                placeholder="Monto de propina"
+                className="w-full pl-7 pr-4 h-10 border-2 border-gray-200 focus:border-amber-400 rounded-xl text-sm font-semibold outline-none text-right"
+              />
+            </div>
+          )}
+          {tipAmount > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex justify-between text-xs">
+              <span className="text-amber-700 font-medium">✓ Propina incluida</span>
+              <span className="font-bold text-amber-700">+{formatCOP(tipAmount)}</span>
+            </div>
+          )}
+        </div>
+
         {/* Input de efectivo */}
         {method === 'cash' && (
           <div>
@@ -1087,7 +1594,7 @@ function PaymentModal({ onClose }) {
                 value={cashReceived}
                 onChange={e => setCashReceived(e.target.value)}
                 onFocus={e => e.target.select()}
-                placeholder={total.toString()}
+                placeholder={totalFinal.toString()}
                 className="w-full pl-7 pr-4 h-12 border-2 border-gray-200 focus:border-brand-400 rounded-xl text-lg font-semibold outline-none text-right"
               />
             </div>
@@ -1103,7 +1610,7 @@ function PaymentModal({ onClose }) {
                 </button>
               ))}
               <button
-                onClick={() => setCashReceived(String(Math.ceil(total / 1000) * 1000))}
+                onClick={() => setCashReceived(String(Math.ceil(totalFinal / 1000) * 1000))}
                 className="flex-1 py-1.5 text-[11px] bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 text-brand-700">
                 Exacto
               </button>
@@ -1165,7 +1672,7 @@ function PaymentModal({ onClose }) {
               mixValid ? 'bg-indigo-50 text-indigo-700' : 'bg-red-50 text-red-600'
             }`}>
               <span>Suma</span>
-              <span className="font-bold">{formatCOP(mixCashAmt + mixCardAmt)} / {formatCOP(total)}</span>
+              <span className="font-bold">{formatCOP(mixCashAmt + mixCardAmt)} / {formatCOP(totalFinal)}</span>
             </div>
           </div>
         )}
@@ -1176,7 +1683,7 @@ function PaymentModal({ onClose }) {
           disabled={isProcessing || (method === 'cash' && !cashSufficient && cashAmt > 0) || (method === 'mixed' && !mixValid)}
           className="w-full h-12 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-brand-600/25">
           {isProcessing ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-          {isProcessing ? 'Procesando...' : `Confirmar cobro · ${formatCOP(total)}`}
+          {isProcessing ? 'Procesando...' : `Confirmar cobro · ${formatCOP(totalFinal)}`}
         </button>
       </div>
     </Modal>
@@ -1468,10 +1975,11 @@ function CashSessionModal({ onClose, branchId }) {
   const [loadSum,    setLoadSum]   = useState(false);
   const [closingCash,setClosingCash]= useState('');
   const [counts,     setCounts]    = useState({});       // { 100000: 0, 50000: 0, ... }
-  const [notes,      setNotes]     = useState('');
-  const [closing,    setClosing]   = useState(false);
-  const [closedData, setClosedData]= useState(null);     // datos retornados al cerrar
-  const [openLoading,setOpenLoading]= useState(false);
+  const [notes,          setNotes]          = useState('');
+  const [closingConfirm, setClosingConfirm] = useState('');  // firma del cajero
+  const [closing,        setClosing]        = useState(false);
+  const [closedData,     setClosedData]     = useState(null); // datos retornados al cerrar
+  const [openLoading,    setOpenLoading]    = useState(false);
 
   const isOpen = !!cashSession;
 
@@ -1735,7 +2243,26 @@ function CashSessionModal({ onClose, branchId }) {
           <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Observaciones del turno (opcional)"
             rows={2} className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none outline-none focus:border-brand-400" />
 
-          <button onClick={closeSession} disabled={closing || closingAmt === 0}
+          {/* Firma del cajero — confirmación explícita */}
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1.5 block">
+              Confirma con tu nombre para cerrar
+            </label>
+            <input
+              type="text"
+              value={closingConfirm}
+              onChange={e => setClosingConfirm(e.target.value)}
+              placeholder={user?.full_name || 'Tu nombre'}
+              className="w-full border-2 border-gray-200 focus:border-red-400 rounded-xl px-3 py-2.5 text-sm outline-none"
+            />
+            {closingConfirm.length > 0 && closingConfirm.toLowerCase() !== (user?.full_name || '').toLowerCase() && (
+              <p className="text-[11px] text-amber-600 mt-1">⚠️ El nombre no coincide con tu perfil</p>
+            )}
+          </div>
+
+          <button
+            onClick={closeSession}
+            disabled={closing || closingAmt === 0 || closingConfirm.trim().length < 2}
             className="w-full h-12 bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all">
             {closing ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
             {closing ? 'Cerrando...' : 'Cerrar caja y generar informe'}

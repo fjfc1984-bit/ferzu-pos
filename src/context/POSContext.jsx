@@ -19,6 +19,10 @@ const A = {
   UPDATE_QTY:          'UPDATE_QTY',
   SET_DISCOUNT:        'SET_DISCOUNT',
   CLEAR_DISCOUNT:      'CLEAR_DISCOUNT',
+  // F10: Cortesías
+  SET_COURTESY:        'SET_COURTESY',
+  CLEAR_COURTESY:      'CLEAR_COURTESY',
+  TOGGLE_ITEM_COURTESY:'TOGGLE_ITEM_COURTESY',
   SET_CUSTOMER:        'SET_CUSTOMER',
   CLEAR_ORDER:         'CLEAR_ORDER',
   SET_CASH_SESSION:    'SET_CASH_SESSION',
@@ -32,8 +36,10 @@ const A = {
 // ESTADO INICIAL
 // ---------------------------------------------------------------------------
 const initialState = {
-  items:          [],     // [{ product_id, product_name, product_sku, unit_price, vat_rate, quantity }]
+  items:          [],     // [{ cartKey, product_id, variant_id, product_name, unit_price, vat_rate, quantity, is_courtesy }]
   discount:       null,   // { type: 'pct'|'fixed', value, reason }
+  // F10: Cortesías
+  courtesy:       null,   // null | { scope: 'order'|'items', authorizedBy: string, reason: string }
   customerId:     null,
   customerName:   null,
   cashSession:    null,   // objeto completo de cash_sessions
@@ -50,27 +56,39 @@ function itemSubtotal(unitPrice, qty) {
   return Math.round(unitPrice) * Math.round(qty)
 }
 
-function computeTotals(items, discount) {
-  let subtotal  = 0
-  let tax_total = 0
+function computeTotals(items, discount, courtesy) {
+  let subtotal         = 0
+  let tax_total        = 0
+  let courtesy_amount  = 0
+
+  const isOrderCourtesy = courtesy?.scope === 'order'
 
   for (const item of items) {
-    const sub  = itemSubtotal(item.unit_price, item.quantity)
-    subtotal  += sub
-    if (item.vat_rate > 0) {
-      tax_total += Math.round(sub * (item.vat_rate / 100))
+    const sub     = itemSubtotal(item.unit_price, item.quantity)
+    const itemVat = item.vat_rate > 0 ? Math.round(sub * (item.vat_rate / 100)) : 0
+    const isItemCourtesy = isOrderCourtesy || item.is_courtesy
+
+    if (isItemCourtesy) {
+      courtesy_amount += sub + itemVat
+    } else {
+      subtotal  += sub
+      tax_total += itemVat
     }
   }
 
+  // Descuento solo aplica cuando no hay cortesía de orden
   let discount_amount = 0
-  if (discount && subtotal > 0) {
+  if (!isOrderCourtesy && discount && subtotal > 0) {
     discount_amount = discount.type === 'pct'
-      ? Math.round(subtotal * (discount.value / 100))
-      : Math.min(Math.round(discount.value), subtotal)
+      ? Math.round((subtotal + tax_total) * (discount.value / 100))
+      : Math.min(Math.round(discount.value), subtotal + tax_total)
   }
 
-  const total = Math.max(0, subtotal + tax_total - discount_amount)
-  return { subtotal, tax_total, discount_amount, total }
+  const total = isOrderCourtesy
+    ? 0
+    : Math.max(0, subtotal + tax_total - discount_amount)
+
+  return { subtotal, tax_total, discount_amount, courtesy_amount, total }
 }
 
 // ---------------------------------------------------------------------------
@@ -80,24 +98,32 @@ function posReducer(state, { type, payload }) {
   switch (type) {
 
     case A.ADD_ITEM: {
-      const existing = state.items.find(i => i.product_id === payload.id)
+      // cartKey: identifica de forma única producto + variante en el carrito
+      const variant  = payload.variant || null
+      const cartKey  = variant ? `${payload.id}-${variant.id}` : payload.id
+      const existing = state.items.find(i => i.cartKey === cartKey)
       if (existing) {
         return {
           ...state,
           items: state.items.map(i =>
-            i.product_id === payload.id
-              ? { ...i, quantity: i.quantity + 1 }
-              : i
+            i.cartKey === cartKey ? { ...i, quantity: i.quantity + 1 } : i
           ),
         }
       }
+      // Precio: variante puede sobreescribir precio base
+      const price = variant?.price != null
+        ? Math.round(variant.price)
+        : Math.round(payload.price)
       return {
         ...state,
         items: [...state.items, {
+          cartKey,
           product_id:   payload.id,
+          variant_id:   variant?.id   || null,
+          variant_name: variant?.name || null,
           product_name: payload.name,
-          product_sku:  payload.sku || '',
-          unit_price:   Math.round(payload.price),
+          product_sku:  variant?.sku  || payload.sku || '',
+          unit_price:   price,
           vat_rate:     payload.vat_rate ?? 0,
           quantity:     1,
         }],
@@ -105,15 +131,15 @@ function posReducer(state, { type, payload }) {
     }
 
     case A.REMOVE_ITEM:
-      return { ...state, items: state.items.filter(i => i.product_id !== payload) }
+      return { ...state, items: state.items.filter(i => i.cartKey !== payload) }
 
     case A.UPDATE_QTY: {
-      const { productId, qty } = payload
-      if (qty <= 0) return { ...state, items: state.items.filter(i => i.product_id !== productId) }
+      const { cartKey, qty } = payload
+      if (qty <= 0) return { ...state, items: state.items.filter(i => i.cartKey !== cartKey) }
       return {
         ...state,
         items: state.items.map(i =>
-          i.product_id === productId ? { ...i, quantity: Math.round(qty) } : i
+          i.cartKey === cartKey ? { ...i, quantity: Math.round(qty) } : i
         ),
       }
     }
@@ -123,6 +149,30 @@ function posReducer(state, { type, payload }) {
 
     case A.CLEAR_DISCOUNT:
       return { ...state, discount: null }
+
+    // F10: Cortesía de orden completa
+    case A.SET_COURTESY:
+      return { ...state, courtesy: payload, discount: null } // cortesía cancela descuento
+
+    case A.CLEAR_COURTESY:
+      return {
+        ...state,
+        courtesy: null,
+        items: state.items.map(i => ({ ...i, is_courtesy: false })),
+      }
+
+    // F10: Toggle cortesía en un ítem individual
+    case A.TOGGLE_ITEM_COURTESY: {
+      const { cartKey, authorizedBy } = payload
+      return {
+        ...state,
+        items: state.items.map(i =>
+          i.cartKey === cartKey
+            ? { ...i, is_courtesy: !i.is_courtesy, courtesy_authorized_by: !i.is_courtesy ? authorizedBy : null }
+            : i
+        ),
+      }
+    }
 
     case A.SET_CUSTOMER:
       return {
@@ -136,6 +186,7 @@ function posReducer(state, { type, payload }) {
         ...state,
         items:        [],
         discount:     null,
+        courtesy:     null,
         customerId:   null,
         customerName: null,
         isProcessing: false,
@@ -173,7 +224,7 @@ export function POSProvider({ children }) {
   const { isOnline, saveOrderOffline } = useSync()
 
   // Totales derivados — calculados en cada render, no en el estado
-  const totals = computeTotals(state.items, state.discount)
+  const totals = computeTotals(state.items, state.discount, state.courtesy)
 
   // ── Inicializar branchId y sesión de caja al montar ──────────────────────
   useEffect(() => {
@@ -198,16 +249,18 @@ export function POSProvider({ children }) {
 
   // ── ACCIONES DEL CARRITO ──────────────────────────────────────────────────
 
-  const addItem = useCallback((product) => {
-    dispatch({ type: A.ADD_ITEM, payload: product })
+  // variant: objeto completo de product_variants (o null para producto base)
+  const addItem = useCallback((product, variant = null) => {
+    dispatch({ type: A.ADD_ITEM, payload: { ...product, variant } })
   }, [])
 
-  const removeItem = useCallback((productId) => {
-    dispatch({ type: A.REMOVE_ITEM, payload: productId })
+  // cartKey: item.cartKey (ej: "uuid" o "uuid-variantUuid")
+  const removeItem = useCallback((cartKey) => {
+    dispatch({ type: A.REMOVE_ITEM, payload: cartKey })
   }, [])
 
-  const updateQty = useCallback((productId, qty) => {
-    dispatch({ type: A.UPDATE_QTY, payload: { productId, qty } })
+  const updateQty = useCallback((cartKey, qty) => {
+    dispatch({ type: A.UPDATE_QTY, payload: { cartKey, qty } })
   }, [])
 
   const setDiscount = useCallback((discount) => {
@@ -216,6 +269,21 @@ export function POSProvider({ children }) {
 
   const clearDiscount = useCallback(() => {
     dispatch({ type: A.CLEAR_DISCOUNT })
+  }, [])
+
+  // F10: Cortesías
+  // courtesy = { scope: 'order'|'items', authorizedBy: string, reason: string }
+  const setCourtesy = useCallback((courtesy) => {
+    dispatch({ type: A.SET_COURTESY, payload: courtesy })
+  }, [])
+
+  const clearCourtesy = useCallback(() => {
+    dispatch({ type: A.CLEAR_COURTESY })
+  }, [])
+
+  // Alterna cortesía en un ítem individual
+  const toggleItemCourtesy = useCallback((cartKey, authorizedBy) => {
+    dispatch({ type: A.TOGGLE_ITEM_COURTESY, payload: { cartKey, authorizedBy } })
   }, [])
 
   const setCustomer = useCallback((customer) => {
@@ -272,7 +340,7 @@ export function POSProvider({ children }) {
   // ── PROCESAR PAGO ────────────────────────────────────────────────────────
   // REGLA DE ORO #1: el frontend solo envía ítems crudos; el backend calcula totales.
   // REGLA DE ORO #3: si no hay red, se guarda offline y sincroniza al reconectar.
-  const processPayment = useCallback(async (paymentMethod, cashReceived) => {
+  const processPayment = useCallback(async (paymentMethod, cashReceived, tipAmount = 0, loyaltyOpts = {}) => {
     if (!state.cashSession) throw new Error('No hay sesión de caja activa')
     if (state.items.length === 0) throw new Error('El carrito está vacío')
 
@@ -282,18 +350,31 @@ export function POSProvider({ children }) {
       order_type:      'sale',
       customer_id:     state.customerId || null,
       items: state.items.map(i => ({
-        product_id:   i.product_id,
-        product_name: i.product_name,
-        product_sku:  i.product_sku,
-        quantity:     i.quantity,
-        unit_price:   i.unit_price,
-        vat_rate:     i.vat_rate,
+        product_id:             i.product_id,
+        variant_id:             i.variant_id || null,
+        product_name:           i.product_name,
+        product_sku:            i.product_sku,
+        quantity:               i.quantity,
+        unit_price:             i.unit_price,
+        vat_rate:               i.vat_rate,
+        // F10: cortesía por ítem
+        is_courtesy:            i.is_courtesy || false,
+        courtesy_authorized_by: i.courtesy_authorized_by || null,
       })),
+      // F10: cortesía de orden completa
+      is_courtesy:            state.courtesy?.scope === 'order' || false,
+      courtesy_authorized_by: state.courtesy?.authorizedBy || null,
+      courtesy_reason:        state.courtesy?.reason       || null,
       payment_method:  paymentMethod,
       cash_received:   paymentMethod === 'cash' ? Math.round(cashReceived) : null,
       // discount del POS → campos separados que espera el backend
       discount_type:   state.discount?.type === 'pct' ? 'percentage' : (state.discount?.type === 'fixed' ? 'fixed' : undefined),
       discount_value:  state.discount?.value ?? undefined,
+      // Propina: monto entero elegido explícitamente por el cajero/cliente
+      tip_amount:      Math.round(Math.max(0, Number(tipAmount) || 0)),
+      // F9-A: Fidelización (0 por defecto — no bloquea si el programa no está activo)
+      loyalty_discount:        Math.round(Math.max(0, Number(loyaltyOpts.loyaltyDiscount) || 0)),
+      loyalty_points_redeemed: Math.round(Math.max(0, Number(loyaltyOpts.loyaltyPoints)   || 0)),
     }
 
     dispatch({ type: A.SET_PROCESSING, payload: true })
@@ -344,7 +425,7 @@ export function POSProvider({ children }) {
 
   // ── PROCESAR PAGO MIXTO (efectivo + tarjeta) ────────────────────────────
   // Flujo de dos pasos: crea orden sin payment_method → paga cash parcial → paga card resto
-  const processPaymentMixed = useCallback(async (cashAmt, cardAmt) => {
+  const processPaymentMixed = useCallback(async (cashAmt, cardAmt, tipAmount = 0) => {
     if (!state.cashSession) throw new Error('No hay sesión de caja activa')
     if (state.items.length === 0) throw new Error('El carrito está vacío')
 
@@ -354,16 +435,23 @@ export function POSProvider({ children }) {
       order_type:      'sale',
       customer_id:     state.customerId || null,
       items: state.items.map(i => ({
-        product_id:   i.product_id,
-        product_name: i.product_name,
-        product_sku:  i.product_sku,
-        quantity:     i.quantity,
-        unit_price:   i.unit_price,
-        vat_rate:     i.vat_rate,
+        product_id:             i.product_id,
+        variant_id:             i.variant_id || null,
+        product_name:           i.product_name,
+        product_sku:            i.product_sku,
+        quantity:               i.quantity,
+        unit_price:             i.unit_price,
+        vat_rate:               i.vat_rate,
+        is_courtesy:            i.is_courtesy || false,
+        courtesy_authorized_by: i.courtesy_authorized_by || null,
       })),
+      is_courtesy:            state.courtesy?.scope === 'order' || false,
+      courtesy_authorized_by: state.courtesy?.authorizedBy || null,
+      courtesy_reason:        state.courtesy?.reason       || null,
       // Sin payment_method: se pagan en pasos separados
       discount_type:  state.discount?.type === 'pct' ? 'percentage' : (state.discount?.type === 'fixed' ? 'fixed' : undefined),
       discount_value: state.discount?.value ?? undefined,
+      tip_amount:     Math.round(Math.max(0, Number(tipAmount) || 0)),
     }
 
     dispatch({ type: A.SET_PROCESSING, payload: true })
@@ -426,6 +514,7 @@ export function POSProvider({ children }) {
       // Estado
       items:        state.items,
       discount:     state.discount,
+      courtesy:     state.courtesy,
       customerId:   state.customerId,
       customerName: state.customerName,
       cashSession:    state.cashSession,
@@ -441,6 +530,10 @@ export function POSProvider({ children }) {
       updateQty,
       setDiscount,
       clearDiscount,
+      // F10: Cortesías
+      setCourtesy,
+      clearCourtesy,
+      toggleItemCourtesy,
       setCustomer,
       clearOrder,
       // Acciones de caja

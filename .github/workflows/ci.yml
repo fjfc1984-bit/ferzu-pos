@@ -35,7 +35,7 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Instalar dependencias
-        run: npm install
+        run: npm ci
 
       - name: Correr tests
         run: npm test
@@ -61,7 +61,7 @@ jobs:
           cache-dependency-path: backend/package-lock.json
 
       - name: Instalar dependencias
-        run: npm install
+        run: npm ci
 
       - name: Correr tests
         run: npm test

@@ -64,8 +64,34 @@ function Message({ msg }) {
   )
 }
 
+// ── Preguntas rápidas para modo Consulta ──────────────────────────────────
+const QUICK_QUERIES = [
+  '¿Cuánto vendí esta semana?',
+  '¿Cuál fue mi producto más vendido?',
+  '¿Qué productos están por agotarse?',
+  '¿Cómo van las sesiones de caja?',
+]
+
+// ── Formatea texto con **bold** y viñetas ────────────────────────────────
+function FormatText({ text }) {
+  if (!text) return null
+  return text.split('\n').map((line, i) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/g).map((part, j) =>
+      part.startsWith('**') && part.endsWith('**')
+        ? <strong key={j} className="font-semibold">{part.slice(2, -2)}</strong>
+        : part
+    )
+    if (line.startsWith('- ') || line.startsWith('• ')) {
+      return <div key={i} className="flex gap-1 mt-0.5"><span className="text-emerald-400 shrink-0 mt-0.5">•</span><span>{parts}</span></div>
+    }
+    if (line.trim() === '') return <div key={i} className="h-1.5" />
+    return <div key={i}>{parts}</div>
+  })
+}
+
 export function AIAssistant() {
   const [open, setOpen]           = useState(false)
+  const [mode, setMode]           = useState('quick') // 'quick' | 'agent'
   const [messages, setMessages]   = useState([])
   const [input, setInput]         = useState('')
   const [loading, setLoading]     = useState(false)
@@ -78,45 +104,48 @@ export function AIAssistant() {
   const pathname                   = location.pathname
   const suggestions                = PAGE_SUGGESTIONS[pathname] || PAGE_SUGGESTIONS.default
 
-  // Al abrir por primera vez: pulse check proactivo (no mensaje estático)
+  // Al abrir: bienvenida según modo
   useEffect(() => {
     if (open && messages.length === 0) {
       const firstName = user?.full_name ? user.full_name.split(' ')[0] : null
       const page = getPageLabel(pathname)
 
-      // Mostrar typing dots mientras carga
-      setLoading(true)
-
-      const pulseMsg = `Saluda brevemente a${firstName ? ' ' + firstName : 'l usuario'} (está en ${page}). Luego revisa el estado actual y en máximo 3 puntos breves menciona solo lo que sea urgente o relevante ahora mismo: alertas de stock bajo, si la caja está abierta o cerrada, o algo crítico de DIAN. Si todo está bien, dilo en una línea y ofrece ayuda. Sé conciso.`
-
-      api.post('/ai/chat', {
-        message:              pulseMsg,
-        branch_id:            branchId || undefined,
-        conversation_history: [],
-        page_context:         pathname,
-      }, { timeout: 60000 })
-        .then(({ data }) => {
-          setMessages([{ role: 'assistant', content: data.text }])
-        })
-        .catch(() => {
-          // Fallback: mensaje estático si falla el pulse
-          setMessages([{
-            role: 'assistant',
-            content: `¡Hola${firstName ? ', ' + firstName : ''}! 👋 Soy el asistente de FERZU POS.\n\nEstás en **${page}**. ¿En qué te ayudo?`,
-          }])
-        })
-        .finally(() => setLoading(false))
+      if (mode === 'quick') {
+        // Modo consulta: mensaje estático inmediato (el snapshot lo carga el backend al preguntar)
+        setMessages([{
+          role: 'assistant',
+          content: `¡Hola${firstName ? ', ' + firstName : ''}! Tengo el reporte de los últimos 7 días listo. ¿Qué quieres saber sobre tu negocio?`,
+        }])
+      } else {
+        // Modo agente: pulse proactivo con tool calling
+        setLoading(true)
+        const pulseMsg = `Saluda brevemente a${firstName ? ' ' + firstName : 'l usuario'} (está en ${page}). Luego revisa el estado actual y en máximo 3 puntos breves menciona solo lo que sea urgente o relevante ahora mismo: alertas de stock bajo, si la caja está abierta o cerrada, o algo crítico de DIAN. Si todo está bien, dilo en una línea y ofrece ayuda. Sé conciso.`
+        api.post('/ai/chat', {
+          message: pulseMsg, branch_id: branchId || undefined, conversation_history: [], page_context: pathname,
+        }, { timeout: 60000 })
+          .then(({ data }) => setMessages([{ role: 'assistant', content: data.text }]))
+          .catch(() => setMessages([{ role: 'assistant', content: `¡Hola${firstName ? ', ' + firstName : ''}! 👋 Estás en **${page}**. ¿En qué te ayudo?` }]))
+          .finally(() => setLoading(false))
+      }
     }
     if (open) {
       setHasNew(false)
       setTimeout(() => inputRef.current?.focus(), 100)
     }
-  }, [open])
+  }, [open, mode])
 
   // Scroll al último mensaje
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+  // Cambiar de modo limpia el historial
+  const switchMode = (newMode) => {
+    if (newMode === mode) return
+    setMode(newMode)
+    setMessages([])
+    setInput('')
+  }
 
   const sendMessage = useCallback(async (text) => {
     const msg = (text || input).trim()
@@ -127,20 +156,29 @@ export function AIAssistant() {
     setMessages(prev => [...prev, userMsg])
     setLoading(true)
 
-    // Historial para contexto (últimos 6 mensajes)
-    const history = messages.slice(-6).map(m => ({
-      role: m.role,
-      content: m.content,
-    }))
+    const history = messages.slice(-6).map(m => ({ role: m.role, content: m.content }))
 
     try {
-      const { data } = await api.post('/ai/chat', {
-        message:              msg,
-        branch_id:            branchId || undefined,
-        conversation_history: history,
-        page_context:         pathname,
-      }, { timeout: 60000 }) // IA puede tardar hasta 60s
-      setMessages(prev => [...prev, { role: 'assistant', content: data.text }])
+      let responseText
+      if (mode === 'quick') {
+        // Modo consulta rápida: snapshot pre-cargado en backend, Haiku
+        const { data } = await api.post('/ai/business-chat', {
+          message:              msg,
+          branch_id:            branchId || undefined,
+          conversation_history: history,
+        }, { timeout: 30000 })
+        responseText = data.text
+      } else {
+        // Modo agente: full Claude Sonnet con tool calling
+        const { data } = await api.post('/ai/chat', {
+          message:              msg,
+          branch_id:            branchId || undefined,
+          conversation_history: history,
+          page_context:         pathname,
+        }, { timeout: 60000 })
+        responseText = data.text
+      }
+      setMessages(prev => [...prev, { role: 'assistant', content: responseText }])
       if (!open) setHasNew(true)
     } catch (err) {
       const errMsg = err.response?.data?.error || 'No pude procesar tu pregunta. Intenta de nuevo.'
@@ -148,7 +186,7 @@ export function AIAssistant() {
     } finally {
       setLoading(false)
     }
-  }, [input, loading, messages, branchId, pathname, open])
+  }, [input, loading, messages, branchId, pathname, open, mode])
 
   const handleKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -172,31 +210,47 @@ export function AIAssistant() {
           style={{ height: '520px', maxHeight: 'calc(100vh - 6rem)' }}
         >
           {/* Header */}
-          <div className="flex items-center gap-2.5 px-4 py-3 bg-emerald-600 text-white flex-shrink-0">
-            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-base font-bold">
-              F
+          <div className="flex flex-col bg-emerald-600 flex-shrink-0">
+            <div className="flex items-center gap-2.5 px-4 pt-3 pb-2 text-white">
+              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-base font-bold shrink-0">
+                F
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm leading-tight">Asistente FERZU</p>
+                <p className="text-xs text-emerald-100 truncate">{getPageLabel(pathname)} · IA activa</p>
+              </div>
+              <button onClick={clearChat} className="text-emerald-100 hover:text-white transition-colors p-1 rounded" title="Nueva conversación">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+              <button onClick={() => setOpen(false)} className="text-emerald-100 hover:text-white transition-colors p-1 rounded">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-sm leading-tight">Asistente FERZU</p>
-              <p className="text-xs text-emerald-100 truncate">{getPageLabel(pathname)} · IA activa</p>
+            {/* Tab selector de modo */}
+            <div className="flex px-3 pb-0 gap-1">
+              <button
+                onClick={() => switchMode('quick')}
+                className={`flex-1 flex items-center justify-center gap-1 px-3 py-1.5 rounded-t-lg text-xs font-medium transition-all ${
+                  mode === 'quick'
+                    ? 'bg-white text-emerald-700'
+                    : 'text-emerald-100 hover:bg-white/20'
+                }`}>
+                ⚡ Consulta rápida
+              </button>
+              <button
+                onClick={() => switchMode('agent')}
+                className={`flex-1 flex items-center justify-center gap-1 px-3 py-1.5 rounded-t-lg text-xs font-medium transition-all ${
+                  mode === 'agent'
+                    ? 'bg-white text-emerald-700'
+                    : 'text-emerald-100 hover:bg-white/20'
+                }`}>
+                🔧 Agente avanzado
+              </button>
             </div>
-            <button
-              onClick={clearChat}
-              className="text-emerald-100 hover:text-white transition-colors p-1 rounded"
-              title="Nueva conversación"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setOpen(false)}
-              className="text-emerald-100 hover:text-white transition-colors p-1 rounded"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
           </div>
 
           {/* ── Disclosure obligatorio IA (EU AI Act Art. 50 / CONPES 4144) ── */}
@@ -211,29 +265,36 @@ export function AIAssistant() {
 
           {/* Mensajes */}
           <div className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
-            {messages.map((msg, i) => <Message key={i} msg={msg} />)}
+            {messages.map((msg, i) => {
+              const isUser = msg.role === 'user'
+              return (
+                <div key={i} className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}>
+                  {!isUser && (
+                    <div className="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white text-xs font-bold mr-2 flex-shrink-0 mt-0.5">F</div>
+                  )}
+                  <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+                    isUser ? 'bg-emerald-600 text-white rounded-br-sm' : 'bg-gray-100 text-gray-800 rounded-bl-sm'
+                  }`}>
+                    {!isUser ? <FormatText text={msg.content} /> : msg.content}
+                  </div>
+                </div>
+              )
+            })}
             {loading && (
               <div className="flex justify-start mb-3">
-                <div className="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white text-xs font-bold mr-2 flex-shrink-0 mt-0.5">
-                  F
-                </div>
-                <div className="bg-gray-100 rounded-2xl rounded-bl-sm">
-                  <TypingDots />
-                </div>
+                <div className="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white text-xs font-bold mr-2 flex-shrink-0 mt-0.5">F</div>
+                <div className="bg-gray-100 rounded-2xl rounded-bl-sm"><TypingDots /></div>
               </div>
             )}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Sugerencias rápidas (solo si hay pocos mensajes y ya cargó el pulse) */}
+          {/* Sugerencias rápidas */}
           {messages.length <= 1 && !loading && messages.length > 0 && (
             <div className="px-3 pb-2 flex flex-wrap gap-1.5 flex-shrink-0">
-              {suggestions.map((s, i) => (
-                <button
-                  key={i}
-                  onClick={() => sendMessage(s)}
-                  className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-3 py-1 hover:bg-emerald-100 transition-colors"
-                >
+              {(mode === 'quick' ? QUICK_QUERIES : suggestions).map((s, i) => (
+                <button key={i} onClick={() => sendMessage(s)}
+                  className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-3 py-1 hover:bg-emerald-100 transition-colors">
                   {s}
                 </button>
               ))}
@@ -248,7 +309,7 @@ export function AIAssistant() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKey}
-                placeholder="Escribe tu pregunta…"
+                placeholder={mode === 'quick' ? '¿Cuánto vendí hoy?' : 'Escribe tu pregunta…'}
                 rows={1}
                 className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-400 resize-none outline-none max-h-24 leading-relaxed"
                 style={{ minHeight: '24px' }}

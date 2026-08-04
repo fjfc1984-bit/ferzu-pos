@@ -3,7 +3,7 @@ import { Suspense, lazy, Component } from 'react'
 
 // --- Providers (orden importa: Auth → Plan → POS → Sync) ---
 import { AuthProvider, useAuth } from './context/AuthContext'
-import { PlanProvider, ModuleGuard, AdaptiveNav, PricingPage, TrialBanner } from './components/ModuleGuard'
+import { PlanProvider, ModuleGuard, AdaptiveNav, MobileBottomNav, PricingPage, TrialBanner } from './components/ModuleGuard'
 import { POSProvider } from './context/POSContext'
 import { SyncProvider } from './context/SyncContext'
 import { OfflineBanner } from './components/OfflineBanner'
@@ -38,6 +38,9 @@ const DianSetupWizard    = lazy(() => import('./pages/DianSetupWizard'))
 const ModulesPage        = lazy(() => import('./pages/ModulesPage'))
 const SettingsPage       = lazy(() => import('./pages/SettingsPage'))
 const DailyReportPage    = lazy(() => import('./pages/DailyReportPage'))
+const TablesPage         = lazy(() => import('./pages/TablesPage'))
+const ShiftsPage         = lazy(() => import('./pages/ShiftsPage'))
+const IntegrationsPage   = lazy(() => import('./pages/IntegrationsPage'))
 
 // ---------------------------------------------------------------------------
 // ErrorBoundary global — evita pantalla blanca en errores no capturados
@@ -136,13 +139,15 @@ function AppShell() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TrialBanner />
         <OfflineBanner />
-        <main className="flex-1 overflow-auto">
+        {/* pb-14 en mobile para que el contenido no quede tapado por MobileBottomNav */}
+        <main className="flex-1 overflow-auto pb-14 md:pb-0">
           <Suspense fallback={<PageSpinner />}>
             <Outlet />
           </Suspense>
         </main>
       </div>
       <AIAssistant />
+      <MobileBottomNav />
     </div>
   )
 }
@@ -232,6 +237,9 @@ export default function App() {
                   <Route path="/modules"   element={<ModulesPage />} />
                   <Route path="/checkout" element={<CheckoutPage />} />
                   <Route path="/reporte"  element={<DailyReportPage />} />
+                  <Route path="/restaurant/tables" element={<TablesPage />} />
+                  <Route path="/turnos" element={<ShiftsPage />} />
+                  <Route path="/integraciones" element={<IntegrationsPage />} />
 
                 </Route>
               </Route>

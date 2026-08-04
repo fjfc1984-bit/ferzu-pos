@@ -78,6 +78,65 @@ export async function exportSalesToExcel({ orders, dateRange, businessName }) {
   return fileName
 }
 
+// ── 1b. Exportar reporte semanal WoW a Excel ─────────────────────────────────
+export async function exportWeeklyToExcel({ weeklyData, businessName }) {
+  const XLSX = await loadXLSX();
+
+  const DAY_LABELS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+
+  // Hoja comparativa
+  const compareRows = weeklyData.current.map((day, i) => ({
+    'Día':              DAY_LABELS[i],
+    'Fecha':            weeklyData.current_dates[i],
+    'Ventas semana':    day.total_revenue,
+    'Órdenes semana':   day.total_orders,
+    'Ticket prom.':     day.avg_ticket,
+    'Ventas sem. ant.': weeklyData.prev[i]?.total_revenue || 0,
+    'Órdenes sem. ant.':weeklyData.prev[i]?.total_orders  || 0,
+    'Delta %':          weeklyData.prev[i]?.total_revenue > 0
+      ? `${Math.round(((day.total_revenue - weeklyData.prev[i].total_revenue) / weeklyData.prev[i].total_revenue) * 100)}%`
+      : '—',
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(compareRows);
+  ws['!cols'] = [
+    {wch:10},{wch:12},{wch:16},{wch:14},{wch:14},{wch:16},{wch:16},{wch:10}
+  ];
+
+  // Hoja resumen
+  const { comparison } = weeklyData;
+  const summary = [
+    ['FERZU POS — Reporte Semanal', ''],
+    ['Negocio:', businessName || '—'],
+    ['Semana del:', weeklyData.week_start],
+    ['Generado:', new Date().toLocaleString('es-CO')],
+    ['', ''],
+    ['SEMANA ACTUAL', ''],
+    ['Ventas totales', comparison.revenue.current],
+    ['Órdenes',        comparison.orders.current],
+    ['Ticket promedio', comparison.avg_ticket.current],
+    ['', ''],
+    ['SEMANA ANTERIOR', ''],
+    ['Ventas totales', comparison.revenue.prev],
+    ['Órdenes',        comparison.orders.prev],
+    ['Ticket promedio', comparison.avg_ticket.prev],
+    ['', ''],
+    ['VARIACIÓN WoW', ''],
+    ['Ventas %',    `${comparison.revenue.delta_pct ?? '—'}%`],
+    ['Órdenes %',   `${comparison.orders.delta_pct ?? '—'}%`],
+    ['Ticket % ',   `${comparison.avg_ticket.delta_pct ?? '—'}%`],
+  ];
+  const wsSummary = XLSX.utils.aoa_to_sheet(summary);
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumen WoW');
+  XLSX.utils.book_append_sheet(wb, ws, 'Por día');
+
+  const fileName = `FERZU_Semanal_${weeklyData.week_start}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+  return fileName;
+}
+
 // ── 2. Exportar inventario a Excel ────────────────────────────────────────────
 export async function exportInventoryToExcel({ products, businessName }) {
   const XLSX = await loadXLSX()

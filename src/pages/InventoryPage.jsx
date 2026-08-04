@@ -23,6 +23,7 @@ import {
   SlidersHorizontal, Layers, Sparkles
 } from 'lucide-react';
 import { supabase }      from '../lib/supabase.js';
+import { api }           from '../lib/api.js';
 import { useAuth }       from '../context/AuthContext.jsx';
 import { formatCOP }     from '../lib/math.js';
 import toast             from 'react-hot-toast';
@@ -436,6 +437,58 @@ function ProductForm({ product, organizationId, branchId, categories, onClose, o
   });
   const [saving, setSaving] = useState(false);
 
+  // ── Estado de variantes (solo modo edición) ──────────────────────────────
+  const [variants,        setVariants]       = useState(product?.product_variants?.filter(v => v.is_active !== false) || []);
+  const [variantLoading,  setVariantLoading] = useState(false);
+  const [showVarForm,     setShowVarForm]    = useState(false);
+  const [varForm, setVarForm] = useState({ name: '', sku: '', price: '', cost: '' });
+  const [savingVar, setSavingVar] = useState(false);
+
+  async function loadVariants() {
+    if (!product?.id) return;
+    setVariantLoading(true);
+    try {
+      const res = await api.get(`/products/${product.id}/variants`, { params: { branch_id: branchId } });
+      setVariants(res.data || []);
+    } catch { /* silencioso */ } finally {
+      setVariantLoading(false);
+    }
+  }
+
+  async function saveVariant() {
+    if (!varForm.name.trim()) { toast.error('El nombre es obligatorio'); return; }
+    setSavingVar(true);
+    try {
+      const payload = {
+        name:    varForm.name.trim(),
+        sku:     varForm.sku.trim() || null,
+        price:   varForm.price ? Math.round(Number(varForm.price)) : null,
+        cost:    varForm.cost  ? Math.round(Number(varForm.cost))  : null,
+        sort_order: variants.length,
+      };
+      await api.post(`/products/${product.id}/variants`, payload);
+      setVarForm({ name: '', sku: '', price: '', cost: '' });
+      setShowVarForm(false);
+      await loadVariants();
+      toast.success('Variante agregada');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Error al guardar variante');
+    } finally {
+      setSavingVar(false);
+    }
+  }
+
+  async function deleteVariant(variantId) {
+    if (!confirm('¿Eliminar esta variante?')) return;
+    try {
+      await api.delete(`/products/${product.id}/variants/${variantId}`);
+      setVariants(v => v.filter(x => x.id !== variantId));
+      toast.success('Variante eliminada');
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Error al eliminar');
+    }
+  }
+
   function update(field, val) {
     setForm(f => ({ ...f, [field]: val }));
   }
@@ -633,6 +686,88 @@ function ProductForm({ product, organizationId, branchId, categories, onClose, o
               <FField label="Stock inicial" value={form.initial_stock} onChange={v => update('initial_stock', v)} type="number" placeholder="0" min="0" />
               <FField label="Stock mínimo (alerta)" value={form.min_stock} onChange={v => update('min_stock', v)} type="number" placeholder="5" min="0" />
             </div>
+          )}
+
+          {/* ── Variantes (solo al editar) ─────────────────────────────────── */}
+          {isEdit && (
+            <div className="border border-gray-100 rounded-2xl overflow-hidden">
+              {/* Cabecera */}
+              <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <Layers size={14} className="text-gray-500" />
+                  <span className="text-xs font-semibold text-gray-600">
+                    Variantes ({variants.length})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowVarForm(v => !v)}
+                  className="flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700">
+                  <Plus size={12} /> Agregar
+                </button>
+              </div>
+
+              {/* Formulario nueva variante */}
+              {showVarForm && (
+                <div className="p-3 border-b border-gray-100 bg-brand-50/40 space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <FField label="Nombre *" value={varForm.name} onChange={v => setVarForm(f => ({...f, name: v}))} placeholder="Rojo / Talla M" />
+                    <FField label="SKU variante" value={varForm.sku} onChange={v => setVarForm(f => ({...f, sku: v}))} placeholder="CAF-R-M" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <FField label="Precio (vacío = hereda)" value={varForm.price} onChange={v => setVarForm(f => ({...f, price: v}))} type="number" placeholder={form.price || '0'} min="0" />
+                    <FField label="Costo" value={varForm.cost} onChange={v => setVarForm(f => ({...f, cost: v}))} type="number" placeholder={form.cost || '0'} min="0" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={saveVariant} disabled={savingVar}
+                      className="flex-1 h-9 bg-brand-600 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1 disabled:opacity-50">
+                      {savingVar ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                      {savingVar ? 'Guardando...' : 'Guardar variante'}
+                    </button>
+                    <button type="button" onClick={() => setShowVarForm(false)}
+                      className="px-3 h-9 border border-gray-200 text-xs rounded-xl text-gray-500 hover:bg-gray-50">
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Lista de variantes */}
+              {variantLoading ? (
+                <div className="flex justify-center py-4">
+                  <Loader2 size={16} className="animate-spin text-gray-300" />
+                </div>
+              ) : variants.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-4">Sin variantes. Agrega una arriba.</p>
+              ) : (
+                <ul className="divide-y divide-gray-50">
+                  {variants.map(v => (
+                    <li key={v.id} className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 group">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-gray-800 truncate">{v.name}</p>
+                        <p className="text-[10px] text-gray-400">
+                          {v.sku ? `SKU: ${v.sku} · ` : ''}
+                          {v.price != null ? formatCOP(v.price) : 'Precio heredado'}
+                          {v.current_stock != null ? ` · Stock: ${v.current_stock}` : ''}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => deleteVariant(v.id)}
+                        className="opacity-0 group-hover:opacity-100 ml-2 text-red-400 hover:text-red-600 transition-all">
+                        <Trash2 size={14} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+          {/* Aviso para producto nuevo */}
+          {!isEdit && (
+            <p className="text-[11px] text-gray-400 text-center">
+              💡 Las variantes (tallas, colores, etc.) se configuran después de crear el producto.
+            </p>
           )}
         </div>
 

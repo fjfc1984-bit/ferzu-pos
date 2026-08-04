@@ -699,7 +699,7 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
     .slice(0, 3);
 
   return (
-    <aside className="w-56 bg-gray-950 flex flex-col h-full shrink-0">
+    <aside className="hidden md:flex md:w-56 bg-gray-950 flex-col h-full shrink-0">
 
       {/* Logo */}
       <div className="px-4 py-4 border-b border-white/10">
@@ -770,8 +770,8 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
         )}
       </nav>
 
-      {/* Reporte diario — visible para todos los usuarios */}
-      <div className="px-2 pb-1">
+      {/* Links visibles para todos los usuarios */}
+      <div className="px-2 pb-1 space-y-0.5">
         <Link
           to="/reporte"
           className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
@@ -781,6 +781,16 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
           }`}>
           <BarChart2 size={13} />
           <span>Reporte diario</span>
+        </Link>
+        <Link
+          to="/turnos"
+          className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
+            currentPath?.startsWith('/turnos')
+              ? 'bg-white/20 text-white'
+              : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+          }`}>
+          <Clock size={13} />
+          <span>Mis turnos</span>
         </Link>
       </div>
 
@@ -806,6 +816,26 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
             }`}>
             <Settings2 size={13} />
             <span>Configuración</span>
+          </Link>
+          <Link
+            to="/restaurant/tables"
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
+              currentPath?.startsWith('/restaurant/tables')
+                ? 'bg-white/20 text-white'
+                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+            }`}>
+            <span className="text-sm leading-none">🪑</span>
+            <span>Mapa de mesas</span>
+          </Link>
+          <Link
+            to="/integraciones"
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
+              currentPath?.startsWith('/integraciones')
+                ? 'bg-white/20 text-white'
+                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+            }`}>
+            <span className="text-sm leading-none">🔌</span>
+            <span>Integraciones</span>
           </Link>
         </div>
       )}
@@ -892,6 +922,75 @@ export function TrialBanner() {
   );
 }
 
+
+// =============================================================================
+// SECCIÓN 8: MobileBottomNav — Barra de navegación inferior (solo mobile)
+// Visible en pantallas < md (768px). En md+ el sidebar cubre la navegación.
+// =============================================================================
+
+export function MobileBottomNav() {
+  const { modules, activeModules, plan, trial } = usePlan();
+  const { user }    = useAuth();
+  const navigate    = useNavigate();
+  const location    = useLocation();
+  const currentPath = location.pathname;
+
+  const isAdmin   = ['admin', 'owner'].includes(user?.role);
+  const isInTrial = trial && new Date(trial) > new Date();
+  const ALL_MAIN  = ['pos','barbershop','kitchen','workshop','minimarket','inventory','dashboard'];
+  const effective = isInTrial ? ALL_MAIN : modules;
+
+  const navModules = getNavModules(effective)
+    .filter(mod => activeModules?.[mod.key] !== false)
+    .slice(0, 4); // máx 4 módulos + botón "más"
+
+  // Ítem activo
+  const isActive = (route) => currentPath?.startsWith(route);
+
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-gray-950 border-t border-white/10
+                    flex items-stretch safe-area-inset-bottom">
+      {/* Módulos principales */}
+      {navModules.map(mod => (
+        <button
+          key={mod.key}
+          onClick={() => navigate(mod.route)}
+          className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
+            isActive(mod.route)
+              ? 'text-brand-400'
+              : 'text-white/40 hover:text-white/70'
+          }`}>
+          <span className="text-lg leading-none">{mod.icon}</span>
+          <span className="text-[9px] font-medium truncate max-w-[56px] text-center leading-tight">
+            {mod.label}
+          </span>
+        </button>
+      ))}
+
+      {/* Dashboard siempre presente si hay espacio */}
+      {!navModules.some(m => m.key === 'dashboard') && (
+        <button
+          onClick={() => navigate('/dashboard')}
+          className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
+            isActive('/dashboard') ? 'text-brand-400' : 'text-white/40 hover:text-white/70'
+          }`}>
+          <span className="text-lg leading-none">📊</span>
+          <span className="text-[9px] font-medium">Dashboard</span>
+        </button>
+      )}
+
+      {/* Botón "Más" → reporte / ajustes */}
+      <button
+        onClick={() => navigate(isAdmin ? '/modules' : '/reporte')}
+        className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors ${
+          (isActive('/modules') || isActive('/reporte')) ? 'text-brand-400' : 'text-white/40 hover:text-white/70'
+        }`}>
+        <span className="text-lg leading-none">⋯</span>
+        <span className="text-[9px] font-medium">Más</span>
+      </button>
+    </nav>
+  );
+}
 
 // =============================================================================
 // INTEGRACIÓN EN App.jsx — Cómo usar todo esto

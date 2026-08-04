@@ -42,12 +42,31 @@ export function SyncProvider({ children }) {
     window.addEventListener('online',  handleOnline)
     window.addEventListener('offline', handleOffline)
 
+    // F5: registrar Background Sync API (disponible en Chrome/Edge con SW activo)
+    // Permite que el SW dispare sync incluso si la pestaña está cerrada al volver red
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+      navigator.serviceWorker.ready.then(reg => {
+        reg.sync.register('ferzu-sync-queue').catch(() => {
+          // SyncManager puede fallar en algunos contextos (HTTP, incógnito) — ignorar
+        })
+      }).catch(() => {})
+    }
+
+    // Escuchar mensajes del SW (cuando dispara sync en background)
+    function handleSWMessage(event) {
+      if (event.data?.type === 'SYNC_COMPLETE') {
+        refreshPendingCount()
+      }
+    }
+    navigator.serviceWorker?.addEventListener('message', handleSWMessage)
+
     refreshPendingCount()
     if (navigator.onLine) syncRef.current = setTimeout(processSyncQueue, 3000)
 
     return () => {
       window.removeEventListener('online',  handleOnline)
       window.removeEventListener('offline', handleOffline)
+      navigator.serviceWorker?.removeEventListener('message', handleSWMessage)
       clearTimeout(syncRef.current)
     }
   }, [])

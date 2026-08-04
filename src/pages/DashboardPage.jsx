@@ -31,6 +31,7 @@ import { format, subDays, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ReportExporter } from '../components/ReportExporter.jsx';
 import { useTrack }       from '../hooks/useTrack.js';
+import { saveDashboardCache, loadDashboardCache } from '../lib/offlineCache.js';
 
 // =============================================================================
 // SECCIÓN 1: DashboardPage — Layout principal
@@ -127,6 +128,21 @@ export default function DashboardPage() {
   const [aiReport,   setAiReport]   = useState('');
   const [aiLoading,  setAiLoading]  = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  // F5: estado offline
+  const [isOnline,    setIsOnline]    = useState(navigator.onLine);
+  const [cachedAt,    setCachedAt]    = useState(null); // timestamp del caché mostrado
+
+  // F5: monitorear conectividad
+  useEffect(() => {
+    const goOnline  = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online',  goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online',  goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
 
   // T140: cargar todas las sucursales de la org (para modo consolidado)
   useEffect(() => {
@@ -143,7 +159,7 @@ export default function DashboardPage() {
   const effectiveBranchId  = consolidated ? null : branchId;
   const effectiveBranchIds = consolidated ? orgBranchIds : (branchId ? [branchId] : []);
 
-  const { kpis, salesChart, heatmap, topProducts, stockAlerts, cashSession, loading, refresh }
+  const { kpis, salesChart, heatmap, topProducts, stockAlerts, cashSession, loading, refresh, fromCache, cachedAt }
     = useDashboard(effectiveBranchId, organizationId, range, effectiveBranchIds);
 
   // Ref siempre actualizada — evita que el intervalo capture refresh() estale
@@ -181,8 +197,19 @@ export default function DashboardPage() {
       {/* ── TEMPORAL: Modal DIAN — eliminar cuando ya no se necesite ── */}
       <DIANPromoModal />
 
+      {/* ── F5: Banner datos offline ── */}
+      {(!isOnline || fromCache) && (
+        <div className={`shrink-0 flex items-center justify-center gap-2 px-4 py-1.5 text-xs font-medium
+          ${!isOnline ? 'bg-red-600 text-white' : 'bg-amber-50 text-amber-700 border-b border-amber-200'}`}>
+          {!isOnline
+            ? '⚡ Sin conexión — mostrando datos guardados localmente'
+            : `📦 Datos del caché · ${cachedAt ? format(new Date(cachedAt), "d MMM, h:mm a", { locale: es }) : '—'} · Reconecta para actualizar`
+          }
+        </div>
+      )}
+
       {/* ── Header ── */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0">
+      <div className="bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex items-center justify-between shrink-0 gap-2">
         <div>
           <h1 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <BarChart3 size={20} className="text-brand-600" />
@@ -199,27 +226,27 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3 flex-wrap">
           {/* T140: Toggle vista consolidada — solo admin/owner con múltiples sucursales */}
           {isAdmin && orgBranchIds.length > 1 && (
             <button
               onClick={() => setConsolidated(c => !c)}
               title={consolidated ? 'Ver sucursal actual' : 'Ver todas las sucursales'}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 md:px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
                 consolidated
                   ? 'bg-brand-100 text-brand-700 border border-brand-300'
                   : 'bg-gray-100 text-gray-500 hover:text-gray-700 hover:bg-gray-200'
               }`}>
               {consolidated ? <Layers size={13} /> : <Building2 size={13} />}
-              {consolidated ? 'Consolidado' : 'Por sucursal'}
+              <span className="hidden sm:inline">{consolidated ? 'Consolidado' : 'Por sucursal'}</span>
             </button>
           )}
 
           {/* Selector de rango */}
           <div className="flex bg-gray-100 rounded-xl overflow-hidden">
-            {[['today','Hoy'],['week','Semana'],['month','Mes']].map(([val, label]) => (
+            {[['today','Hoy'],['week','Sem'],['month','Mes']].map(([val, label]) => (
               <button key={val} onClick={() => setRange(val)}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                className={`px-2.5 md:px-3 py-1.5 text-xs font-medium transition-colors ${
                   range === val ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
                 }`}>
                 {label}
@@ -243,7 +270,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Contenido scrolleable ── */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-5">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-5">
 
         {/* ── Empty state: sin sucursal ── */}
         {!loading && !branchId && (
@@ -303,8 +330,8 @@ export default function DashboardPage() {
         <KPICards kpis={kpis} loading={loading} />
 
         {/* Fila 2: Gráfica + Mapa de calor */}
-        <div className="grid grid-cols-3 gap-5">
-          <div className="col-span-2">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 xl:gap-5">
+          <div className="xl:col-span-2">
             <SalesChart data={salesChart} range={range} loading={loading} />
           </div>
           <div>
@@ -313,7 +340,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Fila 3: Top productos + Alertas stock + Caja */}
-        <div className="grid grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 xl:gap-5">
           <TopProducts products={topProducts} loading={loading} />
           <StockAlerts  alerts={stockAlerts} loading={loading} />
           <CashSessionSummary session={cashSession} loading={loading} />
@@ -380,7 +407,7 @@ function KPICards({ kpis, loading }) {
   ];
 
   return (
-    <div className="grid grid-cols-5 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
       {cards.map(({ label, value, prev, icon: Icon, color, bg }) => (
         <div key={label} className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm">
           <div className="flex items-center justify-between mb-3">
@@ -752,6 +779,12 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
   const [stockAlerts,  setStockAlerts]  = useState([]);
   const [cashSession,  setCashSession]  = useState(null);
   const [loading,      setLoading]      = useState(true);
+  // F5: metadatos de caché offline
+  const [fromCache,    setFromCache]    = useState(false);
+  const [cachedAt,     setCachedAt_]    = useState(null);
+
+  // Acumulador de resultados para guardar caché al final del refresh
+  const freshDataRef = useRef({});
 
   // Helper: aplica el filtro de sucursal correcto a una query
   function applyBranchFilter(query, field = 'branch_id') {
@@ -759,9 +792,34 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
     return query.eq(field, branchId);
   }
 
+  // Clave de caché: primer branch disponible (o 'consolidated')
+  const cacheKey = branchId || (branchIds[0] || 'consolidated');
+
   async function refresh() {
     if (!branchId && !isConsolidated) { setLoading(false); return; }
+
+    // F5: sin red → intentar caché de Dexie primero
+    if (!navigator.onLine) {
+      const cached = await loadDashboardCache(cacheKey, range);
+      if (cached?.data) {
+        const d = cached.data;
+        if (d.kpis)        setKpis(d.kpis);
+        if (d.salesChart)  setSalesChart(d.salesChart);
+        if (d.heatmap)     setHeatmap(d.heatmap);
+        if (d.topProducts) setTopProducts(d.topProducts);
+        if (d.stockAlerts) setStockAlerts(d.stockAlerts);
+        if (d.cashSession) setCashSession(d.cashSession);
+        setFromCache(true);
+        setCachedAt_(cached.cached_at);
+        setLoading(false);
+        return;
+      }
+      // Sin caché disponible → dejar que Workbox sirva desde Service Worker
+    }
+
     setLoading(true);
+    setFromCache(false);
+    freshDataRef.current = {};
     const { from, to } = dateRange(range);
 
     // Promise.allSettled garantiza que un fallo en una sub-query no rompe las demás.
@@ -774,6 +832,12 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
       loadStockAlerts().catch(e => console.warn('[Dashboard] loadStockAlerts:', e.message)),
       loadCashSession().catch(e => console.warn('[Dashboard] loadCashSession:', e.message)),
     ]);
+
+    // F5: guardar resultados en Dexie para uso offline posterior
+    if (Object.keys(freshDataRef.current).length > 0) {
+      saveDashboardCache(cacheKey, range, freshDataRef.current).catch(() => {});
+    }
+
     setLoading(false);
   }
 
@@ -815,7 +879,7 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
 
     const newCustIds = new Set(safeOrders.filter(o => o.customer_id).map(o => o.customer_id));
 
-    setKpis({
+    const kpisData = {
       totalSales,
       totalOrders,
       avgTicket,
@@ -824,7 +888,9 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
       salesVsPrev:  prevSales > 0 ? Math.round(((totalSales - prevSales) / prevSales) * 100) : 0,
       ordersVsPrev: prevCount > 0 ? Math.round(((totalOrders - prevCount) / prevCount) * 100) : 0,
       avgTicketVsPrev: prevCount > 0 ? Math.round(((avgTicket - (prevSales / prevCount)) / (prevSales / prevCount)) * 100) : 0,
-    });
+    };
+    setKpis(kpisData);
+    freshDataRef.current.kpis = kpisData; // F5: acumular para caché offline
   }
 
   async function loadSalesChart(from, to) {
@@ -864,14 +930,13 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
         if (!grouped[sortKey]) grouped[sortKey] = { label, total: 0 };
         grouped[sortKey].total += o.total;
       }
-      setSalesChart(
-        Object.keys(grouped)
-          .sort()
-          .map(k => grouped[k])
-      );
+      const chartData = Object.keys(grouped).sort().map(k => grouped[k]);
+      setSalesChart(chartData);
+      freshDataRef.current.salesChart = chartData; // F5
       return;
     }
     setSalesChart(data);
+    freshDataRef.current.salesChart = data; // F5
   }
 
   async function loadHeatmap(from, to) {
@@ -889,7 +954,9 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
       byHour[h].count++;
       byHour[h].total += o.total;
     }
-    setHeatmap(Object.values(byHour));
+    const heatmapData = Object.values(byHour);
+    setHeatmap(heatmapData);
+    freshDataRef.current.heatmap = heatmapData; // F5
   }
 
   async function loadTopProducts(from, to) {
@@ -913,11 +980,9 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
       map[item.product_id].total    += item.subtotal;
     }
 
-    setTopProducts(
-      Object.values(map)
-        .sort((a, b) => b.total - a.total)
-        .slice(0, 5)
-    );
+    const topData = Object.values(map).sort((a, b) => b.total - a.total).slice(0, 5);
+    setTopProducts(topData);
+    freshDataRef.current.topProducts = topData; // F5
   }
 
   async function loadStockAlerts() {
@@ -936,17 +1001,20 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
         supabase.from('inventory').select('product_id, quantity, products(name, min_stock)')
       );
       const lowStock = (raw || []).filter(r => r.quantity <= (r.products?.min_stock || 0));
-      setStockAlerts(lowStock.map(d => ({
+      const alertsData = lowStock.map(d => ({
         product_id: d.product_id,
         name:       d.products?.name || '—',
         quantity:   d.quantity,
         min_stock:  d.products?.min_stock || 0,
         status:     d.quantity === 0 ? 'out_of_stock' : 'low_stock',
-      })));
+      }));
+      setStockAlerts(alertsData);
+      freshDataRef.current.stockAlerts = alertsData; // F5
       return;
     }
 
     setStockAlerts(alerts || []);
+    freshDataRef.current.stockAlerts = alerts || []; // F5
   }
 
   async function loadCashSession() {
@@ -977,7 +1045,7 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
       }
     }
 
-    setCashSession({
+    const sessionData = {
       id:            data.id,
       opening_cash:  data.opening_cash,
       opened_at:     data.opened_at,
@@ -985,8 +1053,10 @@ export function useDashboard(branchId, organizationId, range, branchIds = []) {
       digital_sales: digitalSales,
       expected_cash: data.opening_cash + cashSales,
       orders_count:  orderCount,
-    });
+    };
+    setCashSession(sessionData);
+    freshDataRef.current.cashSession = sessionData; // F5
   }
 
-  return { kpis, salesChart, heatmap, topProducts, stockAlerts, cashSession, loading, refresh };
+  return { kpis, salesChart, heatmap, topProducts, stockAlerts, cashSession, loading, refresh, fromCache, cachedAt };
 }

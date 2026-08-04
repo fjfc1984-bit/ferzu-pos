@@ -92,6 +92,62 @@ export async function markOrderPaid(orderId, organizationId, userId) {
     }
   }
 
+  // ── Fidelización: acumular puntos del cliente (fire-and-forget) ─────────────
+  (async () => {
+    try {
+      // Obtener total de la orden y customer_id
+      const { data: ord } = await supabaseAdmin
+        .from('orders')
+        .select('total, customer_id')
+        .eq('id', orderId)
+        .single();
+
+      if (!ord?.customer_id || !ord?.total) return;
+
+      // Obtener config de la org (defaults si no existe)
+      const { data: cfg } = await supabaseAdmin
+        .from('loyalty_settings')
+        .select('enabled, points_per_100cop')
+        .eq('organization_id', organizationId)
+        .single();
+
+      const enabled         = cfg?.enabled          ?? true;
+      const pointsPer100cop = cfg?.points_per_100cop ?? 1;
+
+      if (!enabled || pointsPer100cop <= 0) return;
+
+      // Calcular puntos: floor(total / 100) * pointsPer100cop
+      const points = Math.floor(ord.total / 100) * pointsPer100cop;
+      if (points <= 0) return;
+
+      await supabaseAdmin.rpc('earn_loyalty_points', {
+        p_organization_id: organizationId,
+        p_customer_id:     ord.customer_id,
+        p_order_id:        orderId,
+        p_points:          points,
+        p_notes:           `Compra ${orderId.slice(0, 8)}`,
+      });
+
+      logger.info(`[loyalty] ✅ ${points} puntos acumulados — cliente ${ord.customer_id}`);
+    } catch (loyaltyErr) {
+      logger.error('[loyalty] ⚠️ Error acumulando puntos (no crítico):', { err: loyaltyErr.message, orderId });
+    }
+  })();
+
+  // ── Facturación electrónica DIAN (fire-and-forget, no bloquea el pago) ──────
+  (async () => {
+    try {
+      const { triggerElectronicInvoice } = await import('../lib/dian.js');
+      const result = await triggerElectronicInvoice(orderId, organizationId);
+      if (result?.invoiceNumber) {
+        logger.info(`[DIAN] ✅ Factura ${result.invoiceNumber} emitida para orden ${orderId}`);
+      }
+    } catch (dianErr) {
+      // Error no crítico — la venta ya fue registrada, DIAN se reintentará por contingencia
+      logger.error('[DIAN] ⚠️ Error generando factura electrónica (no crítico):', { err: dianErr.message, orderId });
+    }
+  })();
+
   // ── WhatsApp: enviar recibo al cliente si está configurado ──────────────────
   if (isWhatsAppConfigured()) {
     try {

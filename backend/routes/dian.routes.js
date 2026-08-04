@@ -383,6 +383,51 @@ router.post('/setup', requireOrg, [
 });
 
 
+// =============================================================================
+// GET /api/dian/invoices
+// Lista facturas electrónicas de la organización con filtros de fecha/estado.
+// Query: { date?: YYYY-MM-DD, status?: pending|sending|accepted|rejected|contingency, limit?: 50 }
+// =============================================================================
+router.get('/invoices', requireOrg, async (req, res) => {
+  try {
+    const { date, status, limit = 50 } = req.query;
+
+    let query = supabaseAdmin
+      .from('electronic_invoices')
+      .select('id, invoice_number, invoice_prefix, cufe, dian_status, issued_at, accepted_at, customer_name, customer_nit, customer_email, subtotal, tax_total, total, pdf_url, order_id')
+      .eq('organization_id', req.organizationId)
+      .order('issued_at', { ascending: false })
+      .limit(Math.min(Number(limit) || 50, 200));
+
+    if (date) {
+      query = query
+        .gte('issued_at', `${date}T00:00:00.000Z`)
+        .lte('issued_at', `${date}T23:59:59.999Z`);
+    }
+    if (status) {
+      query = query.eq('dian_status', status);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    // Estadísticas rápidas del resultado
+    const stats = {
+      total:      data.length,
+      accepted:   data.filter(i => i.dian_status === 'accepted').length,
+      pending:    data.filter(i => ['pending','sending'].includes(i.dian_status)).length,
+      rejected:   data.filter(i => i.dian_status === 'rejected').length,
+      contingency:data.filter(i => i.dian_status === 'contingency').length,
+      totalAmount:data.reduce((s, i) => s + (i.total || 0), 0),
+    };
+
+    res.json({ invoices: data || [], stats });
+  } catch (err) {
+    console.error('[DIAN] invoices error:', err);
+    res.status(500).json({ error: 'Error consultando facturas', detail: err.message });
+  }
+});
+
 // POST /api/dian/vat-audit-log
 // Registra la decisión del usuario sobre la sugerencia del clasificador IVA.
 // Permite medir tasa de override para detectar sesgo o errores sistemáticos.

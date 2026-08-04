@@ -16,7 +16,8 @@ import {
   FileText, AlertTriangle, CheckCircle2, RefreshCw, Loader2,
   Hash, Clock, TrendingUp, XCircle, ShieldCheck, Zap,
   RotateCcw, ChevronRight, Info, Calendar, BarChart3,
-  Search, CheckCircle, AlertCircle, Settings2
+  Search, CheckCircle, AlertCircle, Settings2, List,
+  Download, Mail, Eye, DollarSign
 } from 'lucide-react';
 import { api }      from '../lib/api.js';
 import { supabase } from '../lib/supabase.js';
@@ -38,9 +39,10 @@ export default function DianPage() {
   useEffect(() => { track('module_view', 'dian') }, [track]);
 
   const TABS = [
-    { key: 'overview',     label: 'Resumen',      icon: BarChart3  },
+    { key: 'overview',     label: 'Resumen',      icon: BarChart3    },
+    { key: 'invoices',     label: 'Facturas',     icon: List         },
     { key: 'contingency',  label: 'Contingencias', icon: AlertTriangle },
-    { key: 'nit',          label: 'Validar NIT',  icon: ShieldCheck },
+    { key: 'nit',          label: 'Validar NIT',  icon: ShieldCheck  },
   ];
 
   return (
@@ -85,9 +87,216 @@ export default function DianPage() {
 
       {/* Contenido */}
       <div className="flex-1 overflow-y-auto p-6">
-        {tab === 'overview'    && <OverviewTab   organizationId={organizationId} />}
-        {tab === 'contingency' && <ContingencyTab organizationId={organizationId} />}
+        {tab === 'overview'    && <OverviewTab     organizationId={organizationId} />}
+        {tab === 'invoices'    && <InvoicesTab    organizationId={organizationId} />}
+        {tab === 'contingency' && <ContingencyTab  organizationId={organizationId} />}
         {tab === 'nit'         && <NITValidatorTab />}
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// SECCIÓN NUEVA: InvoicesTab — Lista de facturas electrónicas del día
+// =============================================================================
+
+const STATUS_CONFIG = {
+  accepted:    { label: 'Aceptada',     bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
+  pending:     { label: 'Pendiente',    bg: 'bg-gray-100',    text: 'text-gray-600',    dot: 'bg-gray-400'    },
+  sending:     { label: 'Enviando',     bg: 'bg-blue-100',    text: 'text-blue-700',    dot: 'bg-blue-500'    },
+  rejected:    { label: 'Rechazada',    bg: 'bg-red-100',     text: 'text-red-700',     dot: 'bg-red-500'     },
+  contingency: { label: 'Contingencia', bg: 'bg-amber-100',   text: 'text-amber-700',   dot: 'bg-amber-500'   },
+};
+
+function InvoicesTab({ organizationId }) {
+  const [invoices,    setInvoices]    = useState([]);
+  const [stats,       setStats]       = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [statusFilter,setStatusFilter]= useState('all');
+  const [date,        setDate]        = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [expanded,    setExpanded]    = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = { date, limit: 100 };
+      if (statusFilter !== 'all') params.status = statusFilter;
+      const { data } = await api.get('/dian/invoices', { params });
+      setInvoices(data.invoices || []);
+      setStats(data.stats || null);
+    } catch {
+      toast.error('Error cargando facturas');
+    } finally {
+      setLoading(false);
+    }
+  }, [date, statusFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const fmtCOP = (n) =>
+    new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n || 0);
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-4">
+      {/* Filtros */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Calendar size={14} className="text-gray-400" />
+            <input
+              type="date"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+              className="text-sm border border-gray-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-300"
+            />
+          </div>
+          <div className="flex gap-1 flex-wrap">
+            {[['all','Todas'],['accepted','Aceptadas'],['pending','Pendientes'],['rejected','Rechazadas'],['contingency','Contingencia']].map(([v,l]) => (
+              <button key={v} onClick={() => setStatusFilter(v)}
+                className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors ${
+                  statusFilter === v
+                    ? 'bg-brand-600 text-white border-brand-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-brand-300'
+                }`}>{l}</button>
+            ))}
+          </div>
+          <button onClick={load}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+            <RefreshCw size={12} /> Actualizar
+          </button>
+        </div>
+      </div>
+
+      {/* Stats del día */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Total facturas', value: stats.total,       icon: FileText,    color: 'text-brand-600' },
+            { label: 'Aceptadas',      value: stats.accepted,    icon: CheckCircle, color: 'text-emerald-600' },
+            { label: 'Con problemas',  value: stats.rejected + stats.contingency, icon: AlertCircle, color: 'text-red-500' },
+            { label: 'Valor total',    value: fmtCOP(stats.totalAmount), icon: DollarSign, color: 'text-gray-700', isText: true },
+          ].map(({ label, value, icon: Icon, color, isText }) => (
+            <div key={label} className="bg-white rounded-2xl border border-gray-200 p-4 flex items-center gap-3">
+              <div className={`w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center`}>
+                <Icon size={15} className={color} />
+              </div>
+              <div>
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide">{label}</p>
+                <p className={`text-sm font-bold ${color}`}>{isText ? value : value}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Lista */}
+      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 size={24} className="animate-spin text-brand-500" />
+          </div>
+        ) : invoices.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-400">
+            <FileText size={32} className="opacity-40" />
+            <p className="text-sm">No hay facturas para este día</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {invoices.map(inv => {
+              const cfg = STATUS_CONFIG[inv.dian_status] || STATUS_CONFIG.pending;
+              const isOpen = expanded === inv.id;
+              return (
+                <div key={inv.id} className="hover:bg-gray-50 transition-colors">
+                  <button
+                    onClick={() => setExpanded(isOpen ? null : inv.id)}
+                    className="w-full px-5 py-3.5 flex items-center gap-3 text-left">
+                    {/* Status dot */}
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`} />
+                    {/* Número */}
+                    <span className="font-mono text-sm font-semibold text-gray-800 w-36 shrink-0 truncate">
+                      {inv.invoice_number || '—'}
+                    </span>
+                    {/* Cliente */}
+                    <span className="text-sm text-gray-600 flex-1 truncate">
+                      {inv.customer_name || 'Consumidor final'}
+                    </span>
+                    {/* Total */}
+                    <span className="text-sm font-medium text-gray-800 w-28 text-right shrink-0">
+                      {fmtCOP(inv.total)}
+                    </span>
+                    {/* Estado */}
+                    <span className={`text-[11px] font-medium px-2.5 py-0.5 rounded-full ${cfg.bg} ${cfg.text} w-28 text-center shrink-0`}>
+                      {cfg.label}
+                    </span>
+                    {/* Hora */}
+                    <span className="text-xs text-gray-400 w-20 text-right shrink-0">
+                      {inv.issued_at ? format(parseISO(inv.issued_at), 'HH:mm', { locale: es }) : '—'}
+                    </span>
+                    <ChevronRight size={14} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                  </button>
+
+                  {/* Detalle expandible */}
+                  {isOpen && (
+                    <div className="px-6 pb-4 pt-0 bg-gray-50 border-t border-gray-100">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-8 gap-y-2 text-xs py-3">
+                        <div>
+                          <p className="text-gray-400 uppercase tracking-wide mb-0.5">CUFE</p>
+                          <p className="font-mono text-gray-600 truncate text-[11px]">{inv.cufe || '—'}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-400 uppercase tracking-wide mb-0.5">NIT / Doc comprador</p>
+                          <p className="font-medium text-gray-700">{inv.customer_nit || '222.222.222'}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-400 uppercase tracking-wide mb-0.5">Subtotal / IVA</p>
+                          <p className="font-medium text-gray-700">{fmtCOP(inv.subtotal)} / {fmtCOP(inv.tax_total)}</p>
+                        </div>
+                        <div>
+                          <p className="text-gray-400 uppercase tracking-wide mb-0.5">Aceptada</p>
+                          <p className="font-medium text-gray-700">
+                            {inv.accepted_at ? format(parseISO(inv.accepted_at), 'dd/MM/yyyy HH:mm') : '—'}
+                          </p>
+                        </div>
+                        {inv.customer_email && (
+                          <div>
+                            <p className="text-gray-400 uppercase tracking-wide mb-0.5">Email</p>
+                            <p className="font-medium text-gray-700 truncate">{inv.customer_email}</p>
+                          </div>
+                        )}
+                      </div>
+                      {/* Acciones */}
+                      <div className="flex items-center gap-2 mt-2">
+                        {inv.pdf_url && (
+                          <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-brand-700 border border-brand-200 rounded-xl hover:bg-brand-50 transition-colors">
+                            <Download size={12} /> Descargar PDF
+                          </a>
+                        )}
+                        {inv.customer_email && inv.dian_status === 'accepted' && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await api.post(`/dian/resend-email/${inv.id}`);
+                                toast.success('Email reenviado');
+                              } catch {
+                                toast.error('Error reenviando email');
+                              }
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+                            <Mail size={12} /> Reenviar email
+                          </button>
+                        )}
+                        <span className="text-[10px] text-gray-400 ml-auto font-mono">
+                          Orden: {inv.order_id?.slice(0, 8)}…
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

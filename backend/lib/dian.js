@@ -499,6 +499,16 @@ export async function triggerElectronicInvoice(orderId, organizationId) {
 
     if (!dianConfig) return; // FE no configurada → no emitir
 
+    // Normalizar nombres de columna (la tabla usa prefix/pta_provider/from_number/to_number)
+    const dianCfg = {
+      ...dianConfig,
+      resolution_prefix:  dianConfig.prefix         ?? dianConfig.resolution_prefix,
+      provider:           dianConfig.pta_provider    ?? dianConfig.provider,
+      resolution_from:    dianConfig.from_number     ?? dianConfig.resolution_from,
+      resolution_to:      dianConfig.to_number       ?? dianConfig.resolution_to,
+      resolution_expires_at: dianConfig.resolution_end_date ?? dianConfig.resolution_expires_at,
+    };
+
     // ── 2. Cargar datos de la orden ───────────────────────────────────────────
     const { data: order } = await supabaseAdmin
       .from('orders')
@@ -550,7 +560,7 @@ export async function triggerElectronicInvoice(orderId, organizationId) {
     }) + '-05:00';
 
     const { cufe } = calculateCUFE({
-      invoiceNumber: `${dianConfig.resolution_prefix}${invoiceNumber}`,
+      invoiceNumber: `${dianCfg.resolution_prefix}${invoiceNumber}`,
       issueDate,
       issueTime,
       subtotalNoVat: order.subtotal,
@@ -563,8 +573,8 @@ export async function triggerElectronicInvoice(orderId, organizationId) {
       grandTotal:    order.total,
       issuerNit:     org.nit,
       buyerDocNumber: buyer.docNumber || '222222222222',
-      technicalKey:  dianConfig.api_key,
-      environment:   dianConfig.environment === 'production'
+      technicalKey:  dianCfg.api_key || dianCfg.technical_key || 'FERZU-TEST-KEY',
+      environment:   dianCfg.environment === 'production'
         ? DIAN_ENVIRONMENTS.PRODUCTION
         : DIAN_ENVIRONMENTS.TEST,
     });
@@ -579,16 +589,16 @@ export async function triggerElectronicInvoice(orderId, organizationId) {
       },
       buyer,
       resolution: {
-        number:    dianConfig.resolution_number,
-        prefix:    dianConfig.resolution_prefix,
-        from:      dianConfig.resolution_from,
-        to:        dianConfig.resolution_to,
-        endDate:   dianConfig.resolution_expires_at,
+        number:    dianCfg.resolution_number,
+        prefix:    dianCfg.resolution_prefix,
+        from:      dianCfg.resolution_from,
+        to:        dianCfg.resolution_to,
+        endDate:   dianCfg.resolution_expires_at,
       },
       invoice:     { number: invoiceNumber },
       items,
       totals,
-      environment: dianConfig.environment === 'production'
+      environment: dianCfg.environment === 'production'
         ? DIAN_ENVIRONMENTS.PRODUCTION
         : DIAN_ENVIRONMENTS.TEST,
     });
@@ -627,12 +637,12 @@ export async function triggerElectronicInvoice(orderId, organizationId) {
       },
       buyer,
       resolution: {
-        number:    dianConfig.resolution_number,
-        prefix:    dianConfig.resolution_prefix,
-        from:      dianConfig.resolution_from,
-        to:        dianConfig.resolution_to,
-        startDate: dianConfig.resolution_date,
-        endDate:   dianConfig.resolution_expires_at,
+        number:    dianCfg.resolution_number,
+        prefix:    dianCfg.resolution_prefix,
+        from:      dianCfg.resolution_from,
+        to:        dianCfg.resolution_to,
+        startDate: dianCfg.resolution_date,
+        endDate:   dianCfg.resolution_expires_at,
       },
       invoice: {
         number:    invoiceNumber,
@@ -643,19 +653,19 @@ export async function triggerElectronicInvoice(orderId, organizationId) {
       },
       items, totals,
       payments: order.payments,
-      environment: dianConfig.environment === 'production'
+      environment: dianCfg.environment === 'production'
         ? DIAN_ENVIRONMENTS.PRODUCTION
         : DIAN_ENVIRONMENTS.TEST,
-      technicalKey: dianConfig.api_key,
+      technicalKey: dianCfg.api_key || dianCfg.technical_key || 'FERZU-TEST-KEY',
       cufe,
     });
 
     // ── 8. Crear registro en BD ───────────────────────────────────────────────
-    const fullInvoiceNumber = `${dianConfig.resolution_prefix}${invoiceNumber}`;
+    const fullInvoiceNumber = `${dianCfg.resolution_prefix}${invoiceNumber}`;
     const { data: einvoice } = await supabaseAdmin.from('electronic_invoices').insert({
       organization_id: organizationId,
       order_id:        orderId,
-      invoice_prefix:  dianConfig.resolution_prefix,
+      invoice_prefix:  dianCfg.resolution_prefix,
       invoice_number:  fullInvoiceNumber,
       cufe,
       invoice_type:    'FV',
@@ -682,7 +692,7 @@ export async function triggerElectronicInvoice(orderId, organizationId) {
       .eq('id', einvoice.id);
 
     // ── 10. Enviar al Proveedor Tecnológico Autorizado (PTA) ──────────────────
-    const ptaResponse = await sendToPTA(xmlString, fullInvoiceNumber, dianConfig);
+    const ptaResponse = await sendToPTA(xmlString, fullInvoiceNumber, dianCfg);
 
     // ── 11. Procesar respuesta del PTA / DIAN ─────────────────────────────────
     if (ptaResponse.success) {
@@ -802,6 +812,46 @@ async function sendToPTA(xmlString, invoiceNumber, dianConfig) {
     default:
       throw new Error(`Proveedor PTA no soportado: ${provider}`);
   }
+}
+
+// Helper: Convertir XML UBL 2.1 al formato JSON que espera Siigo API
+// Nota: Siigo API v1 acepta JSON directamente — el XML se parsea aquí como intermediate step.
+// Referencia: https://developer.siigo.com/docs/invoices
+function parseXMLToSiigoFormat(xmlString) {
+  // Extractor liviano via regex — suficiente para los campos que Siigo necesita
+  const extract = (tag) => {
+    const m = xmlString.match(new RegExp(`<(?:cbc:)?${tag}[^>]*>([^<]+)<\/(?:cbc:)?${tag}>`));
+    return m ? m[1].trim() : '';
+  };
+
+  const invoiceNumber = extract('ID');
+  const issueDate     = extract('IssueDate');
+  const totalAmount   = parseFloat(extract('PayableAmount') || '0');
+
+  // Siigo requiere formato YYYY-MM-DD
+  return {
+    document: {
+      id: 1, // FV = Factura de Venta (1 en Siigo)
+    },
+    date: issueDate,
+    customer: {
+      identification: extract('CompanyID') || '222222222',
+    },
+    seller: 0, // Vendedor predeterminado
+    observations: `Factura ${invoiceNumber}`,
+    items: [{
+      code: 'FERZU-ITEM',
+      description: `Venta ${invoiceNumber}`,
+      quantity: 1,
+      price: totalAmount,
+      discount: 0,
+      taxes: [],
+    }],
+    payments: [{
+      id: 1, // Efectivo en Siigo
+      value: totalAmount,
+    }],
+  };
 }
 
 // Helper: Enviar factura por email usando Resend

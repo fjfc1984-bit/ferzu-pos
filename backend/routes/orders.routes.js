@@ -31,7 +31,26 @@ router.post('/', [
       customer_id, table_id, appointment_id,
       items, discount_type, discount_value, notes,
       payment_method, cash_received, metadata = {},
+      tip_amount: rawTip,
+      loyalty_discount:        rawLoyaltyDiscount,
+      loyalty_points_redeemed: rawLoyaltyPoints,
+      // F10: Cortesías
+      is_courtesy:            rawIsCourtesy,
+      courtesy_authorized_by: rawCourtesyAuth,
+      courtesy_reason:        rawCourtesyReason,
     } = req.body;
+
+    // Propina: entero >= 0, enviado por el cajero (monto explícito elegido por el cliente)
+    const tip_amount = Math.round(Math.max(0, Number(rawTip) || 0));
+
+    // F10: Cortesía a nivel de orden
+    const is_courtesy            = rawIsCourtesy === true || rawIsCourtesy === 'true';
+    const courtesy_authorized_by = (rawCourtesyAuth || '').trim() || null;
+    const courtesy_reason        = (rawCourtesyReason || '').trim() || null;
+
+    if (is_courtesy && !courtesy_authorized_by) {
+      return res.status(400).json({ error: 'Las cortesías requieren indicar quién las autoriza' });
+    }
 
     // 1. Cargar productos desde BD (precios oficiales, nunca del cliente)
     const productIds = [...new Set(items.map(i => i.product_id))];
@@ -46,13 +65,19 @@ router.post('/', [
     const productMap = Object.fromEntries(products.map(p => [p.id, p]));
 
     // 2. Calcular totales (BACKEND — sin flotantes)
-    let subtotal    = 0;
-    let tax_total   = 0;
-    const orderItems = [];
+    let subtotal        = 0;
+    let tax_total       = 0;
+    let courtesy_amount = 0;  // F10: valor real de ítems/orden dados como cortesía
+    const orderItems    = [];
 
     for (const item of items) {
-      const prod = productMap[item.product_id];
-      const qty  = item.quantity;
+      const prod         = productMap[item.product_id];
+      const qty          = item.quantity;
+      // F10: ítem individual marcado como cortesía
+      const item_courtesy = is_courtesy || item.is_courtesy === true;
+      const item_auth     = item_courtesy
+        ? (item.courtesy_authorized_by || courtesy_authorized_by || null)
+        : null;
 
       const unit_price_with_vat = prod.price;
       const unit_price_base = prod.vat_included
@@ -63,29 +88,36 @@ router.post('/', [
       const item_subtotal = Math.round(unit_price_base * qty);
       const item_vat      = Math.round(unit_vat_amount * qty);
 
-      subtotal  += item_subtotal;
-      tax_total += item_vat;
+      if (item_courtesy) {
+        // Cortesía: suma al costo real (courtesy_amount) pero NO al total cobrado
+        courtesy_amount += item_subtotal + item_vat;
+      } else {
+        subtotal  += item_subtotal;
+        tax_total += item_vat;
+      }
 
       orderItems.push({
-        product_id:      prod.id,
-        product_name:    prod.name,
-        product_sku:     prod.sku,
-        quantity:        qty,
-        unit_price:      unit_price_with_vat,
-        unit_cost:       prod.cost || 0,
-        vat_rate:        prod.vat_rate,
-        vat_amount:      item_vat,
-        discount_amount: 0,
-        subtotal:        item_subtotal,
-        modifiers:       item.modifiers || [],
-        notes:           item.notes,
-        staff_user_id:   item.staff_user_id || req.user.id,
+        product_id:             prod.id,
+        product_name:           prod.name,
+        product_sku:            prod.sku,
+        quantity:               qty,
+        unit_price:             unit_price_with_vat,
+        unit_cost:              prod.cost || 0,
+        vat_rate:               prod.vat_rate,
+        vat_amount:             item_courtesy ? 0 : item_vat,
+        discount_amount:        0,
+        subtotal:               item_courtesy ? 0 : item_subtotal,
+        is_courtesy:            item_courtesy,
+        courtesy_authorized_by: item_auth,
+        modifiers:              item.modifiers || [],
+        notes:                  item.notes,
+        staff_user_id:          item.staff_user_id || req.user.id,
       });
     }
 
     // 3. Aplicar descuento (validado en backend)
     let discount_amount = 0;
-    if (discount_type && discount_value) {
+    if (!is_courtesy && discount_type && discount_value) {
       if (discount_type === 'percentage') {
         if (discount_value < 0 || discount_value > 100) {
           return res.status(400).json({ error: 'Porcentaje de descuento inválido (0-100)' });
@@ -96,8 +128,18 @@ router.post('/', [
       }
     }
 
-    const total = subtotal + tax_total - discount_amount;
-    if (total < 0) return res.status(400).json({ error: 'El total no puede ser negativo' });
+    const order_subtotal = subtotal + tax_total - discount_amount;
+    if (order_subtotal < 0) return res.status(400).json({ error: 'El total no puede ser negativo' });
+
+    // F9-A: Descuento por puntos de fidelización (validado contra el subtotal)
+    const loyalty_discount        = Math.round(Math.min(Math.max(0, Number(rawLoyaltyDiscount) || 0), order_subtotal));
+    const loyalty_points_redeemed = Math.round(Math.max(0, Number(rawLoyaltyPoints) || 0));
+
+    // F10: Cortesía de orden completa — total = 0, courtesy_amount = valor real
+    const base_total = order_subtotal + tip_amount - loyalty_discount;
+    const total      = is_courtesy ? 0 : base_total;
+    // Si es cortesía de orden, el courtesy_amount incluye TODOS los ítems
+    if (is_courtesy) courtesy_amount = subtotal + tax_total;
 
     // 4. Generar número de orden
     const { data: orderNumData } = await supabaseAdmin
@@ -110,8 +152,14 @@ router.post('/', [
       .insert({
         branch_id, cash_session_id, order_type, order_number,
         customer_id, table_id, appointment_id,
-        subtotal, tax_total, discount_amount, total,
+        subtotal, tax_total, discount_amount, tip_amount, total,
+        loyalty_discount, loyalty_points_redeemed,
         discount_type, discount_value, notes, metadata,
+        // F10: Cortesías
+        is_courtesy,
+        courtesy_authorized_by: is_courtesy ? courtesy_authorized_by : null,
+        courtesy_reason:        is_courtesy ? courtesy_reason        : null,
+        courtesy_amount,
         status:        'open',
         created_by:    req.user.id,
         staff_user_id: req.user.id,
@@ -128,8 +176,35 @@ router.post('/', [
 
     // 7. Pago inmediato opcional
     if (payment_method) {
-      await processPaymentInternal(order.id, payment_method, total, cash_received, req.user.id);
+      if (is_courtesy && total === 0) {
+        // Cortesía total: marcar pagado directamente sin movimiento de caja
+        await markOrderPaid(order.id, req.organizationId, req.user.id);
+      } else {
+        await processPaymentInternal(order.id, payment_method, total, cash_received, req.user.id);
+        await markOrderPaid(order.id, req.organizationId, req.user.id);
+      }
+    } else if (is_courtesy && total === 0) {
+      // Sin método de pago explícito pero es cortesía → cerrar automáticamente
       await markOrderPaid(order.id, req.organizationId, req.user.id);
+    }
+
+    // F9-A: Canjear puntos de fidelización (si aplica)
+    if (loyalty_points_redeemed > 0 && customer_id) {
+      (async () => {
+        try {
+          const { supabaseAdmin } = await import('../config/supabase.js');
+          await supabaseAdmin.rpc('redeem_loyalty_points', {
+            p_organization_id: req.organizationId,
+            p_customer_id:     customer_id,
+            p_order_id:        order.id,
+            p_points:          loyalty_points_redeemed,
+            p_notes:           `Canje en orden #${order.order_number}`,
+          });
+        } catch (e) {
+          const logger = (await import('../config/logger.js')).default;
+          logger.error('[loyalty] Error canjeando puntos (no crítico):', e.message);
+        }
+      })();
     }
 
     res.status(201).json({ ...order, items: itemsWithOrderId });

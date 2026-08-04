@@ -795,7 +795,7 @@ async function executeApprovedProposal(proposalId, userId, context) {
   return { success, affected_records: affectedRecords };
 }
 
-async function queryBusinessData(queryInput, context) {
+export async function queryBusinessData(queryInput, context) {
   const { supabase } = context;
   const { query_type, filters = {} } = queryInput;
   const orgId    = context.organization_id;

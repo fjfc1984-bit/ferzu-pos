@@ -12,6 +12,41 @@ import { logAudit }    from '../middleware/audit.js';
 const router = express.Router();
 router.use(requireAuth);
 
+// GET /cash-sessions — historial de sesiones de caja
+router.get('/', async (req, res) => {
+  try {
+    const branchId = req.query.branch_id || req.headers['x-branch-id'];
+    const limit    = Math.min(Number(req.query.limit)  || 20, 100);
+    const offset   = Math.max(Number(req.query.offset) || 0,  0);
+    const status   = req.query.status; // 'open' | 'closed' | undefined = todos
+
+    if (!branchId) return res.status(400).json({ error: 'branch_id requerido' });
+    await assertBranchOwnership(branchId, req.organizationId);
+
+    let query = supabaseAdmin
+      .from('cash_sessions')
+      .select(`
+        id, branch_id, user_id, status,
+        opening_cash, closing_cash, cash_difference,
+        total_sales, total_cash, total_card, total_nequi,
+        total_daviplata, total_transfers, total_discounts,
+        notes, opened_at, closed_at,
+        users:user_id(full_name, email)
+      `)
+      .eq('branch_id', branchId)
+      .order('opened_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (status) query = query.eq('status', status);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /cash-sessions/current
 router.get('/current', async (req, res) => {
   try {
@@ -89,14 +124,17 @@ router.get('/:id/summary', async (req, res) => {
     }
     const { data: orders } = await supabaseAdmin
       .from('orders')
-      .select('total, payments(payment_method, amount), discount_amount')
+      .select('total, payments(payment_method, amount), discount_amount, loyalty_discount, courtesy_amount, is_courtesy')
       .eq('cash_session_id', id)
       .eq('status', 'paid');
 
-    const totals = { total_sales: 0, total_cash: 0, total_card: 0, total_nequi: 0, total_daviplata: 0, total_transfers: 0, total_discounts: 0, order_count: 0 };
+    const totals = { total_sales: 0, total_cash: 0, total_card: 0, total_nequi: 0, total_daviplata: 0, total_transfers: 0, total_discounts: 0, total_loyalty_discount: 0, total_courtesy: 0, courtesy_count: 0, order_count: 0 };
     for (const order of orders || []) {
-      totals.total_sales    += order.total;
-      totals.total_discounts += order.discount_amount || 0;
+      totals.total_sales           += order.total;
+      totals.total_discounts       += order.discount_amount   || 0;
+      totals.total_loyalty_discount += order.loyalty_discount || 0;
+      totals.total_courtesy        += order.courtesy_amount   || 0;
+      if (order.is_courtesy) totals.courtesy_count++;
       totals.order_count++;
       for (const p of order.payments || []) {
         if      (p.payment_method === 'cash')          totals.total_cash      += p.amount;
@@ -137,7 +175,7 @@ router.post('/:id/close', [
     // Calcular totales de la sesión en el BACKEND
     const { data: orders } = await supabaseAdmin
       .from('orders')
-      .select('total, payments(payment_method, amount), discount_amount')
+      .select('total, payments(payment_method, amount), discount_amount, courtesy_amount')
       .eq('cash_session_id', id)
       .eq('status', 'paid');
 
@@ -149,11 +187,13 @@ router.post('/:id/close', [
       total_daviplata:  0,
       total_transfers:  0,
       total_discounts:  0,
+      total_courtesy:   0,
     };
 
     for (const order of orders || []) {
-      totals.total_sales    += order.total;
-      totals.total_discounts += order.discount_amount || 0;
+      totals.total_sales     += order.total;
+      totals.total_discounts  += order.discount_amount || 0;
+      totals.total_courtesy   += order.courtesy_amount || 0;
       for (const p of order.payments || []) {
         if      (p.payment_method === 'cash')          totals.total_cash       += p.amount;
         else if (p.payment_method.startsWith('card'))  totals.total_card       += p.amount;

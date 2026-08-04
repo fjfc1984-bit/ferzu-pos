@@ -16,6 +16,17 @@ db.version(2).stores({
   cash_sessions:  "id, branch_id, status",
   customers:      "++id, branch_id, phone, name",
 })
+
+// v3: caché offline para Dashboard y Customers
+db.version(3).stores({
+  products:         "++id, branch_id, category_id, barcode, name",
+  offline_orders:   "++id, branch_id, created_at, synced, local_id",
+  sync_queue:       "++id, table_name, operation, payload, created_at, retries",
+  cash_sessions:    "id, branch_id, status",
+  customers:        "++id, branch_id, phone, name",
+  dashboard_cache:  "key",   // key = "branch_<id>_<range>", value = JSON blob + cached_at
+  customers_cache:  "key",   // key = "branch_<id>", rows = array de clientes
+})
 export async function addToSyncQueue(tableName, operation, payload) {
   await db.sync_queue.add({ table_name: tableName, operation, payload, created_at: new Date().toISOString(), retries: 0 })
 }

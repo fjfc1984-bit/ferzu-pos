@@ -9,6 +9,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['logo-ferzu.svg', 'robots.txt'],
+      // F5: inyectar handler de Background Sync en el SW generado por Workbox
+      injectManifest: undefined, // usar generateSW (default)
+      additionalManifestEntries: [],
       manifest: {
         name: 'FERZU POS',
         short_name: 'FERZU',
@@ -24,6 +27,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // F5: importar handler de Background Sync
+        importScripts: ['sw-background-sync.js'],
         // Archivos estáticos del bundle
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         // Estrategias de caché para APIs

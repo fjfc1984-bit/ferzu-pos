@@ -56,19 +56,25 @@ function buildDailyReport(orders, date) {
   let totalRevenue  = 0;
   let totalTax      = 0;
   let totalDiscount = 0;
+  let totalTips     = 0;
+  let totalCourtesy = 0;   // F10
 
   const hourMap    = {};
   const paymentMap = {};
   const productMap = {};
 
   for (const order of orders) {
-    const rev  = Number(order.total)          || 0;
-    const tax  = Number(order.tax_total)      || 0;
-    const disc = Number(order.discount_total) || 0;
+    const rev  = Number(order.total)           || 0;
+    const tax  = Number(order.tax_total)       || 0;
+    const disc = Number(order.discount_total)  || 0;
+    const tip  = Number(order.tip_amount)      || 0;
+    const cou  = Number(order.courtesy_amount) || 0;  // F10
 
     totalRevenue  += rev;
     totalTax      += tax;
     totalDiscount += disc;
+    totalTips     += tip;
+    totalCourtesy += cou;  // F10
 
     // Agrupar por hora (UTC-5 Colombia)
     const localD = toLocalDateCO(order.created_at);
@@ -115,6 +121,8 @@ function buildDailyReport(orders, date) {
     total_revenue:  totalRevenue,
     total_tax:      totalTax,
     total_discount: totalDiscount,
+    total_tips:     totalTips,
+    total_courtesy: totalCourtesy,  // F10
     avg_ticket:     Math.round(totalRevenue / orders.length),
     by_hour,
     by_payment,
@@ -184,7 +192,8 @@ router.get('/daily', async (req, res) => {
     let query = supabaseAdmin
       .from('orders')
       .select(`
-        id, total, subtotal, tax_total, discount_total,
+        id, total, subtotal, tax_total, discount_total, tip_amount,
+        courtesy_amount, is_courtesy,
         payment_method, status, created_at,
         order_items(product_id, product_name, quantity, unit_price, total_price)
       `)
@@ -206,6 +215,123 @@ router.get('/daily', async (req, res) => {
     res.json(report);
   } catch (err) {
     logger.error('[REPORTS] daily error', { err: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =============================================================================
+// =============================================================================
+// GET /api/reports/weekly?branch_id=&week_start=YYYY-MM-DD
+// Reporte semanal: 7 días de la semana actual + comparativa semana anterior.
+// week_start: lunes de la semana a consultar (default: lunes de esta semana).
+// Responde con:
+//   { current: DailyReport[], prev: DailyReport[], comparison: { revenue, orders, avg_ticket, delta_pct } }
+// =============================================================================
+router.get('/weekly', async (req, res) => {
+  try {
+    const { branch_id, week_start } = req.query;
+
+    // Calcular lunes de la semana actual (Colombia UTC-5)
+    const now = new Date();
+    const todayCO = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+    const dayOfWeek = todayCO.getUTCDay(); // 0=Sun … 6=Sat
+    const daysFromMon = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+
+    let monday;
+    if (week_start && /^\d{4}-\d{2}-\d{2}$/.test(week_start)) {
+      monday = new Date(week_start + 'T00:00:00.000Z');
+    } else {
+      monday = new Date(todayCO);
+      monday.setUTCDate(todayCO.getUTCDate() - daysFromMon);
+      monday.setUTCHours(0, 0, 0, 0);
+    }
+
+    // Helper: fecha YYYY-MM-DD desde un Date UTC
+    const toDateStr = (d) => d.toISOString().split('T')[0];
+
+    // Generar los 7 días de esta semana y los 7 de la semana anterior
+    const currentDates = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setUTCDate(monday.getUTCDate() + i);
+      return toDateStr(d);
+    });
+    const prevDates = currentDates.map(dateStr => {
+      const d = new Date(dateStr + 'T00:00:00.000Z');
+      d.setUTCDate(d.getUTCDate() - 7);
+      return toDateStr(d);
+    });
+
+    // Cargar órdenes de ambas semanas en una sola query (14 días)
+    const rangeStart = prevDates[0] + 'T05:00:00.000Z';      // lunes semana anterior CO
+    const rangeEnd   = currentDates[6] + 'T05:00:00.000Z';   // lunes siguiente semana CO
+    const nextDayEnd = new Date(currentDates[6] + 'T05:00:00.000Z');
+    nextDayEnd.setUTCDate(nextDayEnd.getUTCDate() + 1);
+
+    let query = supabaseAdmin
+      .from('orders')
+      .select(`
+        id, total, subtotal, tax_total, discount_total, tip_amount,
+        courtesy_amount, is_courtesy,
+        payment_method, status, created_at,
+        order_items(product_id, product_name, quantity, unit_price, total_price)
+      `)
+      .eq('organization_id', req.organizationId)
+      .eq('status', 'completed')
+      .gte('created_at', rangeStart)
+      .lt('created_at', nextDayEnd.toISOString())
+      .order('created_at', { ascending: true });
+
+    if (branch_id) {
+      await assertBranchOwnership(branch_id, req.organizationId);
+      query = query.eq('branch_id', branch_id);
+    }
+
+    const { data: allOrders, error } = await query;
+    if (error) throw error;
+
+    // Segmentar órdenes por fecha colombiana
+    const ordersByDate = {};
+    for (const order of allOrders || []) {
+      const localD  = toLocalDateCO(order.created_at);
+      const dateKey = localD.toISOString().split('T')[0];
+      if (!ordersByDate[dateKey]) ordersByDate[dateKey] = [];
+      ordersByDate[dateKey].push(order);
+    }
+
+    // Construir reporte diario para cada día de ambas semanas
+    const currentReports = currentDates.map(d => buildDailyReport(ordersByDate[d] || [], d));
+    const prevReports    = prevDates.map(d    => buildDailyReport(ordersByDate[d] || [], d));
+
+    // Totales de semana para comparación
+    const sumWeek = (reports) => ({
+      revenue:   reports.reduce((s, r) => s + r.total_revenue, 0),
+      orders:    reports.reduce((s, r) => s + r.total_orders,  0),
+      avg_ticket: reports.reduce((s, r) => s + r.total_orders, 0)
+        ? Math.round(reports.reduce((s, r) => s + r.total_revenue, 0) /
+                     reports.reduce((s, r) => s + r.total_orders, 0))
+        : 0,
+    });
+
+    const curTotals  = sumWeek(currentReports);
+    const prevTotals = sumWeek(prevReports);
+
+    const pct = (cur, prev) =>
+      prev === 0 ? null : Math.round(((cur - prev) / prev) * 100);
+
+    res.json({
+      week_start:      toDateStr(monday),
+      current:         currentReports,
+      prev:            prevReports,
+      current_dates:   currentDates,
+      prev_dates:      prevDates,
+      comparison: {
+        revenue:    { current: curTotals.revenue,    prev: prevTotals.revenue,    delta_pct: pct(curTotals.revenue,    prevTotals.revenue)    },
+        orders:     { current: curTotals.orders,     prev: prevTotals.orders,     delta_pct: pct(curTotals.orders,     prevTotals.orders)     },
+        avg_ticket: { current: curTotals.avg_ticket, prev: prevTotals.avg_ticket, delta_pct: pct(curTotals.avg_ticket, prevTotals.avg_ticket) },
+      },
+    });
+  } catch (err) {
+    logger.error('[REPORTS] weekly error', { err: err.message });
     res.status(500).json({ error: err.message });
   }
 });

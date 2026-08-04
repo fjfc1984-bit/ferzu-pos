@@ -31,7 +31,8 @@ router.get('/', async (req, res) => {
         track_inventory, unit_of_measure, min_stock, item_type,
         is_active, is_featured, metadata, image_url,
         categories(id, name, color),
-        inventory(branch_id, quantity, average_cost)
+        inventory(branch_id, quantity, average_cost),
+        product_variants(id)
       `, { count: 'exact' })
       .eq('organization_id', req.organizationId)
       .eq('is_active', true)
@@ -76,6 +77,129 @@ router.get('/:id', async (req, res) => {
       .single();
     if (error) return res.status(404).json({ error: 'Producto no encontrado' });
     res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Variantes ─────────────────────────────────────────────────────────────────
+
+// GET /products/:id/variants?branch_id=
+router.get('/:id/variants', async (req, res) => {
+  try {
+    const { branch_id } = req.query;
+    const { data: product, error: pErr } = await supabaseAdmin
+      .from('products')
+      .select('id, organization_id')
+      .eq('id', req.params.id)
+      .single();
+    if (pErr || product.organization_id !== req.organizationId) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+    const { data, error } = await supabaseAdmin
+      .from('product_variants')
+      .select('*, variant_inventory(branch_id, quantity)')
+      .eq('product_id', req.params.id)
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true });
+    if (error) throw error;
+    // Si hay branch_id, aplanar el stock de esa sucursal
+    const enriched = (data || []).map(v => ({
+      ...v,
+      current_stock: branch_id
+        ? (v.variant_inventory?.find(i => i.branch_id === branch_id)?.quantity ?? null)
+        : null,
+    }));
+    res.json(enriched);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /products/:id/variants
+router.post('/:id/variants', requireRole('owner', 'admin'), [
+  body('name').notEmpty().trim(),
+  validate,
+], async (req, res) => {
+  try {
+    const { data: product, error: pErr } = await supabaseAdmin
+      .from('products').select('id, organization_id').eq('id', req.params.id).single();
+    if (pErr || product.organization_id !== req.organizationId) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+    const { name, sku, barcode, price, cost, attributes, sort_order } = req.body;
+    const { data, error } = await supabaseAdmin
+      .from('product_variants')
+      .insert({
+        product_id:      req.params.id,
+        organization_id: req.organizationId,
+        name: name.trim(),
+        sku:        sku        || null,
+        barcode:    barcode    || null,
+        price:      price      != null ? Math.round(Number(price)) : null,
+        cost:       cost       != null ? Math.round(Number(cost))  : null,
+        attributes: attributes || {},
+        sort_order: sort_order ?? 0,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    await logAudit(req.organizationId, req.user.id, 'create', 'product_variants', data.id, null, data);
+    res.status(201).json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /products/:id/variants/:vid
+router.put('/:id/variants/:vid', requireRole('owner', 'admin'), async (req, res) => {
+  try {
+    const { data: existing } = await supabaseAdmin
+      .from('product_variants')
+      .select('id, organization_id')
+      .eq('id', req.params.vid)
+      .eq('product_id', req.params.id)
+      .single();
+    if (!existing || existing.organization_id !== req.organizationId) {
+      return res.status(404).json({ error: 'Variante no encontrada' });
+    }
+    const { name, sku, barcode, price, cost, attributes, sort_order, is_active } = req.body;
+    const update = {};
+    if (name      != null) update.name       = name.trim();
+    if (sku       != null) update.sku        = sku || null;
+    if (barcode   != null) update.barcode    = barcode || null;
+    if (price     != null) update.price      = Math.round(Number(price));
+    if (cost      != null) update.cost       = Math.round(Number(cost));
+    if (attributes!= null) update.attributes = attributes;
+    if (sort_order!= null) update.sort_order = sort_order;
+    if (is_active != null) update.is_active  = is_active;
+    update.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabaseAdmin
+      .from('product_variants').update(update).eq('id', req.params.vid).select().single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /products/:id/variants/:vid  (soft delete)
+router.delete('/:id/variants/:vid', requireRole('owner', 'admin'), async (req, res) => {
+  try {
+    const { data: existing } = await supabaseAdmin
+      .from('product_variants').select('id, organization_id')
+      .eq('id', req.params.vid).eq('product_id', req.params.id).single();
+    if (!existing || existing.organization_id !== req.organizationId) {
+      return res.status(404).json({ error: 'Variante no encontrada' });
+    }
+    const { error } = await supabaseAdmin
+      .from('product_variants')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', req.params.vid);
+    if (error) throw error;
+    await logAudit(req.organizationId, req.user.id, 'delete', 'product_variants', req.params.vid, null, null);
+    res.status(204).end();
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -24,6 +24,7 @@ import { supabase } from '../lib/supabase'
 import { formatCOP } from '../lib/math'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useTrack } from '../hooks/useTrack.js'
+import { saveCustomersCache, loadCustomersCache } from '../lib/offlineCache.js'
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -45,14 +46,33 @@ function getSegment(totalOrders, daysSinceLastPurchase) {
 }
 
 // ---------------------------------------------------------------------------
-// Hook principal de clientes
+// Hook principal de clientes — con fallback offline (Dexie customers_cache)
 // ---------------------------------------------------------------------------
 function useCustomers(branchId, organizationId, search = '') {
   const qc = useQueryClient()
+  // F5: estado de caché offline
+  const [fromCache, setFromCache] = useState(false)
 
   const query = useQuery({
     queryKey: ['customers', branchId, organizationId, search],
+    // networkMode 'always': React Query no pausa la query cuando offline
+    // (dejamos que nuestro queryFn maneje el fallback manualmente)
+    networkMode: 'always',
     queryFn: async () => {
+      // F5: sin red → devolver caché de Dexie + filtrar en cliente
+      if (!navigator.onLine) {
+        const cached = await loadCustomersCache(branchId)
+        setFromCache(cached.length > 0)
+        if (!search.trim()) return cached
+        const term = search.toLowerCase()
+        return cached.filter(c =>
+          c.name?.toLowerCase().includes(term) ||
+          c.phone?.includes(term) ||
+          c.document_number?.includes(term)
+        )
+      }
+
+      setFromCache(false)
       let q = supabase
         .from('customers')
         .select(`
@@ -69,6 +89,11 @@ function useCustomers(branchId, organizationId, search = '') {
 
       const { data, error } = await q
       if (error) throw error
+
+      // F5: guardar en caché solo cuando no hay filtro de búsqueda (para tener el dataset completo)
+      if (!search.trim() && data?.length) {
+        saveCustomersCache(branchId, data).catch(() => {})
+      }
       return data
     },
     staleTime: 1000 * 60 * 2,
@@ -93,7 +118,7 @@ function useCustomers(branchId, organizationId, search = '') {
         if (error) throw error
         return data
       } else {
-        // FIX: organization_id es obligatorio para pasar la politica RLS de INSERT
+        // FIX: organization_id es obligatorio para pasar la política RLS de INSERT
         const { data, error } = await supabase
           .from('customers')
           .insert({
@@ -124,7 +149,7 @@ function useCustomers(branchId, organizationId, search = '') {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['customers'] }),
   })
 
-  return { ...query, upsertMutation, deleteMutation }
+  return { ...query, upsertMutation, deleteMutation, fromCache }
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +159,8 @@ function useCustomerHistory(customerId) {
   return useQuery({
     queryKey: ['customer-history', customerId],
     queryFn: async () => {
+      // NOTA: orders no tiene columna payment_method (pagos en order_payments)
+      // qty → quantity (nombre real de la columna en order_items)
       const { data, error } = await supabase
         .from('orders')
         .select(`
@@ -152,7 +179,7 @@ function useCustomerHistory(customerId) {
 }
 
 // ---------------------------------------------------------------------------
-// CustomerForm -- crear o editar cliente
+// CustomerForm — crear o editar cliente
 // ---------------------------------------------------------------------------
 function CustomerForm({ customer, onSave, onCancel }) {
   const [form, setForm] = useState({
@@ -172,7 +199,7 @@ function CustomerForm({ customer, onSave, onCancel }) {
   async function handleSubmit(e) {
     e.preventDefault()
     if (!form.name.trim()) { setError('El nombre es obligatorio'); return }
-    if (!form.phone.trim()) { setError('El telefono es obligatorio'); return }
+    if (!form.phone.trim()) { setError('El teléfono es obligatorio'); return }
     setSaving(true)
     setError(null)
     try {
@@ -201,7 +228,7 @@ function CustomerForm({ customer, onSave, onCancel }) {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">
-            Telefono / WhatsApp *
+            Teléfono / WhatsApp *
           </label>
           <input
             name="phone"
@@ -214,7 +241,7 @@ function CustomerForm({ customer, onSave, onCancel }) {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">
-            Correo electronico
+            Correo electrónico
           </label>
           <input
             name="email"
@@ -227,7 +254,7 @@ function CustomerForm({ customer, onSave, onCancel }) {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">
-            Cedula / NIT
+            Cédula / NIT
           </label>
           <input
             name="document_number"
@@ -268,7 +295,7 @@ function CustomerForm({ customer, onSave, onCancel }) {
           {saving ? (
             <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
           ) : null}
-          {saving ? 'Guardando...' : customer?.id ? 'Guardar cambios' : 'Crear cliente'}
+          {saving ? 'Guardando…' : customer?.id ? 'Guardar cambios' : 'Crear cliente'}
         </button>
       </div>
     </form>
@@ -276,7 +303,7 @@ function CustomerForm({ customer, onSave, onCancel }) {
 }
 
 // ---------------------------------------------------------------------------
-// CustomerProfile -- historial + puntos + metricas
+// CustomerProfile — historial + puntos + métricas
 // ---------------------------------------------------------------------------
 function CustomerProfile({ customer, onClose, onEdit }) {
   const { data: history, isLoading } = useCustomerHistory(customer.id)
@@ -295,6 +322,7 @@ function CustomerProfile({ customer, onClose, onEdit }) {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Header */}
       <div className="flex items-start gap-4 p-6 border-b border-gray-100">
         <div className="w-14 h-14 rounded-full bg-emerald-600 flex items-center justify-center text-white text-xl font-bold">
           {customer.name.charAt(0).toUpperCase()}
@@ -320,11 +348,12 @@ function CustomerProfile({ customer, onClose, onEdit }) {
             onClick={onClose}
             className="p-1.5 text-gray-400 hover:text-gray-600 transition"
           >
-            X
+            ✕
           </button>
         </div>
       </div>
 
+      {/* KPIs */}
       <div className="grid grid-cols-4 gap-0 border-b border-gray-100">
         {[
           { label: 'Total gastado',  value: formatCOP(totalSpent) },
@@ -339,33 +368,35 @@ function CustomerProfile({ customer, onClose, onEdit }) {
         ))}
       </div>
 
+      {/* Acciones rápidas */}
       <div className="flex gap-2 px-4 py-3 border-b border-gray-100">
         <a
-          href={`https://wa.me/57${customer.phone?.replace(/\D/g, '')}?text=Hola%20${encodeURIComponent(customer.name)}%2C%20gracias%20por%20tu%20visita`}
+          href={`https://wa.me/57${customer.phone?.replace(/\D/g, '')}?text=Hola%20${encodeURIComponent(customer.name)}%2C%20gracias%20por%20tu%20visita%20%F0%9F%91%8B`}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-xs font-medium transition"
         >
-          WhatsApp
+          <span>💬</span> WhatsApp
         </a>
         {customer.email && (
           <a
             href={`mailto:${customer.email}`}
             className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-medium hover:bg-gray-50 transition"
           >
-            Correo
+            <span>✉️</span> Correo
           </a>
         )}
         {customer.notes && (
           <span className="flex-1 px-3 py-1.5 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-800 truncate">
-            {customer.notes}
+            📝 {customer.notes}
           </span>
         )}
       </div>
 
+      {/* Historial de compras */}
       <div className="flex-1 overflow-auto">
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 pt-4 pb-2">
-          Ultimas 50 compras
+          Últimas 50 compras
         </h3>
         {isLoading ? (
           <div className="flex justify-center py-8">
@@ -373,6 +404,7 @@ function CustomerProfile({ customer, onClose, onEdit }) {
           </div>
         ) : !history?.length ? (
           <div className="text-center py-10 text-sm text-gray-400">
+            <p className="text-2xl mb-2">🛒</p>
             Sin compras registradas
           </div>
         ) : (
@@ -396,7 +428,7 @@ function CustomerProfile({ customer, onClose, onEdit }) {
                     order.status === 'pending'   ? 'bg-yellow-100 text-yellow-700' :
                     'bg-gray-100 text-gray-600'
                   }`}>
-                    {order.status === 'paid' ? 'Pagado' : order.status === 'cancelled' ? 'Anulado' : order.status || '-'}
+                    {order.status === 'paid' ? 'Pagado' : order.status === 'cancelled' ? 'Anulado' : order.status || '—'}
                   </span>
                   <span className="text-xs text-gray-500 truncate">
                     {order.items?.map(i => i.product_name).join(', ')}
@@ -412,7 +444,7 @@ function CustomerProfile({ customer, onClose, onEdit }) {
 }
 
 // ---------------------------------------------------------------------------
-// LoyaltyConfig -- admin de reglas de puntos
+// LoyaltyConfig — admin de reglas de puntos
 // ---------------------------------------------------------------------------
 function LoyaltyConfig({ orgId }) {
   const [config, setConfig] = useState({ points_per_cop: 1000, redemption_rate: 100 })
@@ -420,7 +452,7 @@ function LoyaltyConfig({ orgId }) {
   const [saveError, setSaveError] = useState(null)
 
   useEffect(() => {
-    if (!orgId) return
+    if (!orgId) return  // Guard: no intentar cargar con id null
     supabase
       .from('organizations')
       .select('loyalty_config')
@@ -432,7 +464,7 @@ function LoyaltyConfig({ orgId }) {
   }, [orgId])
 
   async function save() {
-    if (!orgId) { setSaveError('No se encontro la organizacion'); return }
+    if (!orgId) { setSaveError('No se encontró la organización'); return }
     setSaving(true)
     setSaveError(null)
     try {
@@ -442,7 +474,7 @@ function LoyaltyConfig({ orgId }) {
         .eq('id', orgId)
       if (error) throw error
     } catch (err) {
-      setSaveError(err.message || 'Error al guardar configuracion')
+      setSaveError(err.message || 'Error al guardar configuración')
     } finally {
       setSaving(false)
     }
@@ -451,6 +483,7 @@ function LoyaltyConfig({ orgId }) {
   return (
     <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-4">
       <div className="flex items-center gap-2">
+        <span className="text-lg">⭐</span>
         <h3 className="font-semibold text-amber-900 text-sm">Programa de Fidelidad</h3>
       </div>
       <div className="grid grid-cols-2 gap-4">
@@ -495,14 +528,14 @@ function LoyaltyConfig({ orgId }) {
         disabled={saving || !orgId}
         className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition disabled:opacity-60"
       >
-        {saving ? 'Guardando...' : 'Guardar configuracion'}
+        {saving ? 'Guardando…' : 'Guardar configuración'}
       </button>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Modal generico
+// Modal genérico
 // ---------------------------------------------------------------------------
 function Modal({ open, title, children, onClose, size = 'md' }) {
   if (!open) return null
@@ -512,7 +545,7 @@ function Modal({ open, title, children, onClose, size = 'md' }) {
       <div className={`bg-white rounded-2xl shadow-2xl w-full ${widths[size]} flex flex-col max-h-[90vh]`}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition text-lg">X</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition text-lg">✕</button>
         </div>
         <div className="flex-1 overflow-auto p-6">{children}</div>
       </div>
@@ -521,7 +554,7 @@ function Modal({ open, title, children, onClose, size = 'md' }) {
 }
 
 // ---------------------------------------------------------------------------
-// CustomersPage -- pagina principal del modulo
+// CustomersPage — página principal del módulo
 // ---------------------------------------------------------------------------
 export function CustomersPage() {
   const { organizationId } = useAuth()
@@ -535,32 +568,36 @@ export function CustomersPage() {
   const [showForm, setShowForm] = useState(false)
   const [editCustomer, setEditCustomer] = useState(null)
   const [showLoyalty, setShowLoyalty] = useState(false)
-  const [activeTab, setActiveTab] = useState('list')
+  const [activeTab, setActiveTab] = useState('list') // 'list' | 'segments' | 'arco'
   const [arcoSearch, setArcoSearch]     = useState('')
   const [arcoResult, setArcoResult]     = useState(null)
   const [arcoLoading, setArcoLoading]   = useState(false)
-  const [arcoAction, setArcoAction]     = useState(null)
+  const [arcoAction, setArcoAction]     = useState(null) // 'anonymize' | 'delete' | null
   const [arcoConfirm, setArcoConfirm]   = useState(false)
   const [arcoSuccess, setArcoSuccess]   = useState('')
 
+  // Buscar cliente para ARCO
   async function searchARCO() {
     if (!arcoSearch.trim()) return
     setArcoLoading(true); setArcoResult(null); setArcoSuccess('')
     const { data } = await supabase.from('customers')
-      .select('id, name, phone, email, loyalty_points, created_at')
+      .select('id, first_name, last_name, phone, email, loyalty_points, total_spent, created_at')
       .eq('organization_id', organizationId)
-      .or(`name.ilike.%${arcoSearch}%,phone.ilike.%${arcoSearch}%,email.ilike.%${arcoSearch}%`)
+      .or(`first_name.ilike.%${arcoSearch}%,last_name.ilike.%${arcoSearch}%,phone.ilike.%${arcoSearch}%,email.ilike.%${arcoSearch}%`)
       .limit(5)
     setArcoResult(data || [])
     setArcoLoading(false)
   }
 
+  // Anonimizar cliente (Cancelación / Rectificación ARCO)
   async function anonymizeCustomer(customerId) {
+    const anon = `ANONIMIZADO-${Date.now()}`
     const { error } = await supabase.from('customers').update({
-      name:  'CLIENTE ANONIMIZADO',
-      phone: null,
-      email: null,
-      notes: `Datos anonimizados por solicitud ARCO el ${new Date().toLocaleDateString('es-CO')}`,
+      first_name: 'CLIENTE',
+      last_name:  'ANONIMIZADO',
+      phone:      null,
+      email:      null,
+      notes:      `Datos anonimizados por solicitud ARCO el ${new Date().toLocaleDateString('es-CO')}`,
     }).eq('id', customerId)
     if (!error) {
       setArcoSuccess('Datos del cliente anonimizados correctamente.')
@@ -569,6 +606,7 @@ export function CustomersPage() {
     setArcoConfirm(false); setArcoAction(null)
   }
 
+  // Eliminar cliente (Supresión ARCO)
   async function deleteCustomerARCO(customerId) {
     const { error } = await supabase.from('customers').delete().eq('id', customerId)
     if (!error) {
@@ -580,12 +618,21 @@ export function CustomersPage() {
 
   const searchRef = useRef(null)
 
+  // Debounce search
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(t)
   }, [search])
 
-  const { data: customers = [], isLoading, upsertMutation, deleteMutation } = useCustomers(branchId, organizationId, debouncedSearch)
+  const { data: customers = [], isLoading, upsertMutation, deleteMutation, fromCache } = useCustomers(branchId, organizationId, debouncedSearch)
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
+  useEffect(() => {
+    const up = () => setIsOnline(true)
+    const dn = () => setIsOnline(false)
+    window.addEventListener('online', up)
+    window.addEventListener('offline', dn)
+    return () => { window.removeEventListener('online', up); window.removeEventListener('offline', dn) }
+  }, [])
 
   async function handleSave(customer) {
     await upsertMutation.mutateAsync(customer)
@@ -593,8 +640,10 @@ export function CustomersPage() {
     setEditCustomer(null)
   }
 
+  // Enriquecer clientes con segmento
   const enriched = customers.map(c => {
     const totalOrders = c.orders?.[0]?.count || 0
+    // last_order no viene ordenado — buscar la fecha más reciente en el array
     const lastDate = c.last_order?.length
       ? c.last_order.reduce((max, o) => (o.created_at > max ? o.created_at : max), '')
       : null
@@ -610,14 +659,30 @@ export function CustomersPage() {
     ? enriched
     : enriched.filter(c => c.segment === selectedSegment)
 
+  // Stats por segmento
   const stats = Object.keys(SEGMENTS).reduce((acc, seg) => {
     acc[seg] = enriched.filter(c => c.segment === seg).length
     return acc
   }, {})
 
   return (
-    <div className="flex h-full bg-gray-50">
+    <div className="flex flex-col h-full bg-gray-50">
+      {/* F5: Banner offline */}
+      {(!isOnline || fromCache) && (
+        <div className={`shrink-0 flex items-center justify-center gap-2 px-4 py-1.5 text-xs font-medium
+          ${!isOnline
+            ? 'bg-red-600 text-white'
+            : 'bg-amber-50 text-amber-700 border-b border-amber-200'}`}>
+          {!isOnline
+            ? '⚡ Sin conexión — mostrando clientes guardados. Búsqueda y creación deshabilitadas'
+            : '📦 Datos desde caché local · Reconecta para sincronizar'}
+        </div>
+      )}
+
+      <div className="flex flex-1 min-h-0">
+      {/* Panel izquierdo: filtros + lista */}
       <div className={`flex flex-col ${selectedCustomer ? 'w-80 border-r border-gray-200' : 'flex-1'} bg-white`}>
+        {/* Header */}
         <div className="px-4 py-3 border-b border-gray-100">
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-lg font-bold text-gray-900">Clientes</h1>
@@ -626,39 +691,44 @@ export function CustomersPage() {
                 onClick={() => setShowLoyalty(true)}
                 className="px-2 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition"
               >
-                Puntos
+                ⭐ Puntos
               </button>
               <button
                 onClick={() => { setEditCustomer(null); setShowForm(true) }}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition"
+                disabled={!isOnline}
+                title={!isOnline ? 'Sin conexión — no se pueden crear clientes offline' : ''}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 + Nuevo cliente
               </button>
             </div>
           </div>
 
+          {/* Búsqueda */}
           <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
             <input
               ref={searchRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar por nombre, telefono o cedula..."
-              className="w-full pl-4 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-gray-50"
+              placeholder="Buscar por nombre, teléfono o cédula…"
+              className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-gray-50"
             />
             {search && (
               <button
                 onClick={() => setSearch('')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >X</button>
+              >✕</button>
             )}
           </div>
         </div>
 
+        {/* Tabs */}
         <div className="flex border-b border-gray-100">
           {[
             { key: 'list',     label: `Todos (${enriched.length})` },
             { key: 'segments', label: 'Segmentos' },
-            { key: 'arco',     label: 'Privacidad' },
+            { key: 'arco',     label: '🔒 Privacidad' },
           ].map(t => (
             <button
               key={t.key}
@@ -674,19 +744,22 @@ export function CustomersPage() {
           ))}
         </div>
 
+        {/* ── Panel ARCO — Privacidad de clientes (Ley 1581/2012) ── */}
         {activeTab === 'arco' && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
-              <p className="text-xs font-semibold text-blue-800 mb-1">Derechos ARCO de clientes (Ley 1581/2012)</p>
-              <p className="text-xs text-blue-700 leading-relaxed">
-                Busca al cliente y ejecuta la accion solicitada. El registro queda en el log de auditoria.
+              <p className="text-xs font-semibold text-blue-800 mb-1">🔒 Derechos ARCO de clientes finales</p>
+              <p className="text-[11px] text-blue-700 leading-relaxed">
+                Si un cliente solicita acceso, corrección o eliminación de sus datos (Ley 1581 de 2012),
+                búscalo aquí y ejecuta la acción correspondiente. El registro de la acción queda en el log de auditoría.
               </p>
             </div>
 
+            {/* Búsqueda */}
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder="Nombre, telefono o email..."
+                placeholder="Nombre, teléfono o email del cliente..."
                 value={arcoSearch}
                 onChange={e => setArcoSearch(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && searchARCO()}
@@ -701,36 +774,43 @@ export function CustomersPage() {
               </button>
             </div>
 
+            {/* Mensaje de éxito */}
             {arcoSuccess && (
               <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm text-green-700 font-medium">
-                {arcoSuccess}
+                ✅ {arcoSuccess}
               </div>
             )}
 
+            {/* Resultados */}
             {arcoResult !== null && (
               arcoResult.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">No se encontraron clientes.</p>
+                <p className="text-sm text-gray-500 text-center py-4">No se encontraron clientes con ese criterio.</p>
               ) : (
                 <div className="space-y-2">
                   {arcoResult.map(c => (
                     <div key={c.id} className="border border-gray-200 rounded-xl p-3 bg-white">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <p className="text-sm font-semibold text-gray-900">{c.name}</p>
-                          <p className="text-xs text-gray-500">{c.phone || 'Sin telefono'} - {c.email || 'Sin email'}</p>
+                          <p className="text-sm font-semibold text-gray-900">{c.first_name} {c.last_name}</p>
+                          <p className="text-xs text-gray-500">{c.phone || 'Sin teléfono'} · {c.email || 'Sin email'}</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">
+                            Registrado: {new Date(c.created_at).toLocaleDateString('es-CO')} · ${(c.total_spent || 0).toLocaleString('es-CO')} COP en compras
+                          </p>
                         </div>
                         <div className="flex gap-1.5 flex-shrink-0">
                           <button
                             onClick={() => { setArcoAction({ type: 'anonymize', customer: c }); setArcoConfirm(true) }}
-                            className="px-2 py-1 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition"
+                            className="px-2 py-1 text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition"
+                            title="Anonimizar datos del cliente (mantiene historial de ventas sin identificar)"
                           >
-                            Anonimizar
+                            🙈 Anonimizar
                           </button>
                           <button
                             onClick={() => { setArcoAction({ type: 'delete', customer: c }); setArcoConfirm(true) }}
-                            className="px-2 py-1 text-xs font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition"
+                            className="px-2 py-1 text-[11px] font-medium bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition"
+                            title="Eliminar el registro completo del cliente"
                           >
-                            Eliminar
+                            🗑 Eliminar
                           </button>
                         </div>
                       </div>
@@ -740,17 +820,21 @@ export function CustomersPage() {
               )
             )}
 
+            {/* Modal de confirmación ARCO */}
             {arcoConfirm && arcoAction && (
               <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-4">
                   <h3 className="font-bold text-gray-900">
-                    {arcoAction.type === 'anonymize' ? 'Anonimizar datos' : 'Eliminar cliente'}
+                    {arcoAction.type === 'anonymize' ? '🙈 Anonimizar datos' : '🗑 Eliminar cliente'}
                   </h3>
                   <p className="text-sm text-gray-600">
                     {arcoAction.type === 'anonymize'
-                      ? `Se borraran nombre, telefono y email de "${arcoAction.customer.name}". El historial de ventas se conserva sin identificar. Esta accion no se puede deshacer.`
-                      : `Se eliminara permanentemente el registro de "${arcoAction.customer.name}". Esta accion no se puede deshacer.`
+                      ? `Se borrarán el nombre, teléfono y email de "${arcoAction.customer.first_name} ${arcoAction.customer.last_name}". El historial de ventas se conserva sin identificar. Esta acción no se puede deshacer.`
+                      : `Se eliminará permanentemente el registro de "${arcoAction.customer.first_name} ${arcoAction.customer.last_name}" incluyendo sus puntos y datos de contacto. Esta acción no se puede deshacer.`
                     }
+                  </p>
+                  <p className="text-[11px] text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
+                    La acción quedará registrada en el log de auditoría para cumplimiento Ley 1581 de 2012.
                   </p>
                   <div className="flex gap-2 justify-end">
                     <button
@@ -779,6 +863,7 @@ export function CustomersPage() {
           </div>
         )}
 
+        {/* Filtro de segmentos (si activeTab === 'segments') */}
         {activeTab === 'segments' && (
           <div className="p-3 flex flex-wrap gap-2">
             <button
@@ -803,6 +888,7 @@ export function CustomersPage() {
           </div>
         )}
 
+        {/* Lista de clientes */}
         <div className="flex-1 overflow-auto divide-y divide-gray-50">
           {isLoading ? (
             <div className="flex justify-center items-center py-16">
@@ -810,11 +896,12 @@ export function CustomersPage() {
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
+              <p className="text-4xl mb-3">👥</p>
               <p className="text-sm font-medium text-gray-700">
-                {search ? `Sin resultados para "${search}"` : 'Aun no hay clientes'}
+                {search ? `Sin resultados para "${search}"` : 'Aún no hay clientes'}
               </p>
               <p className="text-xs text-gray-400 mt-1">
-                {!search && 'Crea el primero con el boton "Nuevo cliente"'}
+                {!search && 'Crea el primero con el botón "Nuevo cliente"'}
               </p>
             </div>
           ) : (
@@ -830,6 +917,7 @@ export function CustomersPage() {
         </div>
       </div>
 
+      {/* Panel derecho: perfil del cliente */}
       {selectedCustomer && (
         <div className="flex-1 overflow-auto bg-white">
           <CustomerProfile
@@ -843,6 +931,7 @@ export function CustomersPage() {
         </div>
       )}
 
+      {/* Modal: formulario crear/editar */}
       <Modal
         open={showForm}
         title={editCustomer ? 'Editar cliente' : 'Nuevo cliente'}
@@ -855,6 +944,7 @@ export function CustomersPage() {
         />
       </Modal>
 
+      {/* Modal: configurar puntos */}
       <Modal
         open={showLoyalty}
         title="Programa de puntos"
@@ -863,12 +953,13 @@ export function CustomersPage() {
       >
         <LoyaltyConfig orgId={organizationId} />
       </Modal>
+      </div> {/* cierre flex flex-1 min-h-0 */}
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// CustomerRow -- fila en la lista
+// CustomerRow — fila en la lista
 // ---------------------------------------------------------------------------
 function CustomerRow({ customer, selected, onClick }) {
   const seg = SEGMENTS[customer.segment]
@@ -894,7 +985,7 @@ function CustomerRow({ customer, selected, onClick }) {
       <div className="text-right flex-shrink-0">
         <p className="text-xs font-semibold text-gray-700">{customer.totalOrders} compras</p>
         {customer.loyalty_points > 0 && (
-          <p className="text-xs text-amber-600">{customer.loyalty_points.toLocaleString('es-CO')} pts</p>
+          <p className="text-xs text-amber-600">⭐ {customer.loyalty_points.toLocaleString('es-CO')} pts</p>
         )}
       </div>
     </button>
@@ -902,8 +993,15 @@ function CustomerRow({ customer, selected, onClick }) {
 }
 
 // ===========================================================================
-// CustomerPicker -- componente reutilizable para POS / Barberia / Taller
+// CustomerPicker — componente reutilizable para POS / Barbería / Taller
 // ===========================================================================
+/**
+ * Props:
+ *   value    {object|null}  — cliente seleccionado actualmente
+ *   onChange {function}     — callback(customer|null)
+ *   required {boolean}      — muestra asterisco
+ *   compact  {boolean}      — versión reducida (solo input)
+ */
 export function CustomerPicker({ value, onChange, required = false, compact = false }) {
   const branchId = localStorage.getItem('ferzu_branch_id')
   const [search, setSearch] = useState('')
@@ -944,6 +1042,7 @@ export function CustomerPicker({ value, onChange, required = false, compact = fa
     setSearch('')
   }
 
+  // Cerrar dropdown al hacer clic fuera
   useEffect(() => {
     function handleClick(e) {
       if (!dropdownRef.current?.contains(e.target)) setOpen(false)
@@ -963,12 +1062,12 @@ export function CustomerPicker({ value, onChange, required = false, compact = fa
           <p className="text-xs text-gray-500">{value.phone}</p>
         </div>
         {value.loyalty_points > 0 && (
-          <span className="text-xs text-amber-600 font-medium flex-shrink-0">{value.loyalty_points.toLocaleString('es-CO')} pts</span>
+          <span className="text-xs text-amber-600 font-medium flex-shrink-0">⭐ {value.loyalty_points.toLocaleString('es-CO')}</span>
         )}
         <button
           onClick={() => onChange(null)}
           className="ml-1 text-gray-400 hover:text-gray-600 text-sm transition flex-shrink-0"
-        >X</button>
+        >✕</button>
       </div>
     )
   }
@@ -976,13 +1075,14 @@ export function CustomerPicker({ value, onChange, required = false, compact = fa
   return (
     <div ref={dropdownRef} className="relative">
       <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">👤</span>
         <input
           ref={inputRef}
           value={search}
           onChange={e => { setSearch(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
-          placeholder={`Buscar cliente${required ? ' *' : ''}...`}
-          className="w-full pl-4 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-gray-50"
+          placeholder={`Buscar cliente${required ? ' *' : ''}…`}
+          className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-gray-50"
         />
         {isLoading && (
           <span className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -995,7 +1095,7 @@ export function CustomerPicker({ value, onChange, required = false, compact = fa
         <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
           {results.length === 0 && !isLoading ? (
             <div className="px-4 py-3 text-sm text-gray-500 text-center">
-              Sin resultados -{' '}
+              Sin resultados —{' '}
               <button
                 onClick={() => setShowCreate(true)}
                 className="text-emerald-600 font-medium hover:underline"
@@ -1019,7 +1119,7 @@ export function CustomerPicker({ value, onChange, required = false, compact = fa
                     <p className="text-xs text-gray-500">{c.phone}</p>
                   </div>
                   {c.loyalty_points > 0 && (
-                    <span className="text-xs text-amber-600">{c.loyalty_points} pts</span>
+                    <span className="text-xs text-amber-600">⭐ {c.loyalty_points}</span>
                   )}
                 </button>
               ))}
@@ -1034,10 +1134,11 @@ export function CustomerPicker({ value, onChange, required = false, compact = fa
         </div>
       )}
 
+      {/* Mini-modal: crear cliente rápido */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <h3 className="font-semibold text-gray-900 mb-4">Nuevo cliente rapido</h3>
+            <h3 className="font-semibold text-gray-900 mb-4">Nuevo cliente rápido</h3>
             <CustomerForm
               onSave={handleCreate}
               onCancel={() => setShowCreate(false)}
