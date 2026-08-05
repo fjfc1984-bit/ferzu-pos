@@ -16,7 +16,7 @@ router.use(requireAuth);
 router.get('/', async (req, res) => {
   try {
     const { branch_id, status } = req.query;
-    await assertBranchOwnership(branch_id, req.organizationId);
+    await assertBranchOwnership(branch_id, req.organizationId, { optional: true });
     let query = req.supabase
       .from('v_inventory_status')
       .select('*')
@@ -38,7 +38,7 @@ router.get('/', async (req, res) => {
 router.get('/insights', async (req, res) => {
   try {
     const { branch_id, skip_ai } = req.query;
-    await assertBranchOwnership(branch_id, req.organizationId);
+    await assertBranchOwnership(branch_id, req.organizationId, { optional: true });
     const organizationId = req.organizationId;
     const skipAI = skip_ai === 'true';
 

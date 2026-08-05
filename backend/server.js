@@ -175,6 +175,29 @@ if (isMain) {
 
   app.listen(PORT, () => {
     logger.info(`FERZU Backend v2.0.0 corriendo en puerto ${PORT} (modular)`);
+
+    // ── Keep-alive anti-cold-start ────────────────────────────────────────────
+    // Railway en plan Starter duerme el servicio tras ~30 min de inactividad.
+    // Nos auto-pingueamos cada 14 min para mantenernos activos.
+    if (process.env.NODE_ENV === 'production') {
+      const publicUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+        : process.env.BACKEND_URL;
+
+      if (publicUrl) {
+        setInterval(async () => {
+          try {
+            await fetch(`${publicUrl}/health`);
+            logger.debug('[keep-alive] ping OK');
+          } catch (e) {
+            logger.warn('[keep-alive] ping error', { err: e.message });
+          }
+        }, 14 * 60 * 1000); // 14 minutos
+        logger.info(`[keep-alive] activo → ${publicUrl}/health cada 14 min`);
+      } else {
+        logger.warn('[keep-alive] RAILWAY_PUBLIC_DOMAIN no definido — cold starts posibles');
+      }
+    }
   });
 }
 

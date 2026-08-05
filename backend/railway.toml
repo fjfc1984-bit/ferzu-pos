@@ -7,6 +7,9 @@ healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
+# Evitar sleep en plan Hobby+ (en plan Starter no tiene efecto — usa UptimeRobot como fallback)
+sleepApplication = false
+numReplicas = 1
 
 [[services]]
   [services.envs]

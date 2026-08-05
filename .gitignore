@@ -31,3 +31,26 @@ RUN_MIGRATE.bat
 # SQL legacy en raíz (usar database/migrations/ en su lugar)
 schema_v2.sql
 views_v1.sql
+
+# Scripts de recuperación de git (generados en emergencias)
+ferzu-recover*.bat
+ferzu-recover*.txt
+ferzu-reinit*.bat
+ferzu-reinit*.txt
+ferzu-final*.bat
+ferzu-final*.txt
+ferzu-push*.bat
+ferzu-push*.txt
+ferzu-commit.bat
+push-fix.ps1
+commit_log.txt
+ferzu-consolidar.bat
+
+# Archivos de scripting auxiliar en raíz
+guia_run.py
+run-migrations.mjs
+run-migrations.ps1
+
+# PDFs generados (guardar en carpeta /docs/ si se quieren versionar)
+FERZU_POS_Guia_Completa*.pdf
+HANDOVER.md

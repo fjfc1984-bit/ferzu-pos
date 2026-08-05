@@ -1,0 +1,50 @@
+# =============================================================================
+# FERZU POS — .gitattributes
+# Normaliza line endings: LF en el repo, conversión automática en checkout.
+# Elimina el ruido de "21 archivos modificados" por CRLF↔LF entre Windows y Linux.
+# =============================================================================
+
+# Default: todos los archivos de texto usan LF en el repo
+* text=auto eol=lf
+
+# JavaScript / JSX / TypeScript
+*.js    text eol=lf
+*.jsx   text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.mjs   text eol=lf
+*.cjs   text eol=lf
+
+# Web
+*.html  text eol=lf
+*.css   text eol=lf
+*.json  text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.toml  text eol=lf
+
+# SQL
+*.sql   text eol=lf
+
+# Markdown / docs
+*.md    text eol=lf
+*.txt   text eol=lf
+
+# Shell scripts: siempre LF (rompen en bash si tienen CRLF)
+*.sh    text eol=lf
+
+# Windows batch: CRLF en checkout (cmd.exe los necesita)
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+
+# Binarios: sin conversión
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
