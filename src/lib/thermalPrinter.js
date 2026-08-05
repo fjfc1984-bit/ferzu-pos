@@ -131,7 +131,7 @@ export class ThermalPrinter {
   }
 
   // ── Imprimir recibo ─────────────────────────────────────────────────────────
-  async printReceipt({ order, businessName, branchName, cashierName }) {
+  async printReceipt({ order, businessName, branchName, cashierName, nit }) {
     const W = this.charWidth
 
     const {
@@ -169,6 +169,7 @@ export class ThermalPrinter {
     push(CMD.INIT, CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.DOUBLE_ON)
     txt(businessName + '\n')
     push(CMD.DOUBLE_OFF)
+    if (nit) txt(`NIT: ${nit}\n`)
     if (branchName) txt(branchName + '\n')
     push(CMD.BOLD_OFF)
     txt('================================\n'.slice(0, W + 1))

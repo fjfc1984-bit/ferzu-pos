@@ -21,6 +21,7 @@ export function ThermalPrintButton({
   businessName,
   branchName,
   cashierName,
+  nit,
   variant = 'full',
   onDone,
 }) {
@@ -32,7 +33,7 @@ export function ThermalPrintButton({
   async function handlePrint() {
     if (!supportsUSB) {
       // Fallback: abrir recibo en ventana nueva para imprimir desde el navegador
-      printFallback({ order, businessName, branchName })
+      printFallback({ order, businessName, branchName, nit })
       if (onDone) onDone()
       return
     }
@@ -44,7 +45,7 @@ export function ThermalPrintButton({
     try {
       await printer.connect()
       setStatus('printing')
-      await printer.printReceipt({ order, businessName, branchName, cashierName })
+      await printer.printReceipt({ order, businessName, branchName, cashierName, nit })
       setStatus('done')
       if (onDone) onDone()
       setTimeout(() => setStatus('idle'), 3000)
@@ -116,16 +117,28 @@ export function ThermalPrintButton({
 }
 
 // ── Fallback para navegadores sin Web USB ─────────────────────────────────────
-function printFallback({ order, businessName, branchName }) {
+function printFallback({ order, businessName, branchName, nit }) {
   const COP = (n) =>
     new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n || 0)
 
-  const items = (order.order_items || [])
+  // IVA label con porcentaje si todos los ítems tienen el mismo rate
+  const orderItems = order.order_items || []
+  const vatRates   = [...new Set(orderItems.filter(i => i.vat_rate > 0).map(i => i.vat_rate))]
+  const ivaLabel   = vatRates.length === 1 ? `IVA ${vatRates[0]}%` : 'IVA'
+
+  const itemRows = orderItems
     .map(i => `<tr>
       <td style="padding:2px 4px">${i.quantity}x ${i.product_name}</td>
       <td style="padding:2px 4px;text-align:right">${COP(i.unit_price * i.quantity)}</td>
     </tr>`)
     .join('')
+
+  const subtotal       = order.subtotal       || 0
+  const discountAmount = order.discount_amount || 0
+  const taxAmount      = order.tax_amount      || 0
+  const total          = order.total           || 0
+  const cashReceived   = order.cash_received   || 0
+  const changeAmount   = order.change_amount   || 0
 
   const html = `<!DOCTYPE html>
 <html>
@@ -134,33 +147,41 @@ function printFallback({ order, businessName, branchName }) {
   <title>Recibo #${order.order_number || ''}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Courier New', monospace; font-size: 12px; width: 58mm; }
+    body { font-family: 'Courier New', monospace; font-size: 12px; width: 72mm; }
     .center { text-align: center; }
     .bold { font-weight: bold; }
-    .sep { border-top: 1px dashed #000; margin: 4px 0; }
-    table { width: 100%; }
+    .small { font-size: 10px; }
+    .sep { border-top: 1px dashed #000; margin: 5px 0; }
+    table { width: 100%; border-collapse: collapse; }
     td { vertical-align: top; }
+    .totals td { padding: 1px 4px; }
+    .row-total td { font-weight: bold; font-size: 13px; }
   </style>
 </head>
 <body>
   <div class="center bold" style="font-size:14px">${businessName}</div>
-  ${branchName ? `<div class="center">${branchName}</div>` : ''}
+  ${nit ? `<div class="center small">${nit}</div>` : ''}
+  ${branchName ? `<div class="center small">${branchName}</div>` : ''}
   <div class="sep"></div>
-  <div>Orden #${order.order_number || '—'}</div>
-  <div>${new Date(order.created_at || Date.now()).toLocaleString('es-CO')}</div>
+  <div class="small">Orden #${order.order_number || '—'}</div>
+  <div class="small">${new Date(order.created_at || Date.now()).toLocaleString('es-CO', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}</div>
   <div class="sep"></div>
-  <table>${items}</table>
+  <table><tbody>${itemRows}</tbody></table>
   <div class="sep"></div>
-  <table>
-    <tr><td class="bold">TOTAL</td><td style="text-align:right" class="bold">${COP(order.total)}</td></tr>
-  </table>
+  <table class="totals"><tbody>
+    ${discountAmount > 0 ? `<tr><td>Subtotal</td><td style="text-align:right">${COP(subtotal)}</td></tr>` : ''}
+    ${discountAmount > 0 ? `<tr><td>Descuento</td><td style="text-align:right">-${COP(discountAmount)}</td></tr>` : ''}
+    ${taxAmount > 0      ? `<tr><td>${ivaLabel}</td><td style="text-align:right">${COP(taxAmount)}</td></tr>` : ''}
+    <tr class="row-total"><td>TOTAL</td><td style="text-align:right">${COP(total)}</td></tr>
+    ${cashReceived > 0   ? `<tr><td>Recibido</td><td style="text-align:right">${COP(cashReceived)}</td></tr>` : ''}
+    ${changeAmount > 0   ? `<tr class="bold"><td>Vuelto</td><td style="text-align:right">${COP(changeAmount)}</td></tr>` : ''}
+  </tbody></table>
   <div class="sep"></div>
-  <div class="center">¡Gracias por tu compra!</div>
-  <div class="center">FERZU POS</div>
+  <div class="center small">¡Gracias por su compra!</div>
 </body>
 </html>`
 
-  const win = window.open('', '_blank', 'width=300,height=500')
+  const win = window.open('', '_blank', 'width=320,height=600')
   win.document.write(html)
   win.document.close()
   win.focus()

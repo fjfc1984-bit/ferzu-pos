@@ -1288,6 +1288,11 @@ function PaymentModal({ onClose }) {
       || 'FERZU POS';
     const branchName  = localStorage.getItem('ferzu_branch_name') || '';
     const cashierName = user?.full_name || '';
+    const orgNit      = user?.organizations?.nit    || '';
+    const orgNitDv    = user?.organizations?.nit_dv || '';
+    const nitStr      = orgNit
+      ? `NIT: ${orgNit}${orgNitDv ? '-' + orgNitDv : ''}`
+      : '';
 
     const orderData = {
       order_number:    null,
@@ -1307,27 +1312,44 @@ function PaymentModal({ onClose }) {
       created_at:      new Date().toISOString(),
     };
 
-    const printed = await printReceipt({ order: orderData, businessName, branchName, cashierName });
+    const printed = await printReceipt({ order: orderData, businessName, branchName, cashierName, nit: nitStr });
     if (printed) return;
 
     // ── Ruta 2: Fallback window.print() con CSS de recibo ──────────────────
     const existing = document.getElementById('print-receipt');
     if (existing) existing.remove();
-    const lines = [];
-    if (customerName) lines.push(`<div class="receipt-row"><span>Cliente</span><span>${customerName}</span></div>`);
-    items.forEach(i => {
-      lines.push(`<div class="receipt-row"><span>${i.product_name} x${i.quantity}</span><span>$${(i.unit_price * i.quantity).toLocaleString('es-CO')}</span></div>`);
+
+    // Calcular % de IVA para mostrar en etiqueta (ej: "IVA 19%")
+    const vatRates = [...new Set(items.filter(i => i.vat_rate > 0).map(i => i.vat_rate))];
+    const ivaLabel = vatRates.length === 1 ? `IVA ${vatRates[0]}%` : 'IVA';
+    const receiptTotal  = frozenTotal || totals.total;
+    const receiptItems  = frozenItems.length > 0 ? frozenItems : items;
+
+    const itemLines = [];
+    if (customerName) itemLines.push(`<div class="receipt-row"><span>Cliente</span><span>${customerName}</span></div>`);
+    receiptItems.forEach(i => {
+      itemLines.push(`<div class="receipt-row"><span>${i.product_name} x${i.quantity}</span><span>$${(i.unit_price * i.quantity).toLocaleString('es-CO')}</span></div>`);
+      if (i.quantity > 1) {
+        itemLines.push(`<div class="receipt-row" style="font-size:9px;color:#555"><span>  c/u</span><span>$${Number(i.unit_price).toLocaleString('es-CO')}</span></div>`);
+      }
     });
+
     const div = document.createElement('div');
     div.id = 'print-receipt';
     div.style.display = 'none';
     div.innerHTML = `
-      <div class="receipt-logo">FERZU POS</div>
+      <div class="receipt-logo">${businessName}</div>
+      ${nitStr ? `<div class="receipt-nit">${nitStr}</div>` : ''}
       <div class="receipt-divider"></div>
-      ${lines.join('')}
+      <div class="receipt-row" style="font-size:9px"><span>Fecha</span><span>${new Date().toLocaleString('es-CO', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span></div>
       <div class="receipt-divider"></div>
+      ${itemLines.join('')}
+      <div class="receipt-divider"></div>
+      ${totals.discount_amount > 0 ? `<div class="receipt-row"><span>Subtotal</span><span>$${totals.subtotal.toLocaleString('es-CO')}</span></div>` : ''}
+      ${totals.discount_amount > 0 ? `<div class="receipt-row"><span>Descuento</span><span>-$${totals.discount_amount.toLocaleString('es-CO')}</span></div>` : ''}
+      ${totals.tax_total > 0 ? `<div class="receipt-row"><span>${ivaLabel}</span><span>$${totals.tax_total.toLocaleString('es-CO')}</span></div>` : ''}
       ${frozenTip > 0 ? `<div class="receipt-row"><span>Propina</span><span>+$${frozenTip.toLocaleString('es-CO')}</span></div>` : ''}
-      <div class="receipt-row receipt-total"><span>TOTAL</span><span>$${(frozenTotal || totals.total).toLocaleString('es-CO')}</span></div>
+      <div class="receipt-row receipt-total"><span>TOTAL</span><span>$${receiptTotal.toLocaleString('es-CO')}</span></div>
       ${finalChange > 0 ? `<div class="receipt-change">Vuelto: $${finalChange.toLocaleString('es-CO')}</div>` : ''}
       <div class="receipt-divider"></div>
       <div class="receipt-footer">¡Gracias por su compra!</div>

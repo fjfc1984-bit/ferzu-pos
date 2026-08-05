@@ -1167,7 +1167,7 @@ export function AuthProvider({ children }) {
       .select(`
         id, full_name, email, role,
         organization_id,
-        organizations(id, business_name, business_type, onboarding_completed, plan_id, enabled_modules, trial_ends_at),
+        organizations(id, business_name, business_type, onboarding_completed, plan_id, enabled_modules, trial_ends_at, nit, nit_dv, phone),
         user_branches(branch_id)
       `)
       .eq('id', userId)
