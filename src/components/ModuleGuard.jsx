@@ -798,6 +798,16 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
       {isAdmin && (
         <div className="px-2 pb-2 space-y-0.5">
           <Link
+            to="/sucursales"
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
+              currentPath === '/sucursales'
+                ? 'bg-white/20 text-white'
+                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+            }`}>
+            <Building2 size={13} />
+            <span>Sucursales</span>
+          </Link>
+          <Link
             to="/modules"
             className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
               currentPath === '/modules'

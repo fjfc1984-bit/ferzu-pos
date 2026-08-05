@@ -12,12 +12,47 @@ import { logAudit }  from '../middleware/audit.js';
 const router = express.Router();
 router.use(requireAuth);
 
-// GET /products?branch_id=&category_id=&search=&page=&limit=
+// GET /products?branch_id=&category_id=&search=&page=&limit=&niche=
+// niche: filtra productos cuya categoría pertenece al nicho de la branch activa.
+// Si niche='general' o no se envía → retorna todos (comportamiento anterior).
 router.get('/', async (req, res) => {
   try {
-    const { branch_id, category_id, search, page = 1, limit = 50 } = req.query;
+    const { branch_id, category_id, search, page = 1, limit = 50, niche } = req.query;
     await assertBranchOwnership(branch_id, req.organizationId, { optional: true });
     const offset = (page - 1) * limit;
+
+    // Si se pasa branch_id sin niche explícito, resolver el niche desde la DB.
+    let resolvedNiche = niche || null;
+    if (branch_id && !resolvedNiche) {
+      const { data: br } = await supabaseAdmin
+        .from('branches')
+        .select('niche')
+        .eq('id', branch_id)
+        .eq('organization_id', req.organizationId)
+        .single();
+      resolvedNiche = br?.niche || null;
+    }
+
+    // Construir la lista de category_ids permitidos por niche (si aplica).
+    // niche='general' o null → sin filtro de niche (retorna todo, backward compatible).
+    let nicheCategories = null;
+    if (resolvedNiche && resolvedNiche !== 'general') {
+      const { data: cats } = await supabaseAdmin
+        .from('categories')
+        .select('id')
+        .eq('organization_id', req.organizationId)
+        .contains('niche', [resolvedNiche]);
+      // También incluir categorías 'general' (compartidas entre nichos)
+      const { data: generalCats } = await supabaseAdmin
+        .from('categories')
+        .select('id')
+        .eq('organization_id', req.organizationId)
+        .contains('niche', ['general']);
+      nicheCategories = [
+        ...(cats || []).map(c => c.id),
+        ...(generalCats || []).map(c => c.id),
+      ];
+    }
 
     // FIX: Usar supabaseAdmin con filtro explícito de organization_id.
     // NO usar `.eq('inventory.branch_id', branch_id)` en la cadena de filtros:
@@ -30,7 +65,7 @@ router.get('/', async (req, res) => {
         id, name, sku, barcode, price, cost, vat_rate, vat_included,
         track_inventory, unit_of_measure, min_stock, item_type,
         is_active, is_featured, metadata, image_url,
-        categories(id, name, color),
+        categories(id, name, color, niche),
         inventory(branch_id, quantity, average_cost),
         product_variants(id)
       `, { count: 'exact' })
@@ -39,8 +74,9 @@ router.get('/', async (req, res) => {
       .order('sort_order', { ascending: true })
       .range(offset, offset + limit - 1);
 
-    if (category_id) query = query.eq('category_id', category_id);
-    if (search)      query = query.or(`name.ilike.%${search}%,sku.ilike.%${search}%,barcode.eq.${search}`);
+    if (category_id)     query = query.eq('category_id', category_id);
+    if (nicheCategories) query = query.in('category_id', nicheCategories.length ? nicheCategories : ['__none__']);
+    if (search)          query = query.or(`name.ilike.%${search}%,sku.ilike.%${search}%,barcode.eq.${search}`);
     // NOTA: branch_id YA NO se aplica como filtro de join sobre inventory.
     // Se usa client-side al calcular current_stock.
 
@@ -243,6 +279,104 @@ router.post('/', requireRole('owner', 'admin'), [
     if (error) throw error;
     await logAudit(req.organizationId, req.user.id, 'create', 'products', data.id, null, data);
     res.status(201).json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =============================================================================
+// CATEGORIES — CRUD con soporte de niche
+// =============================================================================
+
+// GET /products/categories?niche=barbershop
+// niche='general' o sin niche → retorna todas las categorías de la org (backward compatible)
+router.get('/categories', async (req, res) => {
+  try {
+    const { niche } = req.query;
+    let query = supabaseAdmin
+      .from('categories')
+      .select('id, name, color, niche, sort_order')
+      .eq('organization_id', req.organizationId)
+      .order('sort_order', { ascending: true });
+
+    // Filtrar por niche: retorna categorías del niche solicitado + las 'general' (compartidas)
+    if (niche && niche !== 'general') {
+      // PostgREST: cs = contains (array contains element)
+      // Queremos categorías cuyo niche incluye el niche solicitado O 'general'
+      query = query.or(`niche.cs.{"${niche}"},niche.cs.{"general"}`);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    logger.error('GET /products/categories', { err });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /products/categories
+router.post('/categories', requireRole('owner', 'admin'), [
+  body('name').notEmpty().trim(),
+  validate,
+], async (req, res) => {
+  try {
+    const { name, color, sort_order, niche } = req.body;
+    // niche puede ser un array (ej: ['barbershop']) o string (se normaliza a array)
+    const nicheArr = Array.isArray(niche) ? niche : (niche ? [niche] : ['general']);
+
+    const { data, error } = await supabaseAdmin
+      .from('categories')
+      .insert({
+        organization_id: req.organizationId,
+        name:            name.trim(),
+        color:           color || '#6B7280',
+        sort_order:      sort_order ?? 0,
+        niche:           nicheArr,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /products/categories/:id
+router.put('/categories/:id', requireRole('owner', 'admin'), async (req, res) => {
+  try {
+    const { name, color, sort_order, niche } = req.body;
+    const update = {};
+    if (name       != null) update.name       = name.trim();
+    if (color      != null) update.color      = color;
+    if (sort_order != null) update.sort_order = sort_order;
+    if (niche      != null) update.niche      = Array.isArray(niche) ? niche : [niche];
+
+    const { data, error } = await supabaseAdmin
+      .from('categories')
+      .update(update)
+      .eq('id', req.params.id)
+      .eq('organization_id', req.organizationId)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /products/categories/:id
+router.delete('/categories/:id', requireRole('owner', 'admin'), async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin
+      .from('categories')
+      .delete()
+      .eq('id', req.params.id)
+      .eq('organization_id', req.organizationId);
+    if (error) throw error;
+    res.status(204).end();
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

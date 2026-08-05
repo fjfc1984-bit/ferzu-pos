@@ -34,6 +34,7 @@ import { useAIProposals }          from '../hooks/useAIProposals.js';
 import { useKeyboardShortcuts }    from '../hooks/useKeyboardShortcuts.js';
 import { useThermalPrinter }       from '../hooks/useThermalPrinter.js';
 import { useTrack }                from '../hooks/useTrack.js';
+import { useBranchNiche }          from '../hooks/useBranchNiche.js';
 import { formatCOP }               from '../lib/math.js';
 import { cashAPI, api }            from '../lib/api.js';
 import toast                       from 'react-hot-toast';
@@ -258,6 +259,7 @@ export default function POSPage() {
 
 function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchId, refreshKey = 0 }) {
   const { addItem }                    = usePOS();
+  const { branchNiche }                = useBranchNiche();
   const [search, setSearch]            = useState('');
   const [categories, setCategories]    = useState([]);
   const [products, setProducts]        = useState([]);
@@ -282,10 +284,10 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
     }
   }
 
-  // Cargar categorías solo cuando cambia la sucursal
+  // Cargar categorías cuando cambia la sucursal o el niche
   useEffect(() => {
     loadCategories();
-  }, [branchId]);
+  }, [branchId, branchNiche]);
 
   // Auto-focus en search
   useEffect(() => {
@@ -343,7 +345,10 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
 
   async function loadCategories() {
     try {
-      const res = await api.get('/categories');
+      // Filtra categorías por niche de la branch activa (endpoint nuevo con niche support)
+      const res = await api.get('/products/categories', {
+        params: { niche: branchNiche !== 'general' ? branchNiche : undefined },
+      });
       const body = res.data;
       setCategories(Array.isArray(body) ? body : (body?.data ?? []));
     } catch {
@@ -359,6 +364,7 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
           branch_id:   branchId || undefined,
           category_id: activeCategory || undefined,
           search:      search || undefined,
+          niche:       branchNiche !== 'general' ? branchNiche : undefined,
           limit:       60,
         },
       });

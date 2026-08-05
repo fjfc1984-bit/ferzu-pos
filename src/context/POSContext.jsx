@@ -27,6 +27,7 @@ const A = {
   CLEAR_ORDER:         'CLEAR_ORDER',
   SET_CASH_SESSION:    'SET_CASH_SESSION',
   SET_BRANCH:          'SET_BRANCH',
+  SET_BRANCH_NICHE:    'SET_BRANCH_NICHE',
   SET_PROCESSING:      'SET_PROCESSING',
   SET_LAST_ORDER:      'SET_LAST_ORDER',
   SET_SESSION_LOADING: 'SET_SESSION_LOADING',
@@ -44,6 +45,7 @@ const initialState = {
   customerName:   null,
   cashSession:    null,   // objeto completo de cash_sessions
   branchId:       null,
+  branchNiche:    'general', // niche del branch activo: 'general'|'barbershop'|'restaurant'|'workshop'|'minimarket'
   isProcessing:   false,
   lastOrderId:    null,
   sessionLoading: true,   // true mientras init() carga la sesión desde el backend
@@ -198,6 +200,9 @@ function posReducer(state, { type, payload }) {
     case A.SET_BRANCH:
       return { ...state, branchId: payload }
 
+    case A.SET_BRANCH_NICHE:
+      return { ...state, branchNiche: payload || 'general' }
+
     case A.SET_PROCESSING:
       return { ...state, isProcessing: payload }
 
@@ -234,6 +239,17 @@ export function POSProvider({ children }) {
         if (!branchId) return
 
         dispatch({ type: A.SET_BRANCH, payload: branchId })
+
+        // Resolver el niche de la branch activa para filtrar productos y categorías
+        const { data: branchData } = await supabase
+          .from('branches')
+          .select('niche')
+          .eq('id', branchId)
+          .single()
+        if (branchData?.niche) {
+          dispatch({ type: A.SET_BRANCH_NICHE, payload: branchData.niche })
+          localStorage.setItem('ferzu_branch_niche', branchData.niche)
+        }
 
         // Usar backend (supabaseAdmin) para bypassar RLS en cash_sessions
         const session = await cashAPI.current().catch(() => null)
@@ -519,6 +535,7 @@ export function POSProvider({ children }) {
       customerName: state.customerName,
       cashSession:    state.cashSession,
       branchId:       state.branchId,
+      branchNiche:    state.branchNiche,
       isProcessing:   state.isProcessing,
       lastOrderId:    state.lastOrderId,
       sessionLoading: state.sessionLoading,
