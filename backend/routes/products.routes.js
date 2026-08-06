@@ -103,6 +103,101 @@ router.get('/', async (req, res) => {
   }
 });
 
+// =============================================================================
+// CATEGORIES — CRUD con soporte de niche
+// IMPORTANTE: estas rutas deben ir ANTES de /:id para que Express no
+// interprete "categories" como un parámetro de ID.
+// =============================================================================
+
+// GET /products/categories?niche=barbershop
+// niche='general' o sin niche → retorna todas las categorías de la org (backward compatible)
+router.get('/categories', async (req, res) => {
+  try {
+    const { niche } = req.query;
+    let query = supabaseAdmin
+      .from('categories')
+      .select('id, name, color, niche, sort_order')
+      .eq('organization_id', req.organizationId)
+      .order('sort_order', { ascending: true });
+
+    // Filtrar por niche: retorna categorías del niche solicitado + las 'general' (compartidas)
+    if (niche && niche !== 'general') {
+      query = query.or(`niche.cs.{"${niche}"},niche.cs.{"general"}`);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    logger.error('GET /products/categories', { err });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /products/categories
+router.post('/categories', requireRole('owner', 'admin'), [
+  body('name').notEmpty().trim(),
+  validate,
+], async (req, res) => {
+  try {
+    const { name, color, sort_order, niche } = req.body;
+    const { data, error } = await supabaseAdmin
+      .from('categories')
+      .insert({
+        organization_id: req.organizationId,
+        name: name.trim(),
+        color: color || '#6b7280',
+        sort_order: sort_order ?? 0,
+        niche: Array.isArray(niche) ? niche : (niche ? [niche] : ['general']),
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    res.status(201).json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /products/categories/:id
+router.put('/categories/:id', requireRole('owner', 'admin'), async (req, res) => {
+  try {
+    const { name, color, sort_order, niche } = req.body;
+    const update = {};
+    if (name       != null) update.name       = name.trim();
+    if (color      != null) update.color      = color;
+    if (sort_order != null) update.sort_order = sort_order;
+    if (niche      != null) update.niche      = Array.isArray(niche) ? niche : [niche];
+
+    const { data, error } = await supabaseAdmin
+      .from('categories')
+      .update(update)
+      .eq('id', req.params.id)
+      .eq('organization_id', req.organizationId)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /products/categories/:id
+router.delete('/categories/:id', requireRole('owner', 'admin'), async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin
+      .from('categories')
+      .delete()
+      .eq('id', req.params.id)
+      .eq('organization_id', req.organizationId);
+    if (error) throw error;
+    res.status(204).end();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /products/:id
 router.get('/:id', async (req, res) => {
   try {
@@ -279,104 +374,6 @@ router.post('/', requireRole('owner', 'admin'), [
     if (error) throw error;
     await logAudit(req.organizationId, req.user.id, 'create', 'products', data.id, null, data);
     res.status(201).json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// =============================================================================
-// CATEGORIES — CRUD con soporte de niche
-// =============================================================================
-
-// GET /products/categories?niche=barbershop
-// niche='general' o sin niche → retorna todas las categorías de la org (backward compatible)
-router.get('/categories', async (req, res) => {
-  try {
-    const { niche } = req.query;
-    let query = supabaseAdmin
-      .from('categories')
-      .select('id, name, color, niche, sort_order')
-      .eq('organization_id', req.organizationId)
-      .order('sort_order', { ascending: true });
-
-    // Filtrar por niche: retorna categorías del niche solicitado + las 'general' (compartidas)
-    if (niche && niche !== 'general') {
-      // PostgREST: cs = contains (array contains element)
-      // Queremos categorías cuyo niche incluye el niche solicitado O 'general'
-      query = query.or(`niche.cs.{"${niche}"},niche.cs.{"general"}`);
-    }
-
-    const { data, error } = await query;
-    if (error) throw error;
-    res.json(data);
-  } catch (err) {
-    logger.error('GET /products/categories', { err });
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /products/categories
-router.post('/categories', requireRole('owner', 'admin'), [
-  body('name').notEmpty().trim(),
-  validate,
-], async (req, res) => {
-  try {
-    const { name, color, sort_order, niche } = req.body;
-    // niche puede ser un array (ej: ['barbershop']) o string (se normaliza a array)
-    const nicheArr = Array.isArray(niche) ? niche : (niche ? [niche] : ['general']);
-
-    const { data, error } = await supabaseAdmin
-      .from('categories')
-      .insert({
-        organization_id: req.organizationId,
-        name:            name.trim(),
-        color:           color || '#6B7280',
-        sort_order:      sort_order ?? 0,
-        niche:           nicheArr,
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    res.status(201).json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// PUT /products/categories/:id
-router.put('/categories/:id', requireRole('owner', 'admin'), async (req, res) => {
-  try {
-    const { name, color, sort_order, niche } = req.body;
-    const update = {};
-    if (name       != null) update.name       = name.trim();
-    if (color      != null) update.color      = color;
-    if (sort_order != null) update.sort_order = sort_order;
-    if (niche      != null) update.niche      = Array.isArray(niche) ? niche : [niche];
-
-    const { data, error } = await supabaseAdmin
-      .from('categories')
-      .update(update)
-      .eq('id', req.params.id)
-      .eq('organization_id', req.organizationId)
-      .select()
-      .single();
-    if (error) throw error;
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// DELETE /products/categories/:id
-router.delete('/categories/:id', requireRole('owner', 'admin'), async (req, res) => {
-  try {
-    const { error } = await supabaseAdmin
-      .from('categories')
-      .delete()
-      .eq('id', req.params.id)
-      .eq('organization_id', req.organizationId);
-    if (error) throw error;
-    res.status(204).end();
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
