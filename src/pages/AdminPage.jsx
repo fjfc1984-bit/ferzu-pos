@@ -12,7 +12,7 @@ import {
   Scissors, UtensilsCrossed, Wrench, ShoppingCart, Store,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
-import api         from '../lib/api.js'
+import { api }     from '../lib/api.js'
 
 const ADMIN_EMAIL = 'fjfc1984@gmail.com'
 
