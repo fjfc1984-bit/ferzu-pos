@@ -27,6 +27,11 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Activa el SW nuevo inmediatamente sin esperar a que el usuario
+        // cierre todas las pestañas. Evita que usuarios queden atrapados
+        // en versiones viejas cacheadas.
+        skipWaiting: true,
+        clientsClaim: true,
         // F5: importar handler de Background Sync
         importScripts: ['sw-background-sync.js'],
         // Archivos estáticos del bundle
