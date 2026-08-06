@@ -38,7 +38,7 @@ async function getLoyaltySettings(organizationId) {
 // =============================================================================
 router.get('/settings', async (req, res) => {
   try {
-    const settings = await getLoyaltySettings(req.user.organizationId);
+    const settings = await getLoyaltySettings(req.organizationId);
     res.json(settings);
   } catch (err) {
     logger.error('[loyalty] Error obteniendo settings:', err.message);
@@ -56,7 +56,7 @@ router.put('/settings', async (req, res) => {
     const { error } = await supabaseAdmin
       .from('loyalty_settings')
       .upsert({
-        organization_id:  req.user.organizationId,
+        organization_id:  req.organizationId,
         enabled:          enabled          ?? true,
         points_per_100cop: points_per_100cop ?? 1,
         point_value_cop:  point_value_cop  ?? 10,
@@ -65,7 +65,7 @@ router.put('/settings', async (req, res) => {
       }, { onConflict: 'organization_id' });
 
     if (error) throw new Error(error.message);
-    const settings = await getLoyaltySettings(req.user.organizationId);
+    const settings = await getLoyaltySettings(req.organizationId);
     res.json(settings);
   } catch (err) {
     logger.error('[loyalty] Error actualizando settings:', err.message);
@@ -79,7 +79,7 @@ router.put('/settings', async (req, res) => {
 router.get('/customer/:customerId', async (req, res) => {
   try {
     const { customerId } = req.params;
-    const orgId          = req.user.organizationId;
+    const orgId          = req.organizationId;
 
     // Cuenta
     const { data: account } = await supabaseAdmin
@@ -127,7 +127,7 @@ router.get('/customer/:customerId', async (req, res) => {
 router.post('/redeem', async (req, res) => {
   try {
     const { customer_id, order_id, points } = req.body;
-    const orgId = req.user.organizationId;
+    const orgId = req.organizationId;
 
     if (!customer_id || !order_id || !points || points <= 0) {
       return res.status(400).json({ error: 'customer_id, order_id y points son requeridos' });
@@ -182,7 +182,7 @@ router.post('/redeem', async (req, res) => {
 router.post('/adjust', async (req, res) => {
   try {
     const { customer_id, points, notes } = req.body;
-    const orgId = req.user.organizationId;
+    const orgId = req.organizationId;
 
     if (!customer_id || points === undefined) {
       return res.status(400).json({ error: 'customer_id y points son requeridos' });

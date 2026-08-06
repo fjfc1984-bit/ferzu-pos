@@ -94,6 +94,7 @@ router.post('/analyze-invoice', [
       .from('supplier_invoices')
       .select('*, suppliers(name)')
       .eq('id', invoice_id)
+      .eq('organization_id', req.organizationId)
       .single();
 
     if (!invoice) return res.status(404).json({ error: 'Factura no encontrada' });
@@ -112,7 +113,7 @@ router.post('/analyze-invoice', [
     Extrae todos los productos, cantidades, precios unitarios e IVA.
     Luego crea una propuesta de ingreso al inventario para que el usuario la apruebe.`;
 
-    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    // Usar el import top-level de Anthropic (ya importado al inicio del archivo)
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
     const response = await anthropic.messages.create({
@@ -165,7 +166,7 @@ router.post('/proposals/:id/approve', requireRole('owner', 'admin'), async (req,
     const { id } = req.params;
 
     const { data: proposal } = await supabaseAdmin
-      .from('ai_proposals').select('*').eq('id', id).single();
+      .from('ai_proposals').select('*').eq('id', id).eq('organization_id', req.organizationId).single();
 
     if (!proposal) return res.status(404).json({ error: 'Propuesta no encontrada' });
     if (proposal.status !== 'pending') return res.status(409).json({ error: `Propuesta ya ${proposal.status}` });
@@ -197,7 +198,7 @@ router.post('/proposals/:id/reject', requireRole('owner', 'admin'), async (req, 
       reviewed_by:  req.user.id,
       reviewed_at:  new Date().toISOString(),
       review_notes: reason,
-    }).eq('id', id);
+    }).eq('id', id).eq('organization_id', req.organizationId);
 
     await logAudit(req.organizationId, req.user.id, 'reject', 'ai_proposals', id, null, { reason });
     res.json({ success: true });
@@ -260,7 +261,7 @@ function buildSystemPrompt(org, userRole, snapshot, currentDatetime) {
   return `Eres el asistente financiero y operativo de ${org.business_name || 'este negocio'}, asignado exclusivamente a este establecimiento.
 
 <contexto_negocio>
-- Negocio: ${org.name || 'N/A'}
+- Negocio: ${org.business_name || 'N/A'}
 - Sector: ${org.business_type || 'Restaurante / Comercio'}
 - Rol del Usuario interactuando: ${rolesLabel[userRole] || userRole || 'Usuario'}
 - Fecha y Hora actual: ${currentDatetime}

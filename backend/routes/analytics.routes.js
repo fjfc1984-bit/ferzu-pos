@@ -11,14 +11,10 @@ import { Router }     from 'express';
 import { body }       from 'express-validator';
 import { validate }   from '../middleware/validate.js';
 import { requireAuth } from '../middleware/auth.js';
-import { createClient } from '@supabase/supabase-js';
-import logger           from '../config/logger.js';
+import { supabaseAdmin } from '../config/supabase.js';
+import logger             from '../config/logger.js';
 
-const router        = Router();
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const router = Router();
 
 router.use(requireAuth);
 
@@ -119,8 +115,9 @@ router.get('/org-summary', requireOrg, async (req, res) => {
 // =============================================================================
 router.get('/summary', async (req, res) => {
   // Proteger endpoint interno con token simple
+  // Fail-closed: si ANALYTICS_INTERNAL_TOKEN no está configurado, bloquear acceso.
   const internalToken = process.env.ANALYTICS_INTERNAL_TOKEN;
-  if (internalToken && req.headers['x-internal-token'] !== internalToken) {
+  if (!internalToken || req.headers['x-internal-token'] !== internalToken) {
     return res.status(403).json({ error: 'Acceso no autorizado' });
   }
 

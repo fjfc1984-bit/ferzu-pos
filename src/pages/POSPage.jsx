@@ -1258,7 +1258,9 @@ function PaymentModal({ onClose }) {
         setFinalChange(0);
         setStep(order?.offline ? 'done-offline' : 'done');
         track('sale_completed', 'pos', { method: 'mixed', total: totalFinal, tip: tipAmount, loyalty_discount: loyaltyDiscount, items: items.length });
-      } catch {}
+      } catch (err) {
+        toast.error('Error al procesar el pago: ' + (err?.response?.data?.error || err?.message || 'Error inesperado'));
+      }
       return;
     }
     if (method === 'cash' && cashAmt < 0) {
@@ -1274,7 +1276,9 @@ function PaymentModal({ onClose }) {
       setFinalChange(change);
       setStep(order?.offline ? 'done-offline' : 'done');
       track('sale_completed', 'pos', { method, total: totalFinal, tip: tipAmount, loyalty_discount: loyaltyDiscount, items: items.length });
-    } catch {}
+    } catch (err) {
+      toast.error('Error al procesar el pago: ' + (err?.response?.data?.error || err?.message || 'Error inesperado'));
+    }
   }
 
   function handleNewSale() {
