@@ -1147,6 +1147,14 @@ export function AuthProvider({ children }) {
       } else if (session?.user) {
         await loadUserProfile(session.user.id);
         resetInactivityTimer();
+        // Registrar último login solo en eventos de sign-in real (no en token refresh)
+        if (event === 'SIGNED_IN') {
+          supabase
+            .from('users')
+            .update({ last_login_at: new Date().toISOString() })
+            .eq('id', session.user.id)
+            .then(() => {}) // fire-and-forget, sin bloquear UI
+        }
       }
     });
 
