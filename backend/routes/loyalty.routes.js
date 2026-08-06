@@ -6,11 +6,11 @@
 
 import { Router }      from 'express';
 import { supabaseAdmin } from '../config/supabase.js';
-import { verifyToken }   from '../middleware/auth.js';
+import { requireAuth }   from '../middleware/auth.js';
 import logger            from '../config/logger.js';
 
 const router = Router();
-router.use(verifyToken);
+router.use(requireAuth);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
