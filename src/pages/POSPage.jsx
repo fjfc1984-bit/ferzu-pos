@@ -49,7 +49,7 @@ import toast                       from 'react-hot-toast';
 export default function POSPage() {
   const { user, logout, organizationId }  = useAuth();
   const { cashSession, branchId, dispatch, sessionLoading } = usePOS();
-  const { isOnline, pendingCount, cacheProducts, getOfflineProducts } = useSyncContext();
+  const { isOnline, pendingCount } = useSyncContext();
   const { proposals }                       = useAIProposals(branchId);
   const {
     isConnected: printerConnected,
@@ -260,6 +260,7 @@ export default function POSPage() {
 function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchId, refreshKey = 0 }) {
   const { addItem }                    = usePOS();
   const { branchNiche }                = useBranchNiche();
+  const { cacheProducts, getOfflineProducts } = useSyncContext();
   const [search, setSearch]            = useState('');
   const [categories, setCategories]    = useState([]);
   const [products, setProducts]        = useState([]);
