@@ -13,6 +13,7 @@ import { Resend } from 'resend';
 import { supabaseAdmin } from '../config/supabase.js';
 import logger            from '../config/logger.js';
 import { requireAuth }   from '../middleware/auth.js';
+import { getPlanConfig } from '../config/plans.js';
 
 const router = express.Router();
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -175,6 +176,9 @@ router.post('/bold', express.raw({ type: 'application/json' }), async (req, res)
     const periodEnd = new Date(now);
     periodEnd.setMonth(periodEnd.getMonth() + 1);
 
+    // Obtener módulos y límites del plan desde la config del backend
+    const planConfig = getPlanConfig(planId);
+
     const { error: subError } = await supabaseAdmin
       .from('subscriptions')
       .upsert({
@@ -184,6 +188,10 @@ router.post('/bold', express.raw({ type: 'application/json' }), async (req, res)
         bold_transaction_id:  data.id || data.transaction_id,
         current_period_start: now.toISOString(),
         current_period_end:   periodEnd.toISOString(),
+        enabled_modules:      planConfig.enabled_modules,
+        max_products:         planConfig.max_products,
+        max_users:            planConfig.max_users,
+        max_branches:         planConfig.max_branches,
         updated_at:           now.toISOString(),
       }, { onConflict: 'organization_id' });
 
@@ -192,14 +200,27 @@ router.post('/bold', express.raw({ type: 'application/json' }), async (req, res)
       return res.status(500).json({ error: 'Error interno actualizando suscripción' });
     }
 
+    // Sincronizar plan y módulos en organizations directamente
+    // (también lo hace el trigger sync_org_plan en Supabase, pero esto garantiza
+    // que funciona incluso si el trigger no está creado)
     const { error: orgUpdateError } = await supabaseAdmin
       .from('organizations')
-      .update({ plan_id: planId, plan_expires_at: periodEnd.toISOString() })
+      .update({
+        plan_id:         planId,
+        enabled_modules: planConfig.enabled_modules,
+        plan_expires_at: periodEnd.toISOString(),
+      })
       .eq('id', orgId);
 
     if (orgUpdateError) {
-      logger.warn('[BOLD] Error actualizando plan_id en organizations', { error: orgUpdateError.message, orgId });
+      logger.warn('[BOLD] Error actualizando organizations', { error: orgUpdateError.message, orgId });
     }
+
+    logger.info('[BOLD] enabled_modules actualizados', {
+      orgId,
+      planId,
+      enabled_modules: planConfig.enabled_modules,
+    });
 
     // Email de confirmación (best-effort) — usa columna email de organizations
     ;(async () => {
