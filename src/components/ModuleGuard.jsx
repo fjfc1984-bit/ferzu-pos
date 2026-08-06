@@ -18,7 +18,7 @@ import {
   Lock, Zap, CheckCircle2, X, ChevronRight, Sparkles,
   Crown, ArrowRight, Star, Clock, AlertTriangle,
   RefreshCw, Shield, MessageCircle, ToggleLeft, Settings2,
-  Building2, ChevronDown, BarChart2
+  Building2, ChevronDown, BarChart2, Users
 } from 'lucide-react';
 import { supabase }  from '../lib/supabase.js';
 import { useAuth }   from '../context/AuthContext.jsx';
@@ -793,6 +793,22 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
           <span>Mis turnos</span>
         </Link>
       </div>
+
+      {/* Panel super-admin — solo Fernando */}
+      {user?.email === 'fjfc1984@gmail.com' && (
+        <div className="px-2 pb-1">
+          <Link
+            to="/admin"
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
+              currentPath === '/admin'
+                ? 'bg-brand-600/80 text-white'
+                : 'text-brand-300/70 hover:text-brand-200 hover:bg-brand-600/20'
+            }`}>
+            <Users size={13} />
+            <span>Panel Admin</span>
+          </Link>
+        </div>
+      )}
 
       {/* Enlaces de configuración — solo admins */}
       {isAdmin && (

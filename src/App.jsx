@@ -38,6 +38,7 @@ const DianSetupWizard    = lazy(() => import('./pages/DianSetupWizard'))
 const ModulesPage        = lazy(() => import('./pages/ModulesPage'))
 const SettingsPage       = lazy(() => import('./pages/SettingsPage'))
 const BranchesPage       = lazy(() => import('./pages/BranchesPage'))
+const AdminPage          = lazy(() => import('./pages/AdminPage'))
 const DailyReportPage    = lazy(() => import('./pages/DailyReportPage'))
 const TablesPage         = lazy(() => import('./pages/TablesPage'))
 const ShiftsPage         = lazy(() => import('./pages/ShiftsPage'))
@@ -242,6 +243,7 @@ export default function App() {
                   <Route path="/restaurant/tables" element={<TablesPage />} />
                   <Route path="/turnos" element={<ShiftsPage />} />
                   <Route path="/integraciones" element={<IntegrationsPage />} />
+                  <Route path="/admin"        element={<AdminPage />} />
 
                 </Route>
               </Route>
