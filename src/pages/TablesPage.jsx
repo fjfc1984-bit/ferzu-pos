@@ -9,7 +9,7 @@ import {
   Users, LayoutGrid, Armchair, AlertCircle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import api  from '../lib/api'
+import { api } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 
 // ─── Constantes del grid ─────────────────────────────────────────────────────

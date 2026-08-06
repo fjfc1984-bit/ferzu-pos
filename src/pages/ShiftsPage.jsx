@@ -12,7 +12,7 @@ import {
 import toast from 'react-hot-toast'
 import { format, parseISO, differenceInMinutes, differenceInSeconds } from 'date-fns'
 import { es } from 'date-fns/locale'
-import api  from '../lib/api'
+import { api } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
