@@ -130,7 +130,6 @@ export default function DashboardPage() {
   const [lastRefresh, setLastRefresh] = useState(new Date());
   // F5: estado offline
   const [isOnline,    setIsOnline]    = useState(navigator.onLine);
-  const [cachedAt,    setCachedAt]    = useState(null); // timestamp del caché mostrado
 
   // F5: monitorear conectividad
   useEffect(() => {
