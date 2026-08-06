@@ -28,7 +28,7 @@ router.post('/chat', [
 
     const { data: org } = await supabaseAdmin
       .from('organizations')
-      .select('name, business_type')
+      .select('business_name, business_type')
       .eq('id', req.organizationId)
       .single();
 
@@ -36,7 +36,7 @@ router.post('/chat', [
       organization_id: req.organizationId,
       branch_id:       branch_id || null,
       business_type:   org?.business_type,
-      business_name:   org?.name,
+      business_name:   org?.business_name,
       user_name:       req.user.full_name,
       user_role:       req.user.role,
       page_context:    page_context || null,
@@ -72,8 +72,12 @@ router.post('/chat', [
       tokens_used:       result.tokens_used,
     });
   } catch (err) {
-    logger.error('POST /ai/chat', { err });
-    res.status(500).json({ error: 'Error del agente IA. Intenta de nuevo.' });
+    logger.error('POST /ai/chat', {
+      message: err.message,
+      status:  err.status,
+      stack:   err.stack?.substring(0, 500),
+    });
+    res.status(500).json({ error: `Error del agente IA: ${err.message}` });
   }
 });
 
@@ -253,7 +257,7 @@ function buildSystemPrompt(org, userRole, snapshot, currentDatetime) {
     cashier: 'Cajero', cajero: 'Cajero',
   };
 
-  return `Eres el asistente financiero y operativo de ${org.name || 'este negocio'}, asignado exclusivamente a este establecimiento.
+  return `Eres el asistente financiero y operativo de ${org.business_name || 'este negocio'}, asignado exclusivamente a este establecimiento.
 
 <contexto_negocio>
 - Negocio: ${org.name || 'N/A'}
@@ -290,7 +294,7 @@ router.post('/business-chat', [
     // 1. Datos de la organización
     const { data: org } = await supabaseAdmin
       .from('organizations')
-      .select('name, business_type')
+      .select('business_name, business_type')
       .eq('id', req.organizationId)
       .single();
 
@@ -332,8 +336,12 @@ router.post('/business-chat', [
       snapshot_keys:  Object.keys(snapshot),
     });
   } catch (err) {
-    logger.error('POST /ai/business-chat', { err });
-    res.status(500).json({ error: 'Error del asistente. Intenta de nuevo.' });
+    logger.error('POST /ai/business-chat', {
+      message: err.message,
+      status:  err.status,
+      stack:   err.stack?.substring(0, 500),
+    });
+    res.status(500).json({ error: `Error del asistente: ${err.message}` });
   }
 });
 
