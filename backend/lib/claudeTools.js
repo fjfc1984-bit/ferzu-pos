@@ -591,6 +591,83 @@ Nunca ejecutar dry_run=false sin confirmación previa del usuario.`,
       },
       required: ["dry_run", "supplier_id", "items"]
     }
+  },
+
+  // ── Tool 11: open_cash_session ──────────────────────────────────────────────
+  {
+    name: "open_cash_session",
+    description: `Abre una sesión de caja (turno de cajero).
+
+PROTOCOLO OBLIGATORIO DE DOS FASES:
+1. Llamar con dry_run=true primero → verifica si ya hay caja abierta y muestra estado
+2. Mostrar al usuario el saldo inicial que ingresó y pedir confirmación
+3. Esperar confirmación EXPLÍCITA ("sí, abre la caja", "confirmo")
+4. Solo entonces llamar con dry_run=false
+
+Flujo recomendado:
+- Si el usuario dice "abre la caja" o "abrir turno", primero pregunta: ¿cuánto efectivo hay en caja?
+- Necesitas el monto de efectivo inicial (opening_cash) en pesos colombianos.
+- Si ya hay una caja abierta, informar al usuario y NO abrir una nueva.
+
+Nunca ejecutar dry_run=false sin confirmación previa del usuario.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        dry_run: {
+          type: "boolean",
+          description: "true = verificar estado sin abrir (SIEMPRE empezar aquí). false = abrir la caja (solo tras confirmación)."
+        },
+        opening_cash: {
+          type: "number",
+          description: "Monto de efectivo inicial en la caja, en pesos colombianos enteros. Ej: 200000."
+        },
+        branch_id: {
+          type: "string",
+          description: "UUID de la sucursal (opcional — si no se proporciona, se usa la del contexto)."
+        }
+      },
+      required: ["dry_run", "opening_cash"]
+    }
+  },
+
+  // ── Tool 12: close_cash_session ─────────────────────────────────────────────
+  {
+    name: "close_cash_session",
+    description: `Cierra la sesión de caja activa (turno del cajero), calculando totales de ventas.
+
+PROTOCOLO OBLIGATORIO DE DOS FASES:
+1. Llamar con dry_run=true primero → obtiene resumen de ventas del turno (sin cerrar)
+2. Mostrar al usuario: total ventas, efectivo esperado, ventas por método de pago
+3. Preguntar cuánto efectivo hay físicamente en caja (closing_cash)
+4. Esperar confirmación EXPLÍCITA con el monto contado
+5. Solo entonces llamar con dry_run=false
+
+Si hay descuadre de caja (diferencia entre efectivo contado y ventas en efectivo),
+explicarlo claramente al usuario antes de cerrar.
+
+Nunca ejecutar dry_run=false sin que el usuario haya confirmado el monto de cierre.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        dry_run: {
+          type: "boolean",
+          description: "true = obtener resumen sin cerrar (SIEMPRE empezar aquí). false = cerrar la caja (solo tras confirmación)."
+        },
+        closing_cash: {
+          type: "number",
+          description: "Monto de efectivo contado al cerrar la caja, en pesos colombianos enteros. Requerido para dry_run=false."
+        },
+        session_id: {
+          type: "string",
+          description: "UUID de la sesión a cerrar (opcional — si no se proporciona, busca la sesión abierta del usuario)."
+        },
+        notes: {
+          type: "string",
+          description: "Notas de cierre (opcional). Ej: 'Sin novedad', 'Faltaron $5000 por vuelto'."
+        }
+      },
+      required: ["dry_run"]
+    }
   }
 ];
 
@@ -745,6 +822,12 @@ async function executeTool(toolName, toolInput, context) {
 
     case 'generate_purchase_order':
       return await generatePurchaseOrder(toolInput, context);
+
+    case 'open_cash_session':
+      return await openCashSession(toolInput, context);
+
+    case 'close_cash_session':
+      return await closeCashSession(toolInput, context);
 
     default:
       return { error: `Tool desconocida: ${toolName}` };
@@ -1645,6 +1728,254 @@ async function generatePurchaseOrder({ dry_run = true, supplier_id, items, expec
 // =============================================================================
 // SECCIÓN 6: EJEMPLOS DE USO / CASOS PRÁCTICOS
 // =============================================================================
+
+// =============================================================================
+// SECCIÓN 5d: TOOL 11 — open_cash_session
+// =============================================================================
+
+async function openCashSession({ dry_run = true, opening_cash, branch_id }, context) {
+  const orgId    = context.organization_id;
+  const userId   = context.user_id;
+  const ctxBranch = branch_id || context.branch_id;
+
+  if (!orgId)    return { error: 'DIAGNÓSTICO: organization_id es undefined en contexto.' };
+  if (!ctxBranch) return { error: 'No se pudo determinar la sucursal. Proporciona branch_id o asegúrate de estar asociado a una sucursal.' };
+  if (typeof opening_cash !== 'number' || opening_cash < 0) {
+    return { error: 'El monto inicial de caja (opening_cash) debe ser un número mayor o igual a 0.' };
+  }
+
+  // Validar que la sucursal pertenece a la org
+  const { data: branch } = await supabaseAdmin
+    .from('branches')
+    .select('id, name, organization_id')
+    .eq('id', ctxBranch)
+    .eq('organization_id', orgId)
+    .maybeSingle();
+
+  if (!branch) return { error: 'Sucursal no encontrada o no pertenece a tu organización.' };
+
+  // Verificar si ya hay caja abierta para este usuario en esta sucursal
+  const { data: existing } = await supabaseAdmin
+    .from('cash_sessions')
+    .select('id, opened_at, opening_cash')
+    .eq('branch_id', ctxBranch)
+    .eq('user_id', userId)
+    .eq('status', 'open')
+    .maybeSingle();
+
+  // ── FASE 1: dry_run — verificar estado ───────────────────────────────────
+  if (dry_run) {
+    if (existing) {
+      const openedAt = new Date(existing.opened_at).toLocaleString('es-CO', { hour: '2-digit', minute: '2-digit' });
+      return {
+        dry_run: true,
+        can_open: false,
+        session_id: existing.id,
+        message: `⚠️ Ya tienes una caja abierta en ${branch.name} desde las ${openedAt} con $${(existing.opening_cash || 0).toLocaleString('es-CO')} de saldo inicial.\n\nNo es posible abrir otra caja. Si necesitas cerrarla, di "cierra la caja".`,
+      };
+    }
+    return {
+      dry_run: true,
+      can_open: true,
+      branch_name: branch.name,
+      opening_cash,
+      message: `📋 Vista previa — Apertura de caja\n• Sucursal: ${branch.name}\n• Efectivo inicial: $${opening_cash.toLocaleString('es-CO')}\n\n¿Confirmas la apertura de caja?`,
+    };
+  }
+
+  // ── FASE 2: ejecutar apertura (dry_run=false) ─────────────────────────────
+  if (existing) {
+    return {
+      success: false,
+      message: `Ya tienes una caja abierta (ID: ${existing.id}). Ciérrala antes de abrir una nueva.`,
+    };
+  }
+
+  const { data: session, error: insertErr } = await supabaseAdmin
+    .from('cash_sessions')
+    .insert({
+      branch_id:    ctxBranch,
+      user_id:      userId,
+      opening_cash: Math.round(opening_cash),
+      status:       'open',
+    })
+    .select('id, opened_at')
+    .single();
+
+  if (insertErr) return { error: `Error al abrir la caja: ${insertErr.message}` };
+
+  // Audit log (fire-and-forget)
+  Promise.resolve(supabaseAdmin.from('audit_log').insert({
+    organization_id: orgId,
+    user_id:         userId,
+    action:          'cash_open_via_copilot',
+    resource_type:   'cash_sessions',
+    resource_id:     session.id,
+    new_values:      { opening_cash: Math.round(opening_cash), branch_id: ctxBranch },
+  })).catch(() => {});
+
+  return {
+    success:      true,
+    dry_run:      false,
+    session_id:   session.id,
+    opening_cash: Math.round(opening_cash),
+    opened_at:    session.opened_at,
+    message:      `✅ Caja abierta exitosamente en ${branch.name}.\n• Efectivo inicial: $${Math.round(opening_cash).toLocaleString('es-CO')}\n• Hora de apertura: ${new Date(session.opened_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}\n\n¡Listo para cobrar! 💚`,
+  };
+}
+
+
+// =============================================================================
+// SECCIÓN 5e: TOOL 12 — close_cash_session
+// =============================================================================
+
+async function closeCashSession({ dry_run = true, closing_cash, session_id, notes }, context) {
+  const orgId  = context.organization_id;
+  const userId = context.user_id;
+
+  if (!orgId) return { error: 'DIAGNÓSTICO: organization_id es undefined en contexto.' };
+
+  // Buscar sesión activa si no se proporcionó session_id
+  let sessionToClose = session_id;
+  if (!sessionToClose) {
+    const { data: active } = await supabaseAdmin
+      .from('cash_sessions')
+      .select('id, branch_id, opened_at, opening_cash, branches!inner(organization_id, name)')
+      .eq('user_id', userId)
+      .eq('status', 'open')
+      .eq('branches.organization_id', orgId)
+      .order('opened_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!active) {
+      return {
+        dry_run,
+        can_close: false,
+        message: 'No tienes ninguna caja abierta en este momento. Abre una caja primero con "abre la caja".',
+      };
+    }
+    sessionToClose = active.id;
+  }
+
+  // Calcular totales de ventas del turno
+  const { data: orders } = await supabaseAdmin
+    .from('orders')
+    .select('total, payments(payment_method, amount), discount_amount, courtesy_amount, is_courtesy')
+    .eq('cash_session_id', sessionToClose)
+    .eq('status', 'paid');
+
+  const totals = {
+    total_sales: 0, total_cash: 0, total_card: 0,
+    total_nequi: 0, total_daviplata: 0, total_transfers: 0,
+    total_discounts: 0, total_courtesy: 0, order_count: 0, courtesy_count: 0,
+  };
+
+  for (const order of orders || []) {
+    totals.total_sales    += order.total;
+    totals.total_discounts += order.discount_amount  || 0;
+    totals.total_courtesy  += order.courtesy_amount  || 0;
+    if (order.is_courtesy) totals.courtesy_count++;
+    totals.order_count++;
+    for (const p of order.payments || []) {
+      if      (p.payment_method === 'cash')          totals.total_cash      += p.amount;
+      else if (p.payment_method.startsWith('card'))  totals.total_card      += p.amount;
+      else if (p.payment_method === 'nequi')         totals.total_nequi     += p.amount;
+      else if (p.payment_method === 'daviplata')     totals.total_daviplata += p.amount;
+      else if (p.payment_method === 'transfer')      totals.total_transfers += p.amount;
+    }
+  }
+
+  // ── FASE 1: dry_run — mostrar resumen sin cerrar ──────────────────────────
+  if (dry_run) {
+    const fmtCOP = n => `$${Math.round(n).toLocaleString('es-CO')}`;
+    const lines = [
+      `📊 Resumen del turno (sesión ${sessionToClose.slice(0, 8)}…)`,
+      `• Órdenes cobradas: ${totals.order_count}`,
+      `• Total ventas: ${fmtCOP(totals.total_sales)}`,
+      totals.total_cash      > 0 ? `  - Efectivo: ${fmtCOP(totals.total_cash)}`       : null,
+      totals.total_card      > 0 ? `  - Tarjeta: ${fmtCOP(totals.total_card)}`         : null,
+      totals.total_nequi     > 0 ? `  - Nequi: ${fmtCOP(totals.total_nequi)}`          : null,
+      totals.total_daviplata > 0 ? `  - Daviplata: ${fmtCOP(totals.total_daviplata)}`  : null,
+      totals.total_transfers > 0 ? `  - Transferencia: ${fmtCOP(totals.total_transfers)}` : null,
+      totals.total_discounts > 0 ? `• Descuentos aplicados: ${fmtCOP(totals.total_discounts)}` : null,
+      totals.courtesy_count  > 0 ? `• Cortesías: ${totals.courtesy_count} (${fmtCOP(totals.total_courtesy)})` : null,
+      `\n¿Cuánto efectivo tienes físicamente en caja ahora? (Para calcular el descuadre)`,
+    ].filter(Boolean);
+
+    return {
+      dry_run:     true,
+      can_close:   true,
+      session_id:  sessionToClose,
+      totals,
+      message:     lines.join('\n'),
+    };
+  }
+
+  // ── FASE 2: ejecutar cierre (dry_run=false) ───────────────────────────────
+  if (typeof closing_cash !== 'number' || closing_cash < 0) {
+    return { error: 'Se requiere el monto de efectivo contado (closing_cash) para cerrar la caja.' };
+  }
+
+  const cash_difference = Math.round(closing_cash) - Math.round(totals.total_cash);
+  const fmtCOP = n => `$${Math.round(Math.abs(n)).toLocaleString('es-CO')}`;
+
+  const { data: closed, error: closeErr } = await supabaseAdmin
+    .from('cash_sessions')
+    .update({
+      ...Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, Math.round(v)])),
+      closing_cash:    Math.round(closing_cash),
+      cash_difference: cash_difference,
+      closed_at:       new Date().toISOString(),
+      status:          'closed',
+      notes:           notes || null,
+    })
+    .eq('id', sessionToClose)
+    .select('id, closed_at')
+    .single();
+
+  if (closeErr) return { error: `Error al cerrar la caja: ${closeErr.message}` };
+
+  // Alerta de descuadre si aplica (fire-and-forget)
+  if (Math.abs(cash_difference) > 5000) {
+    Promise.resolve(supabaseAdmin.from('system_alerts').insert({
+      organization_id: orgId,
+      alert_type:      'cash_discrepancy',
+      severity:        Math.abs(cash_difference) > 50000 ? 'high' : 'medium',
+      title:           `Descuadre de caja: ${cash_difference > 0 ? '+' : ''}${fmtCOP(cash_difference)} COP`,
+      description:     `Sesión ${sessionToClose} cerrada vía Co-Piloto.`,
+      data:            { session_id: sessionToClose, difference: cash_difference },
+    })).catch(() => {});
+  }
+
+  // Audit log (fire-and-forget)
+  Promise.resolve(supabaseAdmin.from('audit_log').insert({
+    organization_id: orgId,
+    user_id:         userId,
+    action:          'cash_close_via_copilot',
+    resource_type:   'cash_sessions',
+    resource_id:     sessionToClose,
+    new_values:      { closing_cash: Math.round(closing_cash), cash_difference, ...totals },
+  })).catch(() => {});
+
+  const discrepancyMsg = cash_difference === 0
+    ? '• Caja cuadrada ✅'
+    : cash_difference > 0
+      ? `• Sobrante de ${fmtCOP(cash_difference)} ⚠️`
+      : `• Faltante de ${fmtCOP(cash_difference)} ⚠️`;
+
+  return {
+    success:         true,
+    dry_run:         false,
+    session_id:      sessionToClose,
+    total_sales:     Math.round(totals.total_sales),
+    closing_cash:    Math.round(closing_cash),
+    cash_difference,
+    closed_at:       closed.closed_at,
+    message:         `✅ Caja cerrada exitosamente.\n• Total ventas del turno: $${Math.round(totals.total_sales).toLocaleString('es-CO')}\n• Efectivo contado: $${Math.round(closing_cash).toLocaleString('es-CO')}\n${discrepancyMsg}\n• Hora de cierre: ${new Date(closed.closed_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`,
+  };
+}
+
 
 /*
 EJEMPLO 1: Analizar factura de proveedor

@@ -387,6 +387,21 @@ PROTOCOLO ESTRICTO — nunca ejecutar sin confirmar:
 5. Espera confirmación EXPLÍCITA ("sí", "confirmo", "crea la orden").
 6. Solo entonces llama generate_purchase_order(dry_run=false, ...) para crear en BD.
 
+**Abrir sesión de caja:**
+1. Pregunta al usuario: ¿cuánto efectivo hay en caja para abrir? (necesitas opening_cash en pesos).
+2. Llama open_cash_session(dry_run=true, opening_cash) → verifica si ya hay caja abierta.
+3. Si no hay caja abierta: muestra el monto inicial y pide confirmación.
+4. Espera confirmación EXPLÍCITA ("sí", "confirmo", "abre la caja").
+5. Solo entonces llama open_cash_session(dry_run=false, opening_cash).
+
+**Cerrar sesión de caja:**
+1. Llama close_cash_session(dry_run=true) → obtén resumen del turno (ventas por método de pago).
+2. Muestra al usuario el resumen completo: total ventas, efectivo esperado, otros métodos de pago.
+3. Pregunta: ¿cuánto efectivo tienes físicamente en caja ahora?
+4. Espera que el usuario indique el monto contado (closing_cash).
+5. Muestra el posible descuadre y espera confirmación EXPLÍCITA.
+6. Solo entonces llama close_cash_session(dry_run=false, closing_cash).
+
 **Otras acciones (ajuste de stock):**
 → Usar create_ai_proposal con el tipo correspondiente.
 
