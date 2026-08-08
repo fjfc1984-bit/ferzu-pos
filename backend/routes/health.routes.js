@@ -148,27 +148,28 @@ async function checkSyncChain() {
   // Si la columna `source` no existe en `orders`, fallamos silenciosamente
   // con pending=0 (no queremos que un schema incompleto marque todo como crítico)
   try {
-    // Órdenes sincronizadas desde offline (synced_at IS NOT NULL) que siguen abiertas
+    // Proxy de órdenes atascadas: status='open' hace más de 15 min
+    // Usa solo columnas garantizadas (status + created_at) — no depende de synced_at
+    const stuckSince = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     const { count: pendingCount, error: pendErr } = await supabaseAdmin
       .from('orders')
       .select('id', { count: 'exact', head: true })
-      .not('synced_at', 'is', null)
-      .eq('status', 'open');
+      .eq('status', 'open')
+      .lt('created_at', stuckSince);
 
     if (pendErr) {
-      warnings.push(`orders.synced_at: ${pendErr.message || 'query error'}`);
+      warnings.push(`orders: ${pendErr.message || 'query error'}`);
     } else {
       pending = pendingCount ?? 0;
 
-      // Último sync = registro más reciente con synced_at
-      const { data: lastSynced } = await supabaseAdmin
+      // Última orden creada = proxy del último intento de sync
+      const { data: lastOrder } = await supabaseAdmin
         .from('orders')
-        .select('synced_at')
-        .not('synced_at', 'is', null)
-        .order('synced_at', { ascending: false })
+        .select('created_at')
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      lastSyncAttempt = lastSynced?.synced_at ?? null;
+      lastSyncAttempt = lastOrder?.created_at ?? null;
     }
   } catch (err) {
     warnings.push(`orders query: ${err.message || 'unknown error'}`);
