@@ -6,8 +6,9 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { PlanProvider, ModuleGuard, AdaptiveNav, MobileBottomNav, PricingPage, TrialBanner } from './components/ModuleGuard'
 import { POSProvider } from './context/POSContext'
 import { SyncProvider } from './context/SyncContext'
-import { OfflineBanner } from './components/OfflineBanner'
-import { AIAssistant }  from './components/AIAssistant'
+import { OfflineBanner }   from './components/OfflineBanner'
+import { AIAssistant }    from './components/AIAssistant'
+import SyncStatusBadge    from './components/SyncStatusBadge'
 
 // --- Landing page pública ---
 import LandingPage             from './pages/LandingPage'
@@ -180,6 +181,7 @@ export default function App() {
       <PlanProvider>
         <SyncProvider>
           <POSProvider>
+            <SyncStatusBadge />
             <Routes>
               {/* ====== Landing page pública ====== */}
               <Route path="/"                 element={<LandingPage />} />
