@@ -11,15 +11,12 @@ import { Router }         from 'express';
 import { body }           from 'express-validator';
 import { validate }       from '../middleware/validate.js';
 import { requireAuth }    from '../middleware/auth.js';
-import { createClient }   from '@supabase/supabase-js';
+import { supabaseAdmin }  from '../config/supabase.js';
+import logger             from '../config/logger.js';
 import { sendTestWhatsApp,
          isWhatsAppConfigured } from '../services/whatsapp.service.js';
 
-const router       = Router();
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const router = Router();
 
 router.use(requireAuth);
 
@@ -66,7 +63,7 @@ router.get('/', requireOrg, async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('[Settings] GET error:', err);
+    logger.error('[Settings] GET error:', { err: err.message });
     res.status(500).json({ error: 'Error obteniendo configuración' });
   }
 });
@@ -108,7 +105,7 @@ router.patch('/whatsapp', requireOrg, [
 
     res.json({ success: true, settings: { whatsapp: updated } });
   } catch (err) {
-    console.error('[Settings] PATCH whatsapp error:', err);
+    logger.error('[Settings] PATCH whatsapp error:', { err: err.message });
     res.status(500).json({ error: 'Error guardando configuración WhatsApp' });
   }
 });
@@ -144,7 +141,7 @@ router.post('/whatsapp/test', requireOrg, [
       res.status(400).json({ success: false, error: result.error });
     }
   } catch (err) {
-    console.error('[Settings] whatsapp/test error:', err);
+    logger.error('[Settings] whatsapp/test error:', { err: err.message });
     res.status(500).json({ error: 'Error enviando mensaje de prueba' });
   }
 });

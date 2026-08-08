@@ -48,7 +48,7 @@ router.patch('/modules', requireAuth, async (req, res) => {
     const { data: user, error: userErr } = await supabaseAdmin
       .from('users')
       .select('role')
-      .eq('id', req.userId)
+      .eq('id', req.user.id)
       .single();
 
     if (userErr || !user) {

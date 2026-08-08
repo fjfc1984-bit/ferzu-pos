@@ -16,7 +16,8 @@
 import { Router }            from 'express';
 import { body }              from 'express-validator';
 import { validate }          from '../middleware/validate.js';
-import { createClient }      from '@supabase/supabase-js';
+import { supabaseAdmin }     from '../config/supabase.js';
+import logger                from '../config/logger.js';
 import { aiRateLimit }       from '../config/rateLimits.js';
 import { requireAuth }       from '../middleware/auth.js';
 import {
@@ -30,11 +31,7 @@ import {
 }                            from '../lib/dianAI.js';
 import { triggerElectronicInvoice, checkResolutionExpiry } from '../lib/dian.js';
 
-const router       = Router();
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const router = Router();
 
 // Aplicar autenticación a TODAS las rutas DIAN.
 // requireAuth inyecta req.user, req.organizationId y req.supabase.
@@ -72,7 +69,7 @@ router.post('/classify-vat', requireOrg, async (req, res) => {
     res.json({ success: true, results });
 
   } catch (err) {
-    console.error('[DIAN] classify-vat error:', err);
+    logger.error('[DIAN] classify-vat error:', { err: err.message });
     res.status(500).json({ error: 'Error al clasificar IVA', detail: err.message });
   }
 });
@@ -105,7 +102,7 @@ router.post('/batch-classify', requireOrg, async (req, res) => {
     });
 
   } catch (err) {
-    console.error('[DIAN] batch-classify error:', err);
+    logger.error('[DIAN] batch-classify error:', { err: err.message });
     res.status(500).json({ error: 'Error en clasificación masiva', detail: err.message });
   }
 });
@@ -128,7 +125,7 @@ router.post('/preflight', requireOrg, async (req, res) => {
     res.json({ success: true, ...result });
 
   } catch (err) {
-    console.error('[DIAN] preflight error:', err);
+    logger.error('[DIAN] preflight error:', { err: err.message });
     res.status(500).json({ error: 'Error en validación preflight', detail: err.message });
   }
 });
@@ -151,7 +148,7 @@ router.post('/explain-error', requireOrg, async (req, res) => {
     res.json({ success: true, explanations });
 
   } catch (err) {
-    console.error('[DIAN] explain-error error:', err);
+    logger.error('[DIAN] explain-error error:', { err: err.message });
     res.status(500).json({ error: 'Error al explicar errores DIAN', detail: err.message });
   }
 });
@@ -174,7 +171,7 @@ router.post('/suggest-regime', requireOrg, async (req, res) => {
     res.json({ success: true, suggestion });
 
   } catch (err) {
-    console.error('[DIAN] suggest-regime error:', err);
+    logger.error('[DIAN] suggest-regime error:', { err: err.message });
     res.status(500).json({ error: 'Error al sugerir régimen', detail: err.message });
   }
 });
@@ -230,7 +227,7 @@ router.get('/resolution-status', requireOrg, async (req, res) => {
     res.json({ configured: true, ...result });
 
   } catch (err) {
-    console.error('[DIAN] resolution-status error:', err);
+    logger.error('[DIAN] resolution-status error:', { err: err.message });
     res.status(500).json({ error: 'Error consultando estado de resolución', detail: err.message });
   }
 });
@@ -285,7 +282,7 @@ router.post('/retry-contingency', requireOrg, async (req, res) => {
     });
 
   } catch (err) {
-    console.error('[DIAN] retry-contingency error:', err);
+    logger.error('[DIAN] retry-contingency error:', { err: err.message });
     res.status(500).json({ error: 'Error reintentando contingencias', detail: err.message });
   }
 });
@@ -312,7 +309,7 @@ router.get('/config', requireOrg, async (req, res) => {
 
     res.json({ config: config || null, org: org || null });
   } catch (err) {
-    console.error('[DIAN] config error:', err);
+    logger.error('[DIAN] config error:', { err: err.message });
     res.status(500).json({ error: 'Error consultando configuración DIAN' });
   }
 });
@@ -377,7 +374,7 @@ router.post('/setup', requireOrg, [
 
     res.json({ success: true, config: newConfig });
   } catch (err) {
-    console.error('[DIAN] setup error:', err);
+    logger.error('[DIAN] setup error:', { err: err.message });
     res.status(500).json({ error: 'Error guardando configuración DIAN', detail: err.message });
   }
 });
@@ -423,7 +420,7 @@ router.get('/invoices', requireOrg, async (req, res) => {
 
     res.json({ invoices: data || [], stats });
   } catch (err) {
-    console.error('[DIAN] invoices error:', err);
+    logger.error('[DIAN] invoices error:', { err: err.message });
     res.status(500).json({ error: 'Error consultando facturas', detail: err.message });
   }
 });
@@ -463,7 +460,7 @@ router.post('/vat-audit-log', requireOrg, [
     res.status(204).end();
   } catch (err) {
     // No fallar la UX por un error de log
-    console.warn('[DIAN] vat-audit-log error (non-critical):', err.message);
+    logger.warn('[DIAN] vat-audit-log error (non-critical):', { err: err.message });
     res.status(204).end();
   }
 });
