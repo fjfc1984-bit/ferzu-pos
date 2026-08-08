@@ -10,7 +10,7 @@ import logger from '../config/logger.js';
 const router = express.Router();
 router.use(requireAuth);
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const getResend = () => new Resend(process.env.RESEND_API_KEY || 'placeholder');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -495,7 +495,7 @@ router.post('/daily/send-email', async (req, res) => {
 </body>
 </html>`;
 
-    await resend.emails.send({
+    await getResend().emails.send({
       from:    process.env.RESEND_FROM_EMAIL || 'FERZU POS <reportes@resend.dev>',
       to:      recipientEmail,
       subject: `📊 Reporte del ${fechaFormateada} — ${org.business_name}`,

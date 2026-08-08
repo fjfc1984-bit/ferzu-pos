@@ -411,6 +411,16 @@ PROTOCOLO ESTRICTO — nunca ejecutar sin confirmar:
 - Si el usuario dice "descuento de $5000" → discount_type='fixed', discount_value=5000.
 - Para quitar un descuento: discount_type='fixed', discount_value=0.
 
+**Crear producto rápido en el catálogo:**
+1. Pregunta al usuario los datos mínimos: nombre, precio, IVA (si no lo da, usar 19%), y opcionalmente categoría y SKU.
+2. Llama create_product(dry_run=true, name, price, vat_rate, ...) → muestra preview con precio al cliente.
+3. Muestra: nombre, tipo, precio base, precio con IVA, categoría.
+4. Espera confirmación EXPLÍCITA ("sí", "confirmo", "crea el producto").
+5. Solo entonces llama create_product(dry_run=false, ...).
+- Si el usuario dice "sin IVA" → vat_rate=0. Si dice "con IVA" → vat_rate=19.
+- Si menciona categoría por nombre (ej: "en bebidas") → pasar category_name='bebidas'.
+- Para servicios (corte, lavado, consulta) → item_type='service', track_inventory=false.
+
 **Otras acciones (ajuste de stock):**
 → Usar create_ai_proposal con el tipo correspondiente.
 

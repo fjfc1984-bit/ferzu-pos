@@ -719,6 +719,82 @@ Nunca ejecutar dry_run=false sin confirmación previa del usuario.`,
       },
       required: ["dry_run", "discount_type", "discount_value"]
     }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // TOOL 14: CREAR PRODUCTO
+  // Permite al cajero/dueño agregar un producto al catálogo desde el Co-Piloto.
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    name: "create_product",
+    description: `Crea un nuevo producto o servicio en el catálogo del negocio.
+
+PROTOCOLO OBLIGATORIO DE DOS FASES:
+1. Llamar con dry_run=true → muestra preview del producto que se va a crear
+2. Mostrar al usuario: nombre, tipo, precio, IVA, categoría, SKU
+3. Esperar confirmación EXPLÍCITA ("sí", "confirmo", "crea el producto")
+4. Solo entonces llamar con dry_run=false
+
+CUÁNDO USARLO:
+- El cajero/dueño dice "agregar producto", "crear producto", "nuevo producto", "necesito vender X".
+- Se detecta que un producto escaneado no existe en el catálogo.
+
+REGLAS:
+- vat_rate solo acepta: 0, 5, 8 (INC restaurantes), 19. Si el usuario no especifica, asumir 19%.
+- Si el usuario dice "sin IVA" → vat_rate=0. Si dice "con IVA normal" → vat_rate=19.
+- Si el usuario da nombre de categoría (ej: "bebidas"), buscamos el UUID automáticamente.
+- item_type='service' para servicios (corte, lavado, consulta), 'product' para físicos.
+- Nunca inventar precios — si no se proporcionan, preguntar antes de llamar la tool.
+
+Nunca ejecutar dry_run=false sin confirmación previa del usuario.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        dry_run: {
+          type: "boolean",
+          description: "true = preview sin crear (SIEMPRE empezar aquí). false = crear en BD (solo tras confirmación explícita)."
+        },
+        name: {
+          type: "string",
+          description: "Nombre del producto o servicio. Ej: 'Coca-Cola 350ml', 'Corte de pelo', 'Hamburguesa clásica'."
+        },
+        price: {
+          type: "number",
+          description: "Precio de venta base en pesos COP (entero, sin IVA). Ej: 3500. El sistema calculará el precio final con IVA."
+        },
+        vat_rate: {
+          type: "number",
+          enum: [0, 5, 8, 19],
+          description: "Tasa de IVA. 0=sin IVA, 5=IVA reducido, 8=INC restaurantes (Ley 2010/2019), 19=IVA general. Default: 19."
+        },
+        cost: {
+          type: "number",
+          description: "Costo en COP (precio de compra al proveedor). Opcional — útil para calcular rentabilidad."
+        },
+        category_name: {
+          type: "string",
+          description: "Nombre de la categoría existente (ej: 'bebidas', 'comida', 'servicios'). Se busca el UUID automáticamente. Si no existe, se crea sin categoría."
+        },
+        sku: {
+          type: "string",
+          description: "Código interno del producto. Opcional. Ej: 'CC-350', 'CORTE-01'."
+        },
+        track_inventory: {
+          type: "boolean",
+          description: "true = llevar control de stock. false = sin control (servicios o productos ilimitados). Default: false."
+        },
+        unit_of_measure: {
+          type: "string",
+          description: "Unidad de medida. Ej: 'unidad', 'kg', 'litro', 'porción', 'hora'. Opcional."
+        },
+        item_type: {
+          type: "string",
+          enum: ["product", "service"],
+          description: "'product' para físicos. 'service' para servicios (cortes, consultas, etc.). Default: 'product'."
+        }
+      },
+      required: ["dry_run", "name", "price", "vat_rate"]
+    }
   }
 ];
 
@@ -882,6 +958,9 @@ async function executeTool(toolName, toolInput, context) {
 
     case 'apply_discount':
       return await applyDiscount(toolInput, context);
+
+    case 'create_product':
+      return await createProduct(toolInput, context);
 
     default:
       return { error: `Tool desconocida: ${toolName}` };
@@ -2205,6 +2284,130 @@ async function applyDiscount({ dry_run = true, discount_type, discount_value, or
     discount_applied: new_discount_amount,
     new_total,
     message:         `✅ Descuento aplicado exitosamente.\n• Descuento: ${discountLabel} → −${fmtCOP(new_discount_amount)}\n• Total anterior: ${fmtCOP(order.total)}\n• **Nuevo total: ${fmtCOP(new_total)}**${reason ? `\n• Motivo: "${reason}"` : ''}`,
+  };
+}
+
+
+// =============================================================================
+// HANDLER: createProduct
+// Crea un producto/servicio en el catálogo del negocio.
+// Protocolo de dos fases: dry_run=true → preview | dry_run=false → insertar en BD
+// =============================================================================
+async function createProduct(
+  { dry_run = true, name, price, vat_rate = 19, cost, category_name, sku, track_inventory = false, unit_of_measure, item_type = 'product' },
+  context
+) {
+  const orgId    = context.organization_id;
+  const supabase = context.supabase;
+
+  if (!orgId)   return { error: 'DIAGNÓSTICO: organization_id es undefined en contexto.' };
+  if (!name?.trim())                             return { error: 'El nombre del producto es obligatorio.' };
+  if (typeof price !== 'number' || price < 0)    return { error: 'El precio debe ser un número ≥ 0 en COP.' };
+  if (![0, 5, 8, 19].includes(vat_rate))         return { error: 'vat_rate debe ser 0, 5, 8 o 19.' };
+
+  const priceInt = Math.round(price);
+  const costInt  = cost != null ? Math.round(Math.max(0, cost)) : 0;
+
+  // ── Resolver category_id desde nombre (búsqueda fuzzy) ───────────────────
+  let category_id    = null;
+  let categoryLabel  = 'Sin categoría';
+  if (category_name?.trim()) {
+    const { data: cat } = await supabase
+      .from('categories')
+      .select('id, name')
+      .eq('organization_id', orgId)
+      .ilike('name', `%${category_name.trim()}%`)
+      .limit(1)
+      .maybeSingle();
+    if (cat) {
+      category_id   = cat.id;
+      categoryLabel = cat.name;
+    } else {
+      categoryLabel = `"${category_name}" (no encontrada — se creará sin categoría)`;
+    }
+  }
+
+  const fmtCOP      = n => `$${Math.round(n).toLocaleString('es-CO')}`;
+  const vatLabel    = vat_rate === 0 ? 'Sin IVA' : `IVA ${vat_rate}%`;
+  // Precio al cliente = precio base + IVA (vat_included=false → IVA se suma encima)
+  const priceWithVat = Math.round(priceInt * (1 + vat_rate / 100));
+  const typeLabel   = item_type === 'service' ? 'Servicio' : 'Producto físico';
+
+  // ── FASE 1: dry_run=true — preview sin tocar la BD ───────────────────────
+  if (dry_run) {
+    const lines = [
+      `📦 Vista previa — Producto a crear`,
+      `• Nombre: **${name.trim()}**`,
+      `• Tipo: ${typeLabel}`,
+      `• Precio base: ${fmtCOP(priceInt)} (${vatLabel})`,
+      `• Precio al cliente: **${fmtCOP(priceWithVat)}**`,
+      cost != null ? `• Costo de compra: ${fmtCOP(costInt)}` : null,
+      `• Categoría: ${categoryLabel}`,
+      sku    ? `• SKU: ${sku}` : null,
+      `• Control de inventario: ${track_inventory ? 'Sí' : 'No'}`,
+      unit_of_measure ? `• Unidad: ${unit_of_measure}` : null,
+      `\n¿Confirmas la creación de este producto?`,
+    ].filter(Boolean);
+
+    return {
+      dry_run:        true,
+      can_create:     true,
+      preview: {
+        name:            name.trim(),
+        price:           priceInt,
+        price_with_vat:  priceWithVat,
+        vat_rate,
+        cost:            costInt,
+        category_id,
+        category_label:  categoryLabel,
+        sku:             sku || null,
+        track_inventory,
+        unit_of_measure: unit_of_measure || null,
+        item_type,
+      },
+      message: lines.join('\n'),
+    };
+  }
+
+  // ── FASE 2: dry_run=false — insertar en BD ────────────────────────────────
+  const { data, error } = await supabase
+    .from('products')
+    .insert({
+      organization_id: orgId,           // siempre del JWT, nunca del body
+      name:            name.trim(),
+      price:           priceInt,
+      cost:            costInt,
+      vat_rate,
+      vat_included:    false,           // precio base sin IVA — el frontend suma el IVA al mostrar
+      sku:             sku || null,
+      category_id:     category_id || null,
+      track_inventory,
+      unit_of_measure: unit_of_measure || null,
+      item_type:       item_type || 'product',
+      is_active:       true,
+      is_featured:     false,
+    })
+    .select()
+    .single();
+
+  if (error) return { error: `Error al crear el producto: ${error.message}` };
+
+  // Audit log (fire-and-forget — no bloquear la respuesta)
+  Promise.resolve(supabase.from('audit_log').insert({
+    organization_id: orgId,
+    user_id:         context.user_id,
+    action:          'create_product_via_copilot',
+    resource_type:   'product',
+    resource_id:     data.id,
+    new_values:      { name: data.name, price: data.price, vat_rate: data.vat_rate, item_type: data.item_type },
+  })).catch(() => {});
+
+  return {
+    dry_run:    false,
+    success:    true,
+    product_id: data.id,
+    message:    `✅ Producto **${data.name}** creado exitosamente.\n• Precio al cliente: **${fmtCOP(priceWithVat)}** (${vatLabel})\n• Categoría: ${categoryLabel}\n• ID: ${data.id.slice(0, 8)}…\n\nYa puedes buscarlo en el POS usando su nombre${sku ? ` o SKU "${sku}"` : ''}.`,
+    product:    data,
   };
 }
 
