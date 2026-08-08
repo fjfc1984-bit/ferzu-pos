@@ -668,6 +668,57 @@ Nunca ejecutar dry_run=false sin que el usuario haya confirmado el monto de cier
       },
       required: ["dry_run"]
     }
+  },
+
+  // ── Tool 13: apply_discount ─────────────────────────────────────────────────
+  {
+    name: "apply_discount",
+    description: `Aplica un descuento a la última orden ABIERTA (no pagada aún) de la sesión de caja activa.
+
+PROTOCOLO OBLIGATORIO DE DOS FASES:
+1. Llamar con dry_run=true → muestra la orden actual, total sin descuento y total con el descuento propuesto
+2. Mostrar al usuario: total original, descuento aplicado, nuevo total
+3. Esperar confirmación EXPLÍCITA ("sí", "confirmo", "aplica el descuento")
+4. Solo entonces llamar con dry_run=false
+
+Tipos de descuento soportados:
+- percentage: descuento porcentual (ej: 10 = 10% de descuento). Máximo 100%.
+- fixed: monto fijo en pesos COP (ej: 5000 = $5.000 de descuento).
+
+IMPORTANTE:
+- Solo funciona en órdenes con status='open' (no pagadas aún).
+- Si la orden ya está pagada, NO se puede aplicar descuento (sugerir anulación).
+- Si no hay orden abierta en la sesión activa, informar al usuario.
+- Para retirar un descuento ya aplicado, usar discount_type='fixed' con discount_value=0.
+
+Nunca ejecutar dry_run=false sin confirmación previa del usuario.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        dry_run: {
+          type: "boolean",
+          description: "true = preview sin aplicar (SIEMPRE empezar aquí). false = aplicar el descuento (solo tras confirmación)."
+        },
+        discount_type: {
+          type: "string",
+          enum: ["percentage", "fixed"],
+          description: "'percentage' = porcentaje del total (ej: 10 para 10%). 'fixed' = monto fijo en COP (ej: 5000 para $5.000)."
+        },
+        discount_value: {
+          type: "number",
+          description: "Valor del descuento. Si discount_type='percentage', es el porcentaje (0-100). Si es 'fixed', es el monto en pesos COP."
+        },
+        order_id: {
+          type: "string",
+          description: "UUID de la orden específica (opcional). Si no se proporciona, se usa la última orden abierta de la sesión activa."
+        },
+        reason: {
+          type: "string",
+          description: "Motivo del descuento (opcional pero recomendado). Ej: 'Cliente VIP', 'Promoción del día', 'Error en pedido'."
+        }
+      },
+      required: ["dry_run", "discount_type", "discount_value"]
+    }
   }
 ];
 
@@ -828,6 +879,9 @@ async function executeTool(toolName, toolInput, context) {
 
     case 'close_cash_session':
       return await closeCashSession(toolInput, context);
+
+    case 'apply_discount':
+      return await applyDiscount(toolInput, context);
 
     default:
       return { error: `Tool desconocida: ${toolName}` };
@@ -1973,6 +2027,184 @@ async function closeCashSession({ dry_run = true, closing_cash, session_id, note
     cash_difference,
     closed_at:       closed.closed_at,
     message:         `✅ Caja cerrada exitosamente.\n• Total ventas del turno: $${Math.round(totals.total_sales).toLocaleString('es-CO')}\n• Efectivo contado: $${Math.round(closing_cash).toLocaleString('es-CO')}\n${discrepancyMsg}\n• Hora de cierre: ${new Date(closed.closed_at).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`,
+  };
+}
+
+
+// =============================================================================
+// SECCIÓN 5f: TOOL 13 — apply_discount
+// =============================================================================
+
+async function applyDiscount({ dry_run = true, discount_type, discount_value, order_id, reason }, context) {
+  const orgId    = context.organization_id;
+  const userId   = context.user_id;
+  const branchId = context.branch_id;
+
+  if (!orgId) return { error: 'DIAGNÓSTICO: organization_id es undefined en contexto.' };
+
+  // Validaciones básicas
+  if (!['percentage', 'fixed'].includes(discount_type)) {
+    return { error: 'discount_type debe ser "percentage" o "fixed".' };
+  }
+  if (typeof discount_value !== 'number' || discount_value < 0) {
+    return { error: 'discount_value debe ser un número mayor o igual a 0.' };
+  }
+  if (discount_type === 'percentage' && discount_value > 100) {
+    return { error: 'El porcentaje de descuento no puede superar 100%.' };
+  }
+
+  // ── Buscar la orden objetivo ─────────────────────────────────────────────
+  let order = null;
+
+  if (order_id) {
+    // Buscar orden específica — validar que pertenece a la org via branch
+    const { data, error } = await supabaseAdmin
+      .from('orders')
+      .select('id, status, subtotal, tax_total, tip_amount, loyalty_discount, discount_amount, discount_type, discount_value, total, branch_id, created_at, order_items(product_name, quantity, subtotal)')
+      .eq('id', order_id)
+      .maybeSingle();
+
+    if (error || !data) return { error: 'Orden no encontrada.' };
+
+    // Validar ownership via branch
+    const { data: branch } = await supabaseAdmin
+      .from('branches')
+      .select('organization_id')
+      .eq('id', data.branch_id)
+      .maybeSingle();
+
+    if (!branch || branch.organization_id !== orgId) {
+      return { error: 'Orden no encontrada o no pertenece a tu organización.' };
+    }
+    order = data;
+  } else {
+    // Buscar la última orden ABIERTA de la sesión activa o del cajero
+    // Primero buscar sesión activa del usuario
+    const { data: session } = await supabaseAdmin
+      .from('cash_sessions')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('status', 'open')
+      .order('opened_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let orderQuery = supabaseAdmin
+      .from('orders')
+      .select('id, status, subtotal, tax_total, tip_amount, loyalty_discount, discount_amount, discount_type, discount_value, total, branch_id, created_at, order_items(product_name, quantity, subtotal)')
+      .eq('status', 'open')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (session) {
+      orderQuery = orderQuery.eq('cash_session_id', session.id);
+    } else if (branchId) {
+      orderQuery = orderQuery.eq('branch_id', branchId);
+    } else {
+      return { error: 'No hay sesión de caja activa ni sucursal en contexto. Abre una caja primero.' };
+    }
+
+    const { data } = await orderQuery.maybeSingle();
+
+    if (!data) {
+      return {
+        can_apply: false,
+        message: 'No hay ninguna orden abierta (pendiente de pago) en este momento.\n\nLos descuentos solo se pueden aplicar a órdenes que aún no han sido cobradas. Si la orden ya fue pagada, usa la anulación.',
+      };
+    }
+    order = data;
+  }
+
+  if (order.status === 'paid') {
+    return {
+      can_apply: false,
+      message: `La orden ya fue pagada ($${order.total.toLocaleString('es-CO')}). No se puede aplicar descuento retroactivamente.\n\nSi hubo un error, puedes anularla con "anula la última venta".`,
+    };
+  }
+  if (order.status === 'cancelled') {
+    return { can_apply: false, message: 'La orden ya fue anulada. No se puede aplicar descuento.' };
+  }
+
+  // ── Calcular nuevo descuento (misma lógica que orders.routes.js) ─────────
+  const base = (order.subtotal || 0) + (order.tax_total || 0);
+  let new_discount_amount = 0;
+
+  if (discount_type === 'percentage') {
+    new_discount_amount = Math.round(base * discount_value / 100);
+  } else {
+    new_discount_amount = Math.round(Math.min(discount_value, base));
+  }
+
+  const order_subtotal     = base - new_discount_amount;
+  const loyalty_discount   = order.loyalty_discount || 0;
+  const tip_amount         = order.tip_amount || 0;
+  const new_total          = Math.max(0, order_subtotal + tip_amount - loyalty_discount);
+
+  const fmtCOP = n => `$${Math.round(n).toLocaleString('es-CO')}`;
+  const items  = (order.order_items || []).map(i => `${i.quantity}× ${i.product_name}`).join(', ');
+  const discountLabel = discount_type === 'percentage'
+    ? `${discount_value}%`
+    : fmtCOP(discount_value);
+
+  // ── FASE 1: dry_run — mostrar preview ────────────────────────────────────
+  if (dry_run) {
+    const lines = [
+      `📋 Vista previa — Descuento a aplicar`,
+      `• Orden: ${order.id.slice(0, 8)}… (${items || 'sin detalle'})`,
+      `• Total original: ${fmtCOP(order.total)}`,
+      `• Descuento: ${discountLabel} → −${fmtCOP(new_discount_amount)}`,
+      loyalty_discount > 0 ? `• Descuento fidelidad (ya aplicado): −${fmtCOP(loyalty_discount)}` : null,
+      `• **Nuevo total: ${fmtCOP(new_total)}**`,
+      reason ? `• Motivo: "${reason}"` : null,
+      `\n¿Confirmas la aplicación del descuento?`,
+    ].filter(Boolean);
+
+    return {
+      dry_run:             true,
+      can_apply:           true,
+      order_id:            order.id,
+      original_total:      order.total,
+      new_discount_amount,
+      new_total,
+      discount_type,
+      discount_value,
+      message:             lines.join('\n'),
+    };
+  }
+
+  // ── FASE 2: aplicar descuento (dry_run=false) ─────────────────────────────
+  const { error: updateErr } = await supabaseAdmin
+    .from('orders')
+    .update({
+      discount_type,
+      discount_value,
+      discount_amount: new_discount_amount,
+      total:           new_total,
+    })
+    .eq('id', order.id)
+    .eq('status', 'open'); // doble seguro: no tocar órdenes pagadas
+
+  if (updateErr) return { error: `Error al aplicar descuento: ${updateErr.message}` };
+
+  // Audit log (fire-and-forget)
+  Promise.resolve(supabaseAdmin.from('audit_log').insert({
+    organization_id: orgId,
+    user_id:         userId,
+    action:          'apply_discount_via_copilot',
+    resource_type:   'order',
+    resource_id:     order.id,
+    old_values:      { total: order.total, discount_amount: order.discount_amount || 0 },
+    new_values:      { total: new_total, discount_amount: new_discount_amount, discount_type, discount_value, reason: reason || null },
+  })).catch(() => {});
+
+  return {
+    success:         true,
+    dry_run:         false,
+    order_id:        order.id,
+    original_total:  order.total,
+    discount_applied: new_discount_amount,
+    new_total,
+    message:         `✅ Descuento aplicado exitosamente.\n• Descuento: ${discountLabel} → −${fmtCOP(new_discount_amount)}\n• Total anterior: ${fmtCOP(order.total)}\n• **Nuevo total: ${fmtCOP(new_total)}**${reason ? `\n• Motivo: "${reason}"` : ''}`,
   };
 }
 

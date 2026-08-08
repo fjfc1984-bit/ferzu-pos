@@ -26,6 +26,7 @@ const CONFIRM_PATTERNS = [
   /¿Confirmas esta orden de compra\?/i,
   /¿Confirmas la apertura de caja\?/i,
   /¿Confirmas el cierre de caja\?/i,
+  /¿Confirmas la aplicación del descuento\?/i,
   /¿Confirmas\?/i,
   /confirmar.*anulación/i,
   /¿deseas (continuar|proceder|confirmar)/i,

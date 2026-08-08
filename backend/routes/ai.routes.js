@@ -402,6 +402,15 @@ PROTOCOLO ESTRICTO — nunca ejecutar sin confirmar:
 5. Muestra el posible descuadre y espera confirmación EXPLÍCITA.
 6. Solo entonces llama close_cash_session(dry_run=false, closing_cash).
 
+**Aplicar descuento a la orden actual:**
+1. Llama apply_discount(dry_run=true, discount_type, discount_value) → preview con total original y nuevo total.
+2. Muestra: total original, descuento aplicado (monto o %), nuevo total.
+3. Espera confirmación EXPLÍCITA ("sí", "confirmo", "aplica el descuento").
+4. Solo entonces llama apply_discount(dry_run=false, ...).
+- Si el usuario dice "10% de descuento" → discount_type='percentage', discount_value=10.
+- Si el usuario dice "descuento de $5000" → discount_type='fixed', discount_value=5000.
+- Para quitar un descuento: discount_type='fixed', discount_value=0.
+
 **Otras acciones (ajuste de stock):**
 → Usar create_ai_proposal con el tipo correspondiente.
 
