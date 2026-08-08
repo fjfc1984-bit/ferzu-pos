@@ -421,6 +421,15 @@ PROTOCOLO ESTRICTO — nunca ejecutar sin confirmar:
 - Si menciona categoría por nombre (ej: "en bebidas") → pasar category_name='bebidas'.
 - Para servicios (corte, lavado, consulta) → item_type='service', track_inventory=false.
 
+**Transferir stock entre sucursales:**
+1. Pregunta: producto, sucursal origen, sucursal destino y cantidad (si no los da en el mensaje).
+2. Llama transfer_stock(dry_run=true, product_name, from_branch_name, to_branch_name, quantity) → muestra preview con stock actual y resultante.
+3. Muestra: producto, origen, destino, cantidad, stock antes/después en cada sucursal.
+4. Espera confirmación EXPLÍCITA ("sí", "confirmo", "haz el traslado").
+5. Solo entonces llama transfer_stock(dry_run=false, ...).
+- Los nombres de sucursal son fuzzy: "norte", "principal", "bodega" → el sistema busca automáticamente.
+- Si el producto no tiene track_inventory=true, informa al usuario que no es posible transferir.
+
 **Otras acciones (ajuste de stock):**
 → Usar create_ai_proposal con el tipo correspondiente.
 

@@ -795,6 +795,56 @@ Nunca ejecutar dry_run=false sin confirmación previa del usuario.`,
       },
       required: ["dry_run", "name", "price", "vat_rate"]
     }
+  },
+
+  // ─── Tool 15: transfer_stock ────────────────────────────────────────────────
+  {
+    name: "transfer_stock",
+    description: `Transfiere unidades de un producto desde una sucursal origen hacia otra sucursal destino.
+
+CUÁNDO USAR:
+- El usuario pide mover stock entre tiendas/sucursales.
+- Frases como: "pasa 10 unidades de Coca-Cola de la tienda norte a la sur", "traslada stock", "mueve inventario".
+
+FLUJO OBLIGATORIO (dos fases):
+1. Llama transfer_stock(dry_run=true) → muestra preview con stock actual, stock resultante y confirmación.
+2. Solo tras confirmación EXPLÍCITA del usuario → llama transfer_stock(dry_run=false).
+
+REGLAS:
+- Solo funciona con productos que tengan track_inventory=true.
+- La sucursal origen debe tener stock suficiente (quantity >= quantity_to_transfer).
+- Los nombres de producto y sucursal se buscan por coincidencia parcial — el usuario no necesita el UUID exacto.
+- Nunca ejecutar dry_run=false sin confirmación previa del usuario.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        dry_run: {
+          type: "boolean",
+          description: "true = preview sin mover stock (SIEMPRE empezar aquí). false = ejecutar transferencia (solo tras confirmación explícita)."
+        },
+        product_name: {
+          type: "string",
+          description: "Nombre o parte del nombre del producto a transferir. Ej: 'Coca-Cola', 'Hamburguesa'. Se busca por coincidencia parcial."
+        },
+        from_branch_name: {
+          type: "string",
+          description: "Nombre o parte del nombre de la sucursal ORIGEN (de donde sale el stock). Ej: 'Norte', 'Principal', 'Bodega'."
+        },
+        to_branch_name: {
+          type: "string",
+          description: "Nombre o parte del nombre de la sucursal DESTINO (donde llega el stock). Ej: 'Sur', 'Sucursal 2', 'Tienda Centro'."
+        },
+        quantity: {
+          type: "number",
+          description: "Cantidad de unidades a transferir. Debe ser > 0. Ej: 10, 2.5 (si el producto usa decimales)."
+        },
+        reason: {
+          type: "string",
+          description: "Motivo del traslado. Opcional. Ej: 'Abastecimiento', 'Evento especial', 'Corrección de stock'."
+        }
+      },
+      required: ["dry_run", "product_name", "from_branch_name", "to_branch_name", "quantity"]
+    }
   }
 ];
 
@@ -961,6 +1011,9 @@ async function executeTool(toolName, toolInput, context) {
 
     case 'create_product':
       return await createProduct(toolInput, context);
+
+    case 'transfer_stock':
+      return await transferStock(toolInput, context);
 
     default:
       return { error: `Tool desconocida: ${toolName}` };
@@ -2408,6 +2461,201 @@ async function createProduct(
     product_id: data.id,
     message:    `✅ Producto **${data.name}** creado exitosamente.\n• Precio al cliente: **${fmtCOP(priceWithVat)}** (${vatLabel})\n• Categoría: ${categoryLabel}\n• ID: ${data.id.slice(0, 8)}…\n\nYa puedes buscarlo en el POS usando su nombre${sku ? ` o SKU "${sku}"` : ''}.`,
     product:    data,
+  };
+}
+
+// =============================================================================
+// HANDLER: transfer_stock — Tool 15
+// Transfiere stock de un producto entre dos sucursales de la misma organización.
+// SIEMPRE llamar con dry_run=true primero, luego dry_run=false tras confirmación.
+// =============================================================================
+async function transferStock(
+  { dry_run = true, product_name, from_branch_name, to_branch_name, quantity, reason },
+  context
+) {
+  const orgId    = context.organization_id;
+  const supabase = context.supabase;
+
+  if (!orgId)         return { error: 'DIAGNÓSTICO: organization_id es undefined en contexto.' };
+  if (!product_name?.trim())    return { error: 'El nombre del producto es obligatorio.' };
+  if (!from_branch_name?.trim()) return { error: 'El nombre de la sucursal origen es obligatorio.' };
+  if (!to_branch_name?.trim())   return { error: 'El nombre de la sucursal destino es obligatorio.' };
+  if (typeof quantity !== 'number' || quantity <= 0) return { error: 'La cantidad debe ser un número mayor que 0.' };
+
+  const fmtCOP = n => `$${Math.round(n).toLocaleString('es-CO')}`;
+
+  // ── 1. Buscar producto por nombre (fuzzy) ──────────────────────────────────
+  const { data: product } = await supabase
+    .from('products')
+    .select('id, name, track_inventory, unit_of_measure')
+    .eq('organization_id', orgId)
+    .eq('is_active', true)
+    .ilike('name', `%${product_name.trim()}%`)
+    .limit(1)
+    .maybeSingle();
+
+  if (!product) return { error: `No se encontró ningún producto activo con el nombre "${product_name}".` };
+  if (!product.track_inventory) {
+    return { error: `El producto "${product.name}" no tiene control de stock activado. Solo se pueden transferir productos con track_inventory=true.` };
+  }
+
+  // ── 2. Buscar sucursales por nombre (fuzzy) ────────────────────────────────
+  const { data: fromBranch } = await supabase
+    .from('branches')
+    .select('id, name')
+    .eq('organization_id', orgId)
+    .ilike('name', `%${from_branch_name.trim()}%`)
+    .limit(1)
+    .maybeSingle();
+
+  if (!fromBranch) return { error: `No se encontró ninguna sucursal con el nombre "${from_branch_name}".` };
+
+  const { data: toBranch } = await supabase
+    .from('branches')
+    .select('id, name')
+    .eq('organization_id', orgId)
+    .ilike('name', `%${to_branch_name.trim()}%`)
+    .limit(1)
+    .maybeSingle();
+
+  if (!toBranch) return { error: `No se encontró ninguna sucursal con el nombre "${to_branch_name}".` };
+
+  if (fromBranch.id === toBranch.id) {
+    return { error: 'La sucursal origen y destino no pueden ser la misma.' };
+  }
+
+  // ── 3. Consultar stock actual en ambas sucursales ──────────────────────────
+  const { data: fromInv } = await supabase
+    .from('inventory')
+    .select('quantity, average_cost')
+    .eq('branch_id', fromBranch.id)
+    .eq('product_id', product.id)
+    .maybeSingle();
+
+  const { data: toInv } = await supabase
+    .from('inventory')
+    .select('quantity')
+    .eq('branch_id', toBranch.id)
+    .eq('product_id', product.id)
+    .maybeSingle();
+
+  const fromQty    = fromInv?.quantity ?? 0;
+  const toQty      = toInv?.quantity   ?? 0;
+  const avgCost    = fromInv?.average_cost ?? 0;
+  const unit       = product.unit_of_measure || 'unidad(es)';
+  const qtyRounded = Math.round(quantity * 100) / 100; // Preservar decimales si aplica
+
+  if (fromQty < qtyRounded) {
+    return {
+      error: `Stock insuficiente. "${fromBranch.name}" solo tiene **${fromQty} ${unit}** de "${product.name}" — no puede transferir ${qtyRounded}.`,
+      current_stock: fromQty,
+    };
+  }
+
+  // ── 4. dry_run=true → Preview, nunca toca la BD ───────────────────────────
+  if (dry_run) {
+    return {
+      dry_run:     true,
+      can_transfer: true,
+      preview: {
+        product_id:    product.id,
+        product_name:  product.name,
+        from_branch_id:   fromBranch.id,
+        from_branch_name: fromBranch.name,
+        to_branch_id:     toBranch.id,
+        to_branch_name:   toBranch.name,
+        quantity:         qtyRounded,
+        unit,
+        from_stock_before: fromQty,
+        from_stock_after:  fromQty - qtyRounded,
+        to_stock_before:   toQty,
+        to_stock_after:    toQty + qtyRounded,
+        reason:           reason || null,
+      },
+      message: [
+        `Aquí está el resumen del traslado a realizar:`,
+        `| Campo | Detalle |`,
+        `|---|---|`,
+        `| Producto | ${product.name} |`,
+        `| Origen | ${fromBranch.name} |`,
+        `| Destino | ${toBranch.name} |`,
+        `| Cantidad | ${qtyRounded} ${unit} |`,
+        `| Stock origen después | ${fromQty - qtyRounded} ${unit} (antes: ${fromQty}) |`,
+        `| Stock destino después | ${toQty + qtyRounded} ${unit} (antes: ${toQty}) |`,
+        reason ? `| Motivo | ${reason} |` : null,
+        ``,
+        `¿Confirmas el traslado de stock?`,
+      ].filter(l => l !== null).join('\n'),
+    };
+  }
+
+  // ── 5. dry_run=false → Ejecutar transferencia ─────────────────────────────
+  const transferRef = `TRF-${Date.now()}`;
+
+  // Decrementar origen
+  await supabase.from('inventory').upsert({
+    branch_id:    fromBranch.id,
+    product_id:   product.id,
+    quantity:     fromQty - qtyRounded,
+    average_cost: avgCost,
+    updated_at:   new Date().toISOString(),
+  });
+
+  // Incrementar destino
+  await supabase.from('inventory').upsert({
+    branch_id:    toBranch.id,
+    product_id:   product.id,
+    quantity:     toQty + qtyRounded,
+    average_cost: avgCost,       // propagar el costo promedio del origen
+    updated_at:   new Date().toISOString(),
+  });
+
+  // Movimiento SALIDA en origen
+  await supabase.from('inventory_movements').insert({
+    branch_id:      fromBranch.id,
+    product_id:     product.id,
+    movement_type:  'transfer_out',
+    quantity:       -qtyRounded,
+    unit_cost:      Math.round(avgCost),
+    reference_type: 'ai_transfer',
+    reference_id:   transferRef,
+    notes:          reason || null,
+  });
+
+  // Movimiento ENTRADA en destino
+  await supabase.from('inventory_movements').insert({
+    branch_id:      toBranch.id,
+    product_id:     product.id,
+    movement_type:  'transfer_in',
+    quantity:       qtyRounded,
+    unit_cost:      Math.round(avgCost),
+    reference_type: 'ai_transfer',
+    reference_id:   transferRef,
+    notes:          reason || null,
+  });
+
+  // Audit log (fire-and-forget)
+  Promise.resolve(supabase.from('audit_log').insert({
+    organization_id: orgId,
+    user_id:         context.user_id,
+    action:          'transfer_stock_via_copilot',
+    resource_type:   'inventory',
+    resource_id:     product.id,
+    new_values: {
+      product_name:     product.name,
+      from_branch:      fromBranch.name,
+      to_branch:        toBranch.name,
+      quantity:         qtyRounded,
+      reference:        transferRef,
+      reason:           reason || null,
+    },
+  })).catch(() => {});
+
+  return {
+    dry_run:      false,
+    success:      true,
+    reference:    transferRef,
+    message:      `✅ Traslado completado exitosamente.\n• **${qtyRounded} ${unit}** de **${product.name}** movidas de "${fromBranch.name}" → "${toBranch.name}"\n• Stock ${fromBranch.name}: ${fromQty} → **${fromQty - qtyRounded} ${unit}**\n• Stock ${toBranch.name}: ${toQty} → **${toQty + qtyRounded} ${unit}**\n• Referencia: ${transferRef}`,
   };
 }
 
