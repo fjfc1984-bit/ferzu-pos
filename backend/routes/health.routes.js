@@ -20,10 +20,10 @@ const router = Router();
 // UMBRALES — ajusta según comportamiento real de tu Supabase
 // =============================================================================
 const T = {
-  auth_warn_ms:       500,   // >500ms en auth → warning
-  auth_crit_ms:      2000,   // >2s en auth   → critical
-  db_warn_ms:         200,   // >200ms en DB   → warning
-  db_crit_ms:        1000,   // >1s en DB      → critical
+  auth_warn_ms:       800,   // >800ms en auth → warning (Supabase free/small puede llegar a 700ms en frío)
+  auth_crit_ms:      3000,   // >3s en auth   → critical
+  db_warn_ms:         600,   // >600ms en DB   → warning
+  db_crit_ms:        2000,   // >2s en DB      → critical
   mem_warn_mb:        350,   // >350MB RAM      → warning
   mem_crit_mb:        600,   // >600MB RAM      → critical
   pending_warn:        20,   // >20 offline pendientes → warning
