@@ -1303,18 +1303,19 @@ async function voidLastOrder({ dry_run = true, order_id, reason }, context) {
 
   // ── FASE 1: previsualizar (dry_run=true) ──────────────────────────────────
   if (dry_run) {
-    let query = supabaseAdmin
+    // Query 1: buscar la orden (sin join — PostgREST confunde .eq() con relaciones embebidas)
+    let orderQuery = supabaseAdmin
       .from('orders')
-      .select('id, total, status, created_at, order_items(product_name, quantity, subtotal)')
+      .select('id, total, status, created_at, branch_id')
       .eq('organization_id', orgId)
       .eq('status', 'paid')
       .gte('created_at', since30min)
       .order('created_at', { ascending: false })
       .limit(1);
 
-    if (branchId) query = query.eq('branch_id', branchId);
+    if (branchId) orderQuery = orderQuery.eq('branch_id', branchId);
 
-    const { data: order, error } = await query.maybeSingle();
+    const { data: order, error } = await orderQuery.maybeSingle();
 
     if (error) return { error: `Error buscando orden: ${error.message}`, can_void: false };
     if (!order) return {
@@ -1322,8 +1323,14 @@ async function voidLastOrder({ dry_run = true, order_id, reason }, context) {
       message: 'No hay órdenes pagadas en los últimos 30 minutos. Si la orden es más antigua, usa el módulo de Cajas.',
     };
 
+    // Query 2: obtener ítems por separado
+    const { data: rawItems } = await supabaseAdmin
+      .from('order_items')
+      .select('product_name, quantity, subtotal')
+      .eq('order_id', order.id);
+
     const minutesAgo = Math.round((Date.now() - new Date(order.created_at).getTime()) / 60000);
-    const items = (order.order_items || []).map(i =>
+    const items = (rawItems || []).map(i =>
       `${i.quantity}× ${i.product_name} ($${(i.subtotal || 0).toLocaleString('es-CO')})`
     );
 
@@ -1335,7 +1342,7 @@ async function voidLastOrder({ dry_run = true, order_id, reason }, context) {
       minutes_ago: minutesAgo,
       items,
       items_count: items.length,
-      message:     `Orden encontrada:\n• Total: $${order.total.toLocaleString('es-CO')}\n• Hace: ${minutesAgo} minuto(s)\n• Productos: ${items.join(', ')}\n\n¿Confirmas la anulación? Dime el motivo.`,
+      message:     `Orden encontrada:\n• Total: $${order.total.toLocaleString('es-CO')}\n• Hace: ${minutesAgo} minuto(s)\n• Productos: ${items.join(', ') || 'sin detalle'}\n\n¿Confirmas la anulación? Dime el motivo.`,
     };
   }
 
