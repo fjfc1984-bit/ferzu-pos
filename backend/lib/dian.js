@@ -1047,7 +1047,7 @@ export async function checkResolutionExpiry(organizationId) {
   }
 
   if (alerts.length) {
-    await supabaseAdmin.from('system_alerts').insert(alerts).then(() => {});
+    await Promise.resolve(supabaseAdmin.from('system_alerts').insert(alerts));
   }
 
   // Devolver en el formato que espera DianPage.jsx

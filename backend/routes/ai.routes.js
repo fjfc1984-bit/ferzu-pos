@@ -326,10 +326,10 @@ router.post('/business-chat', [
     const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
 
     // 6. Guardar en historial (fire-and-forget)
-    supabaseAdmin.from('ai_chat_history').insert([
+    Promise.resolve(supabaseAdmin.from('ai_chat_history').insert([
       { organization_id: req.organizationId, user_id: req.user.id, role: 'user',      content: message },
       { organization_id: req.organizationId, user_id: req.user.id, role: 'assistant', content: text, model: 'claude-haiku-4-5-20251001', tokens_used: response.usage.input_tokens + response.usage.output_tokens },
-    ]).then(() => {}).catch(() => {});
+    ])).then(() => {}).catch(() => {});
 
     res.json({
       text,
@@ -426,7 +426,8 @@ router.post('/copilot/chat', [
     );
 
     // Registrar en historial (sin bloquear la respuesta)
-    supabaseAdmin.from('ai_chat_history').insert({
+    // Promise.resolve() necesario: supabase-js v2 insert() no es Promise real
+    Promise.resolve(supabaseAdmin.from('ai_chat_history').insert({
       organization_id: req.organizationId,
       user_id:         req.user.id,
       branch_id:       branchId,
@@ -436,7 +437,7 @@ router.post('/copilot/chat', [
       model_used:      result.model_used,
       tool_calls:      result.tool_results?.length || 0,
       endpoint:        'copilot',
-    }).catch(() => {}); // fire-and-forget
+    })).catch(() => {}); // fire-and-forget
 
     res.json({
       response:      result.text,
