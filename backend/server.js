@@ -57,7 +57,8 @@ import integrationsRouter, {
 import { registerProcessHandlers } from './routes/errors.routes.js';
 
 // ── CRON ───────────────────────────────────────────────────────────────────────
-import { registerTrialCron } from './services/trial.service.js';
+import { registerTrialCron }  from './services/trial.service.js';
+import { registerAlertsCron } from './services/alerts.service.js';
 
 // =============================================================================
 // MIDDLEWARES GLOBALES
@@ -176,6 +177,7 @@ const isMain = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
   registerProcessHandlers();
   registerTrialCron();
+  registerAlertsCron();
 
   app.listen(PORT, () => {
     logger.info(`FERZU Backend v2.0.0 corriendo en puerto ${PORT} (modular)`);
