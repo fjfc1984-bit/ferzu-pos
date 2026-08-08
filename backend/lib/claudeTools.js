@@ -445,6 +445,60 @@ export const FERZU_TOOLS = [
       },
       required: ["query_type", "natural_language_question"]
     }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // TOOL 7: ESTADO DEL SISTEMA (CO-PILOTO)
+  // Verifica la salud del ecosistema FERZU en tiempo real.
+  // Usa cuando el usuario pregunte por problemas del sistema, lentitud,
+  // errores de pago, fallos de sincronización o estado general.
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    name: "get_system_health",
+    description: `Verifica el estado de salud del sistema FERZU POS en tiempo real:
+    base de datos Supabase (latencia y conexiones), backend Railway (memoria, CPU, uptime)
+    y cadena de sincronización offline (órdenes pendientes, tasa de error).
+    Úsalo cuando el usuario reporte lentitud, errores, problemas de pago o sincronización.
+    También úsalo proactivamente al inicio de sesión para detectar problemas antes de que impacten al negocio.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        reason: {
+          type: "string",
+          description: "Por qué se está verificando el sistema (ej: 'usuario reportó lentitud', 'check proactivo al abrir')"
+        }
+      },
+      required: ["reason"]
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // TOOL 8: ALERTAS DE INVENTARIO CRÍTICO (CO-PILOTO)
+  // Obtiene productos agotados o con stock crítico sin necesidad de
+  // navegar a la pantalla de inventario. Proactivo y accionable.
+  // ─────────────────────────────────────────────────────────────────────────
+  {
+    name: "get_inventory_alerts",
+    description: `Obtiene una lista priorizada de productos con stock crítico o agotado.
+    Para cada producto crítico muestra: nombre, stock actual, stock mínimo y días estimados
+    antes de agotamiento basado en ventas recientes.
+    Úsalo cuando el usuario pregunte por el inventario, o proactivamente para alertar
+    al dueño sobre productos que se van a agotar antes del próximo pedido.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        branch_id: {
+          type: "string",
+          description: "UUID de la sucursal a revisar. Opcional — si no se especifica revisa todas."
+        },
+        severity_filter: {
+          type: "string",
+          enum: ["all", "critical_only", "out_of_stock_only"],
+          description: "Qué tan urgente debe ser el alert. 'critical_only' = stock < mínimo. 'out_of_stock_only' = stock = 0."
+        }
+      },
+      required: ["severity_filter"]
+    }
   }
 ];
 
@@ -476,7 +530,7 @@ const MODELS = {
 export async function runFerzuAgent(userMessage, conversationHistory = [], context, model = MODELS.COMPLEX) {
 
   // Inyectar contexto del negocio en el system prompt
-  const systemWithContext = `${FERZU_SYSTEM_PROMPT}
+  const systemWithContext = `${FERZU_SYSTEM_PROMPT}${context._system_suffix || ''}
 
 ## CONTEXTO ACTUAL DEL NEGOCIO
 - Organización ID: ${context.organization_id}
@@ -485,6 +539,7 @@ export async function runFerzuAgent(userMessage, conversationHistory = [], conte
 - Nombre del negocio: ${context.business_name}
 - Fecha actual: ${new Date().toLocaleDateString('es-CO')}
 - Usuario activo: ${context.user_name} (rol: ${context.user_role})
+- Página actual: ${context.page_context || 'general'}
 `;
 
   const messages = [
@@ -586,6 +641,12 @@ async function executeTool(toolName, toolInput, context) {
     case 'query_business_data':
       // SOLO LECTURA: Ejecuta la consulta y devuelve datos
       return await queryBusinessData(toolInput, context);
+
+    case 'get_system_health':
+      return await checkSystemHealth(toolInput, context);
+
+    case 'get_inventory_alerts':
+      return await getInventoryAlerts(toolInput, context);
 
     default:
       return { error: `Tool desconocida: ${toolName}` };
@@ -1033,6 +1094,153 @@ async function handleMarketingMessages(aiOutput, context) {
     messages: aiOutput.messages,
     message: `${aiOutput.total_customers_analyzed} mensajes generados. Revísalos y aprueba los que desees enviar.`,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HANDLER TOOL 7: checkSystemHealth
+// Replica los checks del endpoint /api/health/full directamente en proceso.
+// Sin HTTP round-trip — más rápido y no consume cuota de request del health check.
+// ─────────────────────────────────────────────────────────────────────────────
+import os from 'os';
+import { supabaseAdmin } from '../config/supabase.js';
+
+async function checkSystemHealth(input, context) {
+  const t0 = Date.now();
+  const results = {};
+
+  // ── 1. Supabase Auth ──────────────────────────────────────────────────────
+  try {
+    const ta = Date.now();
+    const { error } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1 });
+    const latency = Date.now() - ta;
+    results.supabase_auth = error
+      ? { status: 'error', latency_ms: latency, detail: error.message }
+      : { status: latency > 800 ? 'slow' : 'ok', latency_ms: latency };
+  } catch (e) {
+    results.supabase_auth = { status: 'error', detail: e.message };
+  }
+
+  // ── 2. Supabase DB ────────────────────────────────────────────────────────
+  try {
+    const td = Date.now();
+    const { error } = await supabaseAdmin
+      .from('organizations').select('id', { count: 'exact', head: true });
+    const latency = Date.now() - td;
+    results.supabase_db = error
+      ? { status: 'error', latency_ms: latency, detail: error.message }
+      : { status: latency > 600 ? 'slow' : 'ok', latency_ms: latency };
+  } catch (e) {
+    results.supabase_db = { status: 'error', detail: e.message };
+  }
+
+  // ── 3. Backend process ───────────────────────────────────────────────────
+  const mem    = process.memoryUsage();
+  const memMb  = Math.round(mem.rss / 1024 / 1024);
+  const load   = os.loadavg()[0];
+  const cpuPct = Math.min(Math.round((load / Math.max(os.cpus().length, 1)) * 100), 100);
+  results.backend = {
+    status:           memMb > 600 ? 'critical' : memMb > 350 ? 'slow' : 'ok',
+    uptime_seconds:   Math.round(process.uptime()),
+    memory_mb:        memMb,
+    cpu_pct:          cpuPct,
+  };
+
+  // ── 4. Órdenes abiertas atascadas (proxy sync chain) ────────────────────
+  try {
+    const stuckSince = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const { count } = await supabaseAdmin
+      .from('orders').select('id', { count: 'exact', head: true })
+      .eq('status', 'open').lt('created_at', stuckSince);
+    results.sync_chain = {
+      status:          (count || 0) > 100 ? 'critical' : (count || 0) > 20 ? 'slow' : 'ok',
+      stuck_orders:    count || 0,
+    };
+  } catch {
+    results.sync_chain = { status: 'unknown' };
+  }
+
+  // ── Status global ────────────────────────────────────────────────────────
+  const statuses = Object.values(results).map(r => r.status);
+  const overall  = statuses.includes('error') || statuses.includes('critical') ? 'critical'
+                 : statuses.includes('slow')                                    ? 'degraded'
+                 : 'ok';
+
+  return {
+    overall,
+    check_ms:    Date.now() - t0,
+    components:  results,
+    checked_at:  new Date().toISOString(),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HANDLER TOOL 8: getInventoryAlerts
+// Consulta stock crítico sin pasar por /inventory/insights (evita llamada IA anidada).
+// Devuelve lista priorizada: agotados primero, luego por urgencia.
+// ─────────────────────────────────────────────────────────────────────────────
+async function getInventoryAlerts(input, context) {
+  const { supabase } = context;
+  const { branch_id, severity_filter = 'all' } = input;
+
+  try {
+    // Usar la vista v_inventory_status si existe, fallback a join manual
+    let query = supabase
+      .from('v_inventory_status')
+      .select('*')
+      .in('stock_status', severity_filter === 'out_of_stock_only'
+        ? ['out_of_stock']
+        : severity_filter === 'critical_only'
+          ? ['out_of_stock', 'low_stock']
+          : ['out_of_stock', 'low_stock', 'normal'])
+      .order('stock_status', { ascending: true })
+      .limit(20);
+
+    if (branch_id) query = query.eq('branch_id', branch_id);
+
+    const { data, error } = await query;
+
+    if (error) {
+      // Fallback: query directa si la vista no existe
+      let q2 = supabase
+        .from('inventory')
+        .select('quantity, branch_id, products!inner(id, name, sku, min_stock, is_active)')
+        .eq('products.is_active', true);
+      if (branch_id) q2 = q2.eq('branch_id', branch_id);
+      const { data: inv } = await q2;
+
+      const alerts = (inv || [])
+        .map(i => ({
+          product_name:  i.products?.name,
+          sku:           i.products?.sku,
+          current_stock: i.quantity,
+          min_stock:     i.products?.min_stock || 0,
+          stock_status:  i.quantity === 0 ? 'out_of_stock'
+                       : i.quantity <= (i.products?.min_stock || 0) ? 'low_stock'
+                       : 'normal',
+        }))
+        .filter(i => i.stock_status !== 'normal')
+        .sort((a, b) => a.current_stock - b.current_stock);
+
+      return {
+        alerts,
+        critical_count:  alerts.filter(a => a.stock_status === 'out_of_stock').length,
+        warning_count:   alerts.filter(a => a.stock_status === 'low_stock').length,
+        total_alerts:    alerts.length,
+      };
+    }
+
+    const critical = (data || []).filter(i => i.stock_status === 'out_of_stock');
+    const warning  = (data || []).filter(i => i.stock_status === 'low_stock');
+
+    return {
+      alerts:         data || [],
+      critical_count: critical.length,
+      warning_count:  warning.length,
+      total_alerts:   (data || []).length,
+    };
+  } catch (e) {
+    return { error: e.message, alerts: [], critical_count: 0, warning_count: 0, total_alerts: 0 };
+  }
 }
 
 

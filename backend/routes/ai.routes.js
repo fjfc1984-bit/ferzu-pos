@@ -346,4 +346,109 @@ router.post('/business-chat', [
   }
 });
 
+// =============================================================================
+// POST /api/ai/copilot/chat — Co-Piloto IA (agente con tools de sistema)
+// Igual que /chat pero con system prompt ampliado para modo Co-Piloto:
+//   - Proactivo: analiza salud del sistema y alertas de inventario sin que se pida
+//   - Operacional: ejecuta flujos con confirmación del usuario
+//   - Contextual: adapta las sugerencias al rol y la página actual
+// =============================================================================
+const COPILOT_SYSTEM_SUFFIX = `
+
+## ROL: CO-PILOTO OPERACIONAL
+Eres el Co-Piloto de FERZU POS. No eres un chatbot — eres un agente proactivo.
+
+### COMPORTAMIENTO PROACTIVO
+Cuando el usuario abra el chat o salude, SIEMPRE:
+1. Llama a get_system_health para verificar si hay problemas de sistema.
+2. Llama a get_inventory_alerts con severity_filter='critical_only' para detectar agotados.
+3. Si hay problemas, repórtalos PRIMERO antes de responder la pregunta del usuario.
+4. Si todo está bien, confírmalo brevemente y responde la pregunta.
+
+### FRASES DE APERTURA PROACTIVA (elige según contexto)
+- Si hay sistema degradado: "⚠️ Antes de continuar, detecto [problema]. Te recomiendo [acción]."
+- Si hay stock agotado: "📦 Alerta: [N] productos agotados. ¿Quieres que prepare la lista de reabastecimiento?"
+- Si todo está ok: "✅ Sistema operando con normalidad. ¿En qué te ayudo?"
+
+### HABILIDADES DE OPERACIÓN DIRECTA (con confirmación)
+Cuando el usuario pida acciones operacionales, usa create_ai_proposal:
+- "anular la última venta" → proposal_type='discount' con monto negativo
+- "ajustar stock" → proposal_type='stock_adjustment'
+- "preparar orden de compra" → proposal_type='purchase_order'
+
+### FORMATO DE RESPUESTA
+- Respuestas cortas para preguntas simples (máx 3 líneas)
+- Usar **negrita** para números y alertas críticas
+- Usar viñetas solo para listas de 3+ ítems
+- Siempre terminar con una acción sugerida si hay algo accionable
+`;
+
+router.post('/copilot/chat', [
+  body('message').notEmpty().isLength({ max: 2000 }),
+  body('branch_id').optional({ nullable: true }).isUUID(),
+  body('conversation_history').optional().isArray({ max: 30 }),
+  body('page_context').optional().isString(),
+  validate,
+], async (req, res) => {
+  try {
+    const { message, branch_id, conversation_history = [], page_context } = req.body;
+    const branchId = branch_id || req.headers['x-branch-id'] || null;
+
+    const { data: org } = await supabaseAdmin
+      .from('organizations')
+      .select('business_name, business_type, settings')
+      .eq('id', req.organizationId)
+      .single();
+
+    const { data: user } = await supabaseAdmin
+      .from('users')
+      .select('full_name, role')
+      .eq('id', req.user.id)
+      .single();
+
+    const context = {
+      organization_id: req.organizationId,
+      branch_id:       branchId,
+      business_type:   org?.business_type || 'retail',
+      business_name:   org?.business_name || 'Mi Negocio',
+      user_name:       user?.full_name    || 'Usuario',
+      user_role:       user?.role         || 'staff',
+      page_context:    page_context       || 'general',
+      supabase:        supabaseAdmin,
+    };
+
+    // Inyectar suffix del Co-Piloto en el system prompt vía contexto extra
+    const result = await runFerzuAgent(
+      message,
+      conversation_history,
+      { ...context, _copilot_mode: true, _system_suffix: COPILOT_SYSTEM_SUFFIX },
+      'claude-sonnet-4-6'
+    );
+
+    // Registrar en historial (sin bloquear la respuesta)
+    supabaseAdmin.from('ai_chat_history').insert({
+      organization_id: req.organizationId,
+      user_id:         req.user.id,
+      branch_id:       branchId,
+      message,
+      response:        result.text,
+      tokens_used:     result.tokens_used,
+      model_used:      result.model_used,
+      tool_calls:      result.tool_results?.length || 0,
+      endpoint:        'copilot',
+    }).catch(() => {}); // fire-and-forget
+
+    res.json({
+      response:      result.text,
+      tool_results:  result.tool_results,
+      tokens_used:   result.tokens_used,
+      model_used:    result.model_used,
+    });
+
+  } catch (err) {
+    logger.error('POST /ai/copilot/chat', { message: err.message, stack: err.stack?.substring(0, 500) });
+    res.status(500).json({ error: `Co-Piloto no disponible: ${err.message}` });
+  }
+});
+
 export default router;

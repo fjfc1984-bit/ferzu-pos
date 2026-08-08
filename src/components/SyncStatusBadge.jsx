@@ -18,7 +18,7 @@ export default function SyncStatusBadge() {
   if (severity === 'ok') return null
 
   // ── Estilos según severidad ───────────────────────────────────────────────
-  const base = 'fixed bottom-4 right-4 z-50 flex items-center gap-2 px-3 py-2 rounded-full shadow-lg text-sm font-semibold select-none transition-all duration-300'
+  const base = 'fixed bottom-4 left-4 z-50 flex items-center gap-2 px-3 py-2 rounded-full shadow-lg text-sm font-semibold select-none transition-all duration-300'
 
   const styles = {
     offline:  `${base} bg-amber-500 text-white`,

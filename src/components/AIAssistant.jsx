@@ -104,27 +104,41 @@ export function AIAssistant() {
   const pathname                   = location.pathname
   const suggestions                = PAGE_SUGGESTIONS[pathname] || PAGE_SUGGESTIONS.default
 
-  // Al abrir: bienvenida según modo
+  // Al abrir: Co-Piloto hace check proactivo (sistema + inventario) en AMBOS modos
   useEffect(() => {
     if (open && messages.length === 0) {
       const firstName = user?.full_name ? user.full_name.split(' ')[0] : null
       const page = getPageLabel(pathname)
 
       if (mode === 'quick') {
-        // Modo consulta: mensaje estático inmediato (el snapshot lo carga el backend al preguntar)
-        setMessages([{
-          role: 'assistant',
-          content: `¡Hola${firstName ? ', ' + firstName : ''}! Tengo el reporte de los últimos 7 días listo. ¿Qué quieres saber sobre tu negocio?`,
-        }])
-      } else {
-        // Modo agente: pulse proactivo con tool calling
+        // Modo consulta: snapshot rápido — proactivo via business-chat
         setLoading(true)
-        const pulseMsg = `Saluda brevemente a${firstName ? ' ' + firstName : 'l usuario'} (está en ${page}). Luego revisa el estado actual y en máximo 3 puntos breves menciona solo lo que sea urgente o relevante ahora mismo: alertas de stock bajo, si la caja está abierta o cerrada, o algo crítico de DIAN. Si todo está bien, dilo en una línea y ofrece ayuda. Sé conciso.`
-        api.post('/ai/chat', {
-          message: pulseMsg, branch_id: branchId || undefined, conversation_history: [], page_context: pathname,
-        }, { timeout: 60000 })
+        api.post('/ai/business-chat', {
+          message: `Saluda brevemente a${firstName ? ' ' + firstName : 'l usuario'}. Revisa en 2 líneas si hay algo urgente: stock agotado o ventas inusuales. Si todo normal, dilo y ofrece ayuda.`,
+          branch_id: branchId || undefined,
+          conversation_history: [],
+        }, { timeout: 30000 })
           .then(({ data }) => setMessages([{ role: 'assistant', content: data.text }]))
-          .catch(() => setMessages([{ role: 'assistant', content: `¡Hola${firstName ? ', ' + firstName : ''}! 👋 Estás en **${page}**. ¿En qué te ayudo?` }]))
+          .catch(() => setMessages([{
+            role: 'assistant',
+            content: `¡Hola${firstName ? ', ' + firstName : ''}! ⚡ Co-Piloto activo en **${page}**. ¿Qué necesitas?`,
+          }]))
+          .finally(() => setLoading(false))
+      } else {
+        // Modo Co-Piloto: check completo con tools (sistema + inventario crítico)
+        setLoading(true)
+        const proactiveMsg = `Saluda brevemente a${firstName ? ' ' + firstName : 'l usuario'} (está en ${page}). Luego usa get_system_health y get_inventory_alerts (severity_filter='critical_only') para verificar el estado del sistema. Resume en máximo 3 puntos lo que sea urgente. Si todo está bien, confírmalo en una línea y ofrece ayuda.`
+        api.post('/ai/copilot/chat', {
+          message:              proactiveMsg,
+          branch_id:            branchId || undefined,
+          conversation_history: [],
+          page_context:         pathname,
+        }, { timeout: 60000 })
+          .then(({ data }) => setMessages([{ role: 'assistant', content: data.text || data.response }]))
+          .catch(() => setMessages([{
+            role: 'assistant',
+            content: `¡Hola${firstName ? ', ' + firstName : ''}! ⚡ Co-Piloto activo en **${page}**. ¿En qué te ayudo?`,
+          }]))
           .finally(() => setLoading(false))
       }
     }
@@ -169,14 +183,14 @@ export function AIAssistant() {
         }, { timeout: 30000 })
         responseText = data.text
       } else {
-        // Modo agente: full Claude Sonnet con tool calling
-        const { data } = await api.post('/ai/chat', {
+        // Modo Co-Piloto: agente con tools de sistema + inventario
+        const { data } = await api.post('/ai/copilot/chat', {
           message:              msg,
           branch_id:            branchId || undefined,
           conversation_history: history,
           page_context:         pathname,
         }, { timeout: 60000 })
-        responseText = data.text
+        responseText = data.text || data.response
       }
       setMessages(prev => [...prev, { role: 'assistant', content: responseText }])
       if (!open) setHasNew(true)
@@ -216,8 +230,8 @@ export function AIAssistant() {
                 F
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm leading-tight">Asistente FERZU</p>
-                <p className="text-xs text-emerald-100 truncate">{getPageLabel(pathname)} · IA activa</p>
+                <p className="font-semibold text-sm leading-tight">Co-Piloto FERZU</p>
+                <p className="text-xs text-emerald-100 truncate">{getPageLabel(pathname)} · {mode === 'agent' ? '🤖 Agente activo' : '⚡ Consulta rápida'}</p>
               </div>
               <button onClick={clearChat} className="text-emerald-100 hover:text-white transition-colors p-1 rounded" title="Nueva conversación">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -248,7 +262,7 @@ export function AIAssistant() {
                     ? 'bg-white text-emerald-700'
                     : 'text-emerald-100 hover:bg-white/20'
                 }`}>
-                🔧 Agente avanzado
+                🤖 Co-Piloto
               </button>
             </div>
           </div>
