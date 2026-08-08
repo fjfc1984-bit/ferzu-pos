@@ -536,6 +536,61 @@ Nunca ejecutar dry_run=false sin confirmación previa del usuario.`,
       },
       required: ["dry_run"]
     }
+  },
+
+  // ── Tool 10: generate_purchase_order ────────────────────────────────────────
+  {
+    name: "generate_purchase_order",
+    description: `Crea una orden de compra para reabastecer inventario.
+
+PROTOCOLO OBLIGATORIO DE DOS FASES:
+1. Llamar SIEMPRE con dry_run=true primero → obtiene preview con totales calculados
+2. Mostrar al usuario: proveedor, productos, cantidades, total estimado
+3. Esperar confirmación EXPLÍCITA ("sí", "confirmo", "crea la orden")
+4. Solo entonces llamar con dry_run=false
+
+Flujo recomendado:
+- Si el usuario dice "genera una orden de compra" sin especificar supplier_id,
+  primero llama get_inventory_alerts para ver qué hay que reabastecer, luego
+  pregunta al usuario qué proveedor usar.
+- Siempre obtén el supplier_id antes de llamar esta tool.
+
+Nunca ejecutar dry_run=false sin confirmación previa del usuario.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        dry_run: {
+          type: "boolean",
+          description: "true = previsualizar sin crear (SIEMPRE empezar aquí). false = crear la orden en BD (solo tras confirmación)."
+        },
+        supplier_id: {
+          type: "string",
+          description: "UUID del proveedor al que se le hará la orden. Requerido siempre."
+        },
+        items: {
+          type: "array",
+          description: "Productos a incluir en la orden.",
+          items: {
+            type: "object",
+            properties: {
+              product_id:       { type: "string",  description: "UUID del producto." },
+              quantity_ordered: { type: "number",  description: "Cantidad a ordenar (puede ser decimal, ej: 2.5 kg)." },
+              unit_cost:        { type: "number",  description: "Costo unitario en COP (pesos enteros)." }
+            },
+            required: ["product_id", "quantity_ordered", "unit_cost"]
+          }
+        },
+        expected_at: {
+          type: "string",
+          description: "Fecha esperada de recepción en formato YYYY-MM-DD (opcional)."
+        },
+        notes: {
+          type: "string",
+          description: "Notas adicionales para la orden (opcional). Ej: 'Urgente', 'Pedir también empaques'."
+        }
+      },
+      required: ["dry_run", "supplier_id", "items"]
+    }
   }
 ];
 
@@ -687,6 +742,9 @@ async function executeTool(toolName, toolInput, context) {
 
     case 'void_last_order':
       return await voidLastOrder(toolInput, context);
+
+    case 'generate_purchase_order':
+      return await generatePurchaseOrder(toolInput, context);
 
     default:
       return { error: `Tool desconocida: ${toolName}` };
@@ -1410,6 +1468,176 @@ async function voidLastOrder({ dry_run = true, order_id, reason }, context) {
     voided_order_id: order_id,
     total_voided:    order.total,
     message:         `✅ Orden anulada exitosamente.\n• Total: $${order.total.toLocaleString('es-CO')}\n• Motivo registrado: "${reason}"\n• Queda en el historial de auditoría.`,
+  };
+}
+
+
+// =============================================================================
+// SECCIÓN 5c: TOOL 10 — generate_purchase_order
+// =============================================================================
+
+async function generatePurchaseOrder({ dry_run = true, supplier_id, items, expected_at, notes }, context) {
+  const orgId    = context.organization_id;
+  const branchId = context.branch_id;
+  const userId   = context.user_id;
+  const userRole = context.user_role;
+
+  if (!orgId) return { error: 'DIAGNÓSTICO: organization_id es undefined en contexto.' };
+  if (!['owner', 'admin'].includes(userRole)) {
+    return { error: `Permiso insuficiente. Tu rol actual es "${userRole}". Solo owner o admin pueden crear órdenes de compra desde el Co-Piloto.` };
+  }
+  if (!supplier_id) return { error: 'Se requiere supplier_id para crear la orden de compra.' };
+  if (!items || items.length === 0) return { error: 'Se requiere al menos un ítem en la orden de compra.' };
+
+  // ── Validar proveedor (pertenece a la org) ───────────────────────────────
+  const { data: supplier, error: supplierErr } = await supabaseAdmin
+    .from('suppliers')
+    .select('id, name')
+    .eq('id', supplier_id)
+    .eq('organization_id', orgId)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (supplierErr) return { error: `Error validando proveedor: ${supplierErr.message}` };
+  if (!supplier)   return { error: `Proveedor no encontrado o no pertenece a esta organización. supplier_id=${supplier_id}` };
+
+  // ── Validar productos y calcular totales (BACKEND — nunca la IA) ─────────
+  const productIds = items.map(i => i.product_id);
+  const { data: products, error: prodErr } = await supabaseAdmin
+    .from('products')
+    .select('id, name, cost, vat_rate')
+    .in('id', productIds)
+    .eq('organization_id', orgId);
+
+  if (prodErr) return { error: `Error validando productos: ${prodErr.message}` };
+
+  const productMap = Object.fromEntries((products || []).map(p => [p.id, p]));
+  const missingIds = productIds.filter(id => !productMap[id]);
+  if (missingIds.length > 0) {
+    return { error: `Productos no encontrados o no pertenecen a esta org: ${missingIds.join(', ')}` };
+  }
+
+  // Calcular totales en backend con Math.round (sin flotantes)
+  let subtotal  = 0;
+  let tax_total = 0;
+  const lineItems = items.map(item => {
+    const prod       = productMap[item.product_id];
+    const unitCost   = Math.round(Math.max(0, Number(item.unit_cost) || prod.cost || 0));
+    const qty        = Number(item.quantity_ordered) || 0;
+    const vatRate    = prod.vat_rate || 0;
+    const lineBase   = Math.round(unitCost * qty);
+    const lineTax    = Math.round(lineBase * vatRate / 100);
+    const lineTotal  = lineBase + lineTax;
+    subtotal  += lineBase;
+    tax_total += lineTax;
+    return {
+      product_id:       item.product_id,
+      product_name:     prod.name,
+      quantity_ordered: qty,
+      unit_cost:        unitCost,
+      vat_rate:         vatRate,
+      subtotal:         lineBase,
+      tax_amount:       lineTax,
+      total:            lineTotal,
+    };
+  });
+  const total = subtotal + tax_total;
+
+  // ── FASE 1: previsualizar (dry_run=true) ─────────────────────────────────
+  if (dry_run) {
+    const linesSummary = lineItems.map(l =>
+      `• ${l.quantity_ordered}× ${l.product_name} @ $${l.unit_cost.toLocaleString('es-CO')} = $${l.total.toLocaleString('es-CO')}`
+    ).join('\n');
+
+    return {
+      can_create: true,
+      dry_run:    true,
+      supplier:   { id: supplier.id, name: supplier.name },
+      items:      lineItems,
+      subtotal,
+      tax_total,
+      total,
+      expected_at: expected_at || null,
+      message: `📦 Vista previa — Orden de compra:\n• Proveedor: ${supplier.name}\n${linesSummary}\n• Subtotal: $${subtotal.toLocaleString('es-CO')}\n• IVA: $${tax_total.toLocaleString('es-CO')}\n• **Total: $${total.toLocaleString('es-CO')}**${expected_at ? `\n• Entrega esperada: ${expected_at}` : ''}\n\n¿Confirmas la creación de esta orden?`,
+    };
+  }
+
+  // ── FASE 2: crear la orden (dry_run=false) ───────────────────────────────
+  // Determinar branch_id: usar el del contexto o la primera sucursal de la org
+  let targetBranchId = branchId;
+  if (!targetBranchId) {
+    const { data: branch } = await supabaseAdmin
+      .from('branches')
+      .select('id')
+      .eq('organization_id', orgId)
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle();
+    if (!branch) return { error: 'No se encontró sucursal activa para esta organización.' };
+    targetBranchId = branch.id;
+  }
+
+  // Generar número de orden
+  const orderNumber = `PO-${Date.now()}`;
+
+  const { data: po, error: poErr } = await supabaseAdmin
+    .from('purchase_orders')
+    .insert({
+      branch_id:   targetBranchId,
+      supplier_id,
+      order_number: orderNumber,
+      status:      'draft',
+      subtotal,
+      tax_total,
+      total,
+      source:      'ai_suggested',
+      notes:       notes || null,
+      expected_at: expected_at || null,
+      created_by:  userId,
+    })
+    .select('id, order_number')
+    .single();
+
+  if (poErr) return { error: `Error creando la orden de compra: ${poErr.message}` };
+
+  // Insertar ítems
+  const poItems = lineItems.map(l => ({
+    purchase_order_id: po.id,
+    product_id:        l.product_id,
+    quantity_ordered:  l.quantity_ordered,
+    quantity_received: 0,
+    unit_cost:         l.unit_cost,
+    vat_rate:          l.vat_rate,
+    subtotal:          l.subtotal,
+    tax_amount:        l.tax_amount,
+    total:             l.total,
+  }));
+
+  const { error: itemsErr } = await supabaseAdmin
+    .from('purchase_order_items')
+    .insert(poItems);
+
+  if (itemsErr) return { error: `Orden creada (${po.order_number}) pero error en ítems: ${itemsErr.message}` };
+
+  // Audit log (fire-and-forget)
+  Promise.resolve(supabaseAdmin.from('audit_log').insert({
+    organization_id: orgId,
+    user_id:         userId,
+    action:          'create_purchase_order_via_copilot',
+    resource_type:   'purchase_order',
+    resource_id:     po.id,
+    old_values:      null,
+    new_values:      { order_number: po.order_number, supplier_id, total, items_count: poItems.length },
+  })).catch(() => {});
+
+  return {
+    success:          true,
+    dry_run:          false,
+    purchase_order_id: po.id,
+    order_number:     po.order_number,
+    total,
+    items_count:      poItems.length,
+    message: `✅ Orden de compra creada exitosamente.\n• Número: ${po.order_number}\n• Proveedor: ${supplier.name}\n• Total: $${total.toLocaleString('es-CO')}\n• Estado: Borrador (draft)\n• ${poItems.length} producto(s) incluidos.\n\nPuedes verla y enviarla desde el módulo de Compras.`,
   };
 }
 
