@@ -1427,7 +1427,7 @@ async function handleAnomalyDetection(aiOutput, context) {
   const { supabase } = context;
 
   for (const anomaly of aiOutput.anomalies) {
-    await supabase.from('system_alerts').insert({
+    const { data: insertedAlert } = await supabase.from('system_alerts').insert({
       organization_id: context.organization_id,
       branch_id: context.branch_id,
       alert_type: anomaly.anomaly_type,
@@ -1435,7 +1435,14 @@ async function handleAnomalyDetection(aiOutput, context) {
       title: `${anomaly.product_name}: ${anomaly.anomaly_type.replace(/_/g, ' ')}`,
       description: anomaly.description,
       data: anomaly.data_evidence,
-    });
+    }).select().single();
+
+    // Despachar alerta Level 2 (fire-and-forget)
+    Promise.resolve(dispatchAlert(
+      { ...insertedAlert, metadata: { producto: anomaly.product_name, ...anomaly.data_evidence } },
+      context.organization_id,
+      supabase
+    )).catch(() => {});
   }
 
   return {
@@ -1469,7 +1476,8 @@ async function handleMarketingMessages(aiOutput, context) {
 // Sin HTTP round-trip — más rápido y no consume cuota de request del health check.
 // ─────────────────────────────────────────────────────────────────────────────
 import os from 'os';
-import { supabaseAdmin } from '../config/supabase.js';
+import { supabaseAdmin }   from '../config/supabase.js';
+import { dispatchAlert }   from '../services/alertDispatcher.service.js';
 
 async function checkSystemHealth(input, context) {
   const t0 = Date.now();
@@ -2124,14 +2132,22 @@ async function closeCashSession({ dry_run = true, closing_cash, session_id, note
 
   // Alerta de descuadre si aplica (fire-and-forget)
   if (Math.abs(cash_difference) > 5000) {
-    Promise.resolve(supabaseAdmin.from('system_alerts').insert({
-      organization_id: orgId,
-      alert_type:      'cash_discrepancy',
-      severity:        Math.abs(cash_difference) > 50000 ? 'high' : 'medium',
-      title:           `Descuadre de caja: ${cash_difference > 0 ? '+' : ''}${fmtCOP(cash_difference)} COP`,
-      description:     `Sesión ${sessionToClose} cerrada vía Co-Piloto.`,
-      data:            { session_id: sessionToClose, difference: cash_difference },
-    })).catch(() => {});
+    const cashAlertSeverity = Math.abs(cash_difference) > 50000 ? 'high' : 'medium';
+    Promise.resolve(
+      supabaseAdmin.from('system_alerts').insert({
+        organization_id: orgId,
+        alert_type:      'cash_discrepancy',
+        severity:        cashAlertSeverity,
+        title:           `Descuadre de caja: ${cash_difference > 0 ? '+' : ''}${fmtCOP(cash_difference)} COP`,
+        description:     `Sesión ${sessionToClose} cerrada vía Co-Piloto con descuadre de ${fmtCOP(Math.abs(cash_difference))} COP.`,
+        data:            { session_id: sessionToClose, difference: cash_difference },
+      }).select().single()
+      .then(({ data: cashAlert }) => dispatchAlert(
+        { ...cashAlert, metadata: { descuadre: `${fmtCOP(cash_difference)} COP`, sesión: sessionToClose } },
+        orgId,
+        null
+      ))
+    ).catch(() => {});
   }
 
   // Audit log (fire-and-forget)
