@@ -32,6 +32,7 @@ import { es } from 'date-fns/locale';
 import { ReportExporter } from '../components/ReportExporter.jsx';
 import { useTrack }       from '../hooks/useTrack.js';
 import { saveDashboardCache, loadDashboardCache } from '../lib/offlineCache.js';
+import CopilotChat from '../components/CopilotChat/CopilotChat.jsx';
 
 // =============================================================================
 // SECCIÓN 1: DashboardPage — Layout principal
@@ -268,6 +269,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* ── Contenido principal + panel Co-Piloto ── */}
+      <div className="flex flex-1 overflow-hidden">
+
       {/* ── Contenido scrolleable ── */}
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-5">
 
@@ -352,6 +356,13 @@ export default function DashboardPage() {
           onGenerate={generateAIReport}
         />
       </div>
+
+      {/* ── Panel Co-Piloto lateral — visible desde xl (≥1280px) ── */}
+      <div className="hidden xl:flex w-80 border-l border-gray-200 shrink-0 flex-col">
+        <CopilotChat className="flex-1 min-h-0" />
+      </div>
+
+      </div>{/* fin flex contenido+panel */}
     </div>
   );
 }
