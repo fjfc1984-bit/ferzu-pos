@@ -259,32 +259,43 @@ async function sendAlertEmail(alert, org, emailConfig) {
 
 
 // =============================================================================
-// WHATSAPP — Meta Cloud API (mensaje de texto libre)
-// Nota: requiere que el usuario haya iniciado conversación en las últimas 24h,
-// o que se use un template aprobado. Para producción, crear template 'ferzu_alerta'.
+// WHATSAPP — Router: elige Twilio (sandbox) o Meta Cloud API según env vars.
+// Prioridad: Twilio si TWILIO_ACCOUNT_SID está definido, Meta si WHATSAPP_TOKEN.
+// Variables Railway requeridas para Twilio:
+//   TWILIO_ACCOUNT_SID   → Account SID del dashboard Twilio
+//   TWILIO_AUTH_TOKEN    → Auth Token del dashboard Twilio
+//   TWILIO_WHATSAPP_FROM → Número sandbox Twilio (default: +14155238886)
 // =============================================================================
+
+function isTwilioConfigured() {
+  return !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN);
+}
 
 async function sendAlertWhatsApp(alert, org, waConfig) {
   const numbers = waConfig.phone_numbers || [];
   if (!numbers.length) return { success: false, error: 'No hay números WhatsApp configurados' };
 
-  const token         = process.env.WHATSAPP_TOKEN;
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  if (!token || !phoneNumberId) return { success: false, error: 'WhatsApp no configurado' };
-
+  // Construir el texto de la alerta (mismo para ambos proveedores)
   const label    = ALERT_LABELS[alert.alert_type] || `🔔 ${alert.alert_type}`;
   const sevLabel = SEVERITY_LABELS[alert.severity] || alert.severity;
   const metaText = alert.metadata
     ? '\n' + Object.entries(alert.metadata).map(([k, v]) => `• ${k}: ${v}`).join('\n')
     : '';
-
   const text = `${label} — ${org.business_name}\nSeveridad: *${sevLabel}*\n\n${alert.description || ''}${metaText}\n\n_${new Date().toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}_`;
+
+  if (isTwilioConfigured()) {
+    return await sendViaTwilio(numbers, text, org);
+  }
+
+  // Fallback: Meta Cloud API
+  const token         = process.env.WHATSAPP_TOKEN;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  if (!token || !phoneNumberId) return { success: false, error: 'WhatsApp no configurado (ni Twilio ni Meta)' };
 
   const results = [];
   for (const rawPhone of numbers) {
     const phone     = String(rawPhone).replace(/\D/g, '');
     const fullPhone = phone.startsWith('57') ? phone : `57${phone}`;
-
     try {
       const res = await fetch(
         `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`,
@@ -305,7 +316,53 @@ async function sendAlertWhatsApp(alert, org, waConfig) {
       results.push({ phone: fullPhone, success: false, error: err.message });
     }
   }
+  return { success: results.some(r => r.success), provider: 'meta', results };
+}
 
-  const anySuccess = results.some(r => r.success);
-  return { success: anySuccess, results };
+// =============================================================================
+// TWILIO WhatsApp Sandbox
+// Requiere que el número destinatario haya enviado "join <keyword>" al sandbox.
+// =============================================================================
+async function sendViaTwilio(rawNumbers, text, org) {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken  = process.env.TWILIO_AUTH_TOKEN;
+  const fromNumber = process.env.TWILIO_WHATSAPP_FROM || '+14155238886';
+  const from       = `whatsapp:${fromNumber}`;
+
+  // Twilio usa Basic Auth con AccountSid:AuthToken en base64
+  const credentials = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+
+  const results = [];
+  for (const rawPhone of rawNumbers) {
+    const phone     = String(rawPhone).replace(/\D/g, '');
+    const fullPhone = phone.startsWith('57') ? `+57${phone.slice(2)}` : `+57${phone}`;
+    const to        = `whatsapp:${fullPhone}`;
+
+    try {
+      const body = new URLSearchParams({ From: from, To: to, Body: text });
+      const res  = await fetch(url, {
+        method:  'POST',
+        headers: {
+          'Authorization': `Basic ${credentials}`,
+          'Content-Type':  'application/x-www-form-urlencoded',
+        },
+        body: body.toString(),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        logger.error('[AlertDispatcher/Twilio] Error enviando mensaje', { error: data?.message, code: data?.code });
+        results.push({ phone: fullPhone, success: false, error: data?.message || `HTTP ${res.status}` });
+      } else {
+        logger.info('[AlertDispatcher/Twilio] Mensaje enviado', { sid: data?.sid, to: fullPhone });
+        results.push({ phone: fullPhone, success: true, messageId: data?.sid });
+      }
+    } catch (err) {
+      results.push({ phone: fullPhone, success: false, error: err.message });
+    }
+  }
+
+  return { success: results.some(r => r.success), provider: 'twilio', results };
 }
