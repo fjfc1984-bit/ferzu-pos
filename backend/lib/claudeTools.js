@@ -1294,9 +1294,14 @@ async function voidLastOrder({ dry_run = true, order_id, reason }, context) {
   const userId   = context.user_id;
   const userRole = context.user_role;
 
+  // Diagnóstico: exponer contexto si faltan valores críticos
+  if (!orgId) {
+    return { error: `DIAGNÓSTICO: organization_id es undefined. Contexto recibido: org=${orgId}, branch=${branchId}, role=${userRole}, user=${userId}`, can_void: false };
+  }
+
   // Solo admin/owner pueden anular
   if (!['owner', 'admin'].includes(userRole)) {
-    return { error: 'Permiso insuficiente. Solo el dueño o administrador puede anular órdenes desde el Co-Piloto.' };
+    return { error: `Permiso insuficiente. Tu rol actual es "${userRole}". Solo el dueño (owner) o administrador (admin) puede anular órdenes desde el Co-Piloto.` };
   }
 
   const since30min = new Date(Date.now() - 30 * 60 * 1000).toISOString();
@@ -1317,7 +1322,10 @@ async function voidLastOrder({ dry_run = true, order_id, reason }, context) {
 
     const { data: order, error } = await orderQuery.maybeSingle();
 
-    if (error) return { error: `Error buscando orden: ${error.message}`, can_void: false };
+    if (error) return {
+      error: `Error buscando orden: ${error.message} | code=${error.code} | hint=${error.hint || 'none'} | details=${error.details || 'none'} | orgId=${orgId} | branchId=${branchId}`,
+      can_void: false,
+    };
     if (!order) return {
       can_void: false,
       message: 'No hay órdenes pagadas en los últimos 30 minutos. Si la orden es más antigua, usa el módulo de Cajas.',
