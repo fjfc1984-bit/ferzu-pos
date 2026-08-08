@@ -1308,22 +1308,35 @@ async function voidLastOrder({ dry_run = true, order_id, reason }, context) {
 
   // ── FASE 1: previsualizar (dry_run=true) ──────────────────────────────────
   if (dry_run) {
-    // Query 1: buscar la orden (sin join — PostgREST confunde .eq() con relaciones embebidas)
+    // NOTA: la tabla 'orders' NO tiene columna organization_id directa.
+    // La org se filtra via branch_id (branches sí tienen organization_id).
     let orderQuery = supabaseAdmin
       .from('orders')
       .select('id, total, status, created_at, branch_id')
-      .eq('organization_id', orgId)
       .eq('status', 'paid')
       .gte('created_at', since30min)
       .order('created_at', { ascending: false })
       .limit(1);
 
-    if (branchId) orderQuery = orderQuery.eq('branch_id', branchId);
+    if (branchId) {
+      // Caso normal: filtrar por sucursal específica (ya es org-scoped)
+      orderQuery = orderQuery.eq('branch_id', branchId);
+    } else {
+      // Fallback: obtener todas las sucursales de la org
+      const { data: branches, error: branchErr } = await supabaseAdmin
+        .from('branches')
+        .select('id')
+        .eq('organization_id', orgId);
+      if (branchErr) return { error: `Error buscando sucursales: ${branchErr.message}`, can_void: false };
+      const branchIds = (branches || []).map(b => b.id);
+      if (branchIds.length === 0) return { can_void: false, message: 'No se encontraron sucursales para esta organización.' };
+      orderQuery = orderQuery.in('branch_id', branchIds);
+    }
 
     const { data: order, error } = await orderQuery.maybeSingle();
 
     if (error) return {
-      error: `Error buscando orden: ${error.message} | code=${error.code} | hint=${error.hint || 'none'} | details=${error.details || 'none'} | orgId=${orgId} | branchId=${branchId}`,
+      error: `Error buscando orden: ${error.message} | code=${error.code} | hint=${error.hint || 'none'} | orgId=${orgId} | branchId=${branchId}`,
       can_void: false,
     };
     if (!order) return {
@@ -1359,11 +1372,11 @@ async function voidLastOrder({ dry_run = true, order_id, reason }, context) {
   if (!reason)   return { error: 'Se requiere el motivo (reason) de la anulación.' };
 
   // Re-verificar que sigue siendo válida (pagada, reciente, misma org)
+  // orders no tiene organization_id — verificamos via branch perteneciente a la org
   const { data: order, error: fetchErr } = await supabaseAdmin
     .from('orders')
-    .select('id, total, status, created_at')
+    .select('id, total, status, created_at, branch_id')
     .eq('id', order_id)
-    .eq('organization_id', orgId)
     .maybeSingle();
 
   if (fetchErr || !order) return { error: 'Orden no encontrada o sin acceso.' };
@@ -1372,12 +1385,11 @@ async function voidLastOrder({ dry_run = true, order_id, reason }, context) {
     return { error: 'La orden tiene más de 30 minutos. Para anularla usa el módulo de Cajas.' };
   }
 
-  // Anular la orden
+  // Anular la orden (sin filtro organization_id — orders no tiene esa columna)
   const { error: updateErr } = await supabaseAdmin
     .from('orders')
     .update({ status: 'cancelled' })
-    .eq('id', order_id)
-    .eq('organization_id', orgId);
+    .eq('id', order_id);
 
   if (updateErr) return { error: `Error al anular la orden: ${updateErr.message}` };
 
