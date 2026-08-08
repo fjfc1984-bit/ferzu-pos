@@ -20,6 +20,7 @@ const SyncContext = createContext(null)
 export function SyncProvider({ children }) {
   const [isOnline,     setIsOnline]     = useState(navigator.onLine)
   const [pendingCount, setPendingCount] = useState(0)
+  const [failedCount,  setFailedCount]  = useState(0)
   const [isSyncing,    setIsSyncing]    = useState(false)
   const syncRef = useRef(null)
 
@@ -73,28 +74,48 @@ export function SyncProvider({ children }) {
 
   async function refreshPendingCount() {
     try {
-      const count = await db.sync_queue.count()
-      setPendingCount(count)
+      const all    = await db.sync_queue.toArray()
+      const failed = all.filter(op => op.status === 'failed_permanent').length
+      const active = all.filter(op => op.status !== 'failed_permanent').length
+      setPendingCount(active)
+      setFailedCount(failed)
     } catch {
       setPendingCount(0)
+      setFailedCount(0)
     }
   }
 
   // ── Procesar cola ─────────────────────────────────────────────────────────
   const processSyncQueue = useCallback(async () => {
     if (!navigator.onLine) return
+    const now = new Date().toISOString()
+
+    // Solo ops activas (no failed_permanent), con retries < 5,
+    // y cuyo next_retry_at ya pasó (o no tiene — primera vez)
     const pending = await db.sync_queue
-      .filter(op => (op.retries || 0) < 5)
+      .filter(op =>
+        op.status !== 'failed_permanent' &&
+        (op.retries || 0) < 5 &&
+        (!op.next_retry_at || op.next_retry_at <= now)
+      )
       .toArray()
 
     if (!pending.length) return
 
     setIsSyncing(true)
     let ok = 0
+    let newDead = 0
 
     for (const op of pending) {
       try {
         const res = await api.post('/sync/push', { operations: [op] })
+
+        // Verificar si el backend reportó error en el resultado (success: false)
+        const opResult = res.data?.results?.[0]
+        if (opResult && !opResult.success) {
+          throw new Error(opResult.error || 'El servidor rechazó la operación')
+        }
+
         await db.sync_queue.delete(op.id)
 
         // Marcar offline_orders como synced usando local_id del payload
@@ -102,14 +123,32 @@ export function SyncProvider({ children }) {
         if (localId) {
           await db.offline_orders
             .where('local_id').equals(localId)
-            .modify({ synced: true, server_id: res.data?.results?.[0]?.server_id ?? null })
+            .modify({ synced: true, server_id: opResult?.server_id ?? null })
         }
         ok++
-      } catch {
-        const retries = (op.retries || 0) + 1
-        // Exponential backoff: guardar próximo intento no antes de 2^retries segundos
-        const nextRetryAt = new Date(Date.now() + Math.min(Math.pow(2, retries) * 1000, 300_000)).toISOString()
-        await db.sync_queue.update(op.id, { retries, next_retry_at: nextRetryAt })
+      } catch (err) {
+        const retries    = (op.retries || 0) + 1
+        const lastError  = err.response?.data?.error || err.message || 'Error desconocido'
+
+        if (retries >= 5) {
+          // Fallo permanente — marcar y alertar al usuario
+          await db.sync_queue.update(op.id, {
+            retries,
+            status:     'failed_permanent',
+            last_error: lastError,
+          })
+          newDead++
+          toast.error(
+            `⚠️ Venta no sincronizada: ${lastError.slice(0, 80)}`,
+            { id: `dead-${op.id}`, duration: 8000 }
+          )
+        } else {
+          // Backoff exponencial (2^retries seg, máx 5 min)
+          const nextRetryAt = new Date(
+            Date.now() + Math.min(Math.pow(2, retries) * 1000, 300_000)
+          ).toISOString()
+          await db.sync_queue.update(op.id, { retries, next_retry_at: nextRetryAt, last_error: lastError })
+        }
       }
     }
 
@@ -117,8 +156,16 @@ export function SyncProvider({ children }) {
     await refreshPendingCount()
 
     if (ok > 0) {
-      toast.success(`${ok} operación${ok > 1 ? 'es' : ''} sincronizada${ok > 1 ? 's' : ''}`,
-        { id: 'sync-done' })
+      toast.success(
+        `${ok} operación${ok > 1 ? 'es' : ''} sincronizada${ok > 1 ? 's' : ''}`,
+        { id: 'sync-done' }
+      )
+    }
+    if (newDead > 0) {
+      toast.error(
+        `${newDead} venta${newDead > 1 ? 's' : ''} no pudo${newDead > 1 ? 'ieron' : ''} sincronizarse. Revisa en el módulo de Ventas.`,
+        { id: 'sync-dead', duration: 10000 }
+      )
     }
   }, [])
 
@@ -166,6 +213,7 @@ export function SyncProvider({ children }) {
       isOnline,
       isSyncing,
       pendingCount,
+      failedCount,
       saveOrderOffline,
       cacheProducts,
       getOfflineProducts,

@@ -24,8 +24,13 @@ db.version(3).stores({
   sync_queue:       "++id, table_name, operation, payload, created_at, retries",
   cash_sessions:    "id, branch_id, status",
   customers:        "++id, branch_id, phone, name",
-  dashboard_cache:  "key",   // key = "branch_<id>_<range>", value = JSON blob + cached_at
-  customers_cache:  "key",   // key = "branch_<id>", rows = array de clientes
+  dashboard_cache:  "key",
+  customers_cache:  "key",
+})
+
+// v4: sync_queue con status indexado (pending | failed_permanent) + last_error
+db.version(4).stores({
+  sync_queue: "++id, table_name, operation, payload, created_at, retries, status, next_retry_at",
 })
 export async function addToSyncQueue(tableName, operation, payload) {
   await db.sync_queue.add({ table_name: tableName, operation, payload, created_at: new Date().toISOString(), retries: 0 })
