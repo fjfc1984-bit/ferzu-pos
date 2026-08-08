@@ -139,61 +139,77 @@ function checkRailwayBackend() {
  *   - Última orden offline → proxy del último intento de sync
  */
 async function checkSyncChain() {
-  try {
-    const since5min = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  let pending   = 0;
+  let errorRate = 0;
+  let lastSyncAttempt = null;
+  const warnings = [];
 
-    // Pendientes: órdenes offline que aún no tienen status 'paid'
+  // ── 1. Órdenes offline pendientes ──────────────────────────────────────────
+  // Si la columna `source` no existe en `orders`, fallamos silenciosamente
+  // con pending=0 (no queremos que un schema incompleto marque todo como crítico)
+  try {
     const { count: pendingCount, error: pendErr } = await supabaseAdmin
       .from('orders')
       .select('id', { count: 'exact', head: true })
       .eq('source', 'offline')
       .neq('status', 'paid');
 
-    if (pendErr) throw new Error(pendErr.message);
+    if (pendErr) {
+      // Schema incompleto o columna inexistente → degradar a warning, no error
+      warnings.push(`orders.source: ${pendErr.message}`);
+    } else {
+      pending = pendingCount ?? 0;
 
-    // Eventos recientes para estimar error rate
-    const { data: recentEvents } = await supabaseAdmin
+      // Último intento de sync
+      const { data: lastOffline } = await supabaseAdmin
+        .from('orders')
+        .select('created_at')
+        .eq('source', 'offline')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      lastSyncAttempt = lastOffline?.created_at ?? null;
+    }
+  } catch (err) {
+    warnings.push(`orders query: ${err.message || 'unknown error'}`);
+  }
+
+  // ── 2. Error rate de los últimos 5 min (usage_events) ─────────────────────
+  // Si la tabla no existe, ignoramos la métrica (no es crítica)
+  try {
+    const since5min = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: recentEvents, error: evErr } = await supabaseAdmin
       .from('usage_events')
       .select('event_type')
       .gte('created_at', since5min);
 
-    const totalEvents  = recentEvents?.length ?? 0;
-    const errorEvents  = (recentEvents ?? []).filter(e =>
-      e.event_type?.includes('error') || e.event_type?.includes('fail')
-    ).length;
-    const errorRate = totalEvents > 0 ? Math.round((errorEvents / totalEvents) * 100) : 0;
-
-    // Último intento de sync = última orden offline registrada
-    const { data: lastOffline } = await supabaseAdmin
-      .from('orders')
-      .select('created_at')
-      .eq('source', 'offline')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const pending = pendingCount ?? 0;
-
-    const status = errorRate >= T.sync_err_crit_pct || pending >= T.pending_crit ? 'critical'
-                 : errorRate >= T.sync_err_warn_pct  || pending >= T.pending_warn  ? 'warning'
-                 : 'ok';
-
-    return {
-      status,
-      last_sync_attempt:          lastOffline?.created_at ?? null,
-      pending_sync_items:         pending,
-      error_rate_5min_percentage: errorRate,
-      error_message:              null,
-    };
+    if (evErr) {
+      warnings.push(`usage_events: ${evErr.message}`);
+    } else {
+      const totalEvents = recentEvents?.length ?? 0;
+      const errorEvents = (recentEvents ?? []).filter(e =>
+        e.event_type?.includes('error') || e.event_type?.includes('fail')
+      ).length;
+      errorRate = totalEvents > 0 ? Math.round((errorEvents / totalEvents) * 100) : 0;
+    }
   } catch (err) {
-    return {
-      status:                     'error',
-      last_sync_attempt:          null,
-      pending_sync_items:         null,
-      error_rate_5min_percentage: null,
-      error_message:              err.message,
-    };
+    warnings.push(`usage_events query: ${err.message || 'unknown error'}`);
   }
+
+  // ── 3. Determinar status ───────────────────────────────────────────────────
+  const hasSchemaIssues = warnings.length > 0;
+  const status = errorRate >= T.sync_err_crit_pct || pending >= T.pending_crit ? 'critical'
+               : errorRate >= T.sync_err_warn_pct  || pending >= T.pending_warn  ? 'warning'
+               : hasSchemaIssues                                                 ? 'warning'
+               : 'ok';
+
+  return {
+    status,
+    last_sync_attempt:          lastSyncAttempt,
+    pending_sync_items:         pending,
+    error_rate_5min_percentage: errorRate,
+    error_message:              warnings.length > 0 ? warnings.join('; ') : null,
+  };
 }
 
 // =============================================================================
@@ -234,7 +250,12 @@ router.get('/full', async (req, res) => {
   if (auth.status     !== 'ok') messages.push(`[SUPABASE AUTH]    ${auth.error_message     || `Latencia ${auth.latency_ms}ms — revisar Supabase Dashboard`}`);
   if (database.status !== 'ok') messages.push(`[SUPABASE DB]      ${database.error_message  || `Latencia ${database.query_latency_ms}ms — verificar conexiones`}`);
   if (railway.status  !== 'ok') messages.push(`[RAILWAY BACKEND]  ${railway.error_message   || `Memoria ${railway.memory_usage_mb}MB — revisar Railway Metrics`}`);
-  if (sync.status     !== 'ok') messages.push(`[SYNC CHAIN]       ${sync.error_message      || `${sync.pending_sync_items} órdenes offline pendientes | Error rate: ${sync.error_rate_5min_percentage}%`}`);
+  if (sync.status     !== 'ok') {
+    const syncDetail = sync.pending_sync_items != null
+      ? `${sync.pending_sync_items} órdenes offline pendientes | Error rate: ${sync.error_rate_5min_percentage ?? 0}%`
+      : null;
+    messages.push(`[SYNC CHAIN]       ${sync.error_message || syncDetail || 'Degradado — revisar schema'}`);
+  }
 
   const payload = {
     status:    overallStatus,
