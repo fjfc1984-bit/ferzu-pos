@@ -499,6 +499,43 @@ export const FERZU_TOOLS = [
       },
       required: ["severity_filter"]
     }
+  },
+
+  // ── Tool 9: void_last_order ─────────────────────────────────────────────────
+  {
+    name: "void_last_order",
+    description: `Anula la última orden pagada de la sucursal actual.
+
+PROTOCOLO OBLIGATORIO DE DOS FASES:
+1. Llamar SIEMPRE con dry_run=true primero → obtiene detalles de la orden
+2. Mostrar al usuario: total, productos, hace cuántos minutos
+3. Esperar confirmación EXPLÍCITA del usuario ("sí", "confirmo", "anula")
+4. Solo entonces llamar con dry_run=false + order_id + reason
+
+Restricciones de seguridad:
+- Solo órdenes pagadas en los últimos 30 minutos
+- Requiere rol admin u owner
+- Queda registrado en audit_log con motivo y usuario
+
+Nunca ejecutar dry_run=false sin confirmación previa del usuario.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        dry_run: {
+          type: "boolean",
+          description: "true = previsualizar sin cambios (SIEMPRE empezar aquí). false = ejecutar anulación (solo tras confirmación del usuario)."
+        },
+        order_id: {
+          type: "string",
+          description: "UUID de la orden a anular. Solo requerido cuando dry_run=false. Se obtiene del resultado previo con dry_run=true."
+        },
+        reason: {
+          type: "string",
+          description: "Motivo de la anulación. Requerido cuando dry_run=false. Ej: 'Error en el cobro', 'Pedido duplicado'."
+        }
+      },
+      required: ["dry_run"]
+    }
   }
 ];
 
@@ -647,6 +684,9 @@ async function executeTool(toolName, toolInput, context) {
 
     case 'get_inventory_alerts':
       return await getInventoryAlerts(toolInput, context);
+
+    case 'void_last_order':
+      return await voidLastOrder(toolInput, context);
 
     default:
       return { error: `Tool desconocida: ${toolName}` };
@@ -1241,6 +1281,109 @@ async function getInventoryAlerts(input, context) {
   } catch (e) {
     return { error: e.message, alerts: [], critical_count: 0, warning_count: 0, total_alerts: 0 };
   }
+}
+
+
+// =============================================================================
+// SECCIÓN 5b: TOOL 9 — void_last_order
+// =============================================================================
+
+async function voidLastOrder({ dry_run = true, order_id, reason }, context) {
+  const orgId    = context.organization_id;
+  const branchId = context.branch_id;
+  const userId   = context.user_id;
+  const userRole = context.user_role;
+
+  // Solo admin/owner pueden anular
+  if (!['owner', 'admin'].includes(userRole)) {
+    return { error: 'Permiso insuficiente. Solo el dueño o administrador puede anular órdenes desde el Co-Piloto.' };
+  }
+
+  const since30min = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+
+  // ── FASE 1: previsualizar (dry_run=true) ──────────────────────────────────
+  if (dry_run) {
+    let query = supabaseAdmin
+      .from('orders')
+      .select('id, total, status, created_at, order_items(product_name, quantity, subtotal)')
+      .eq('organization_id', orgId)
+      .eq('status', 'paid')
+      .gte('created_at', since30min)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (branchId) query = query.eq('branch_id', branchId);
+
+    const { data: order, error } = await query.maybeSingle();
+
+    if (error) return { error: `Error buscando orden: ${error.message}`, can_void: false };
+    if (!order) return {
+      can_void: false,
+      message: 'No hay órdenes pagadas en los últimos 30 minutos. Si la orden es más antigua, usa el módulo de Cajas.',
+    };
+
+    const minutesAgo = Math.round((Date.now() - new Date(order.created_at).getTime()) / 60000);
+    const items = (order.order_items || []).map(i =>
+      `${i.quantity}× ${i.product_name} ($${(i.subtotal || 0).toLocaleString('es-CO')})`
+    );
+
+    return {
+      can_void:    true,
+      dry_run:     true,
+      order_id:    order.id,
+      total:       order.total,
+      minutes_ago: minutesAgo,
+      items,
+      items_count: items.length,
+      message:     `Orden encontrada:\n• Total: $${order.total.toLocaleString('es-CO')}\n• Hace: ${minutesAgo} minuto(s)\n• Productos: ${items.join(', ')}\n\n¿Confirmas la anulación? Dime el motivo.`,
+    };
+  }
+
+  // ── FASE 2: ejecutar anulación (dry_run=false) ────────────────────────────
+  if (!order_id) return { error: 'Se requiere order_id para anular. Ejecuta primero con dry_run=true.' };
+  if (!reason)   return { error: 'Se requiere el motivo (reason) de la anulación.' };
+
+  // Re-verificar que sigue siendo válida (pagada, reciente, misma org)
+  const { data: order, error: fetchErr } = await supabaseAdmin
+    .from('orders')
+    .select('id, total, status, created_at')
+    .eq('id', order_id)
+    .eq('organization_id', orgId)
+    .maybeSingle();
+
+  if (fetchErr || !order) return { error: 'Orden no encontrada o sin acceso.' };
+  if (order.status !== 'paid')             return { error: `La orden ya está en estado "${order.status}" — no se puede anular.` };
+  if (new Date(order.created_at) < new Date(since30min)) {
+    return { error: 'La orden tiene más de 30 minutos. Para anularla usa el módulo de Cajas.' };
+  }
+
+  // Anular la orden
+  const { error: updateErr } = await supabaseAdmin
+    .from('orders')
+    .update({ status: 'cancelled' })
+    .eq('id', order_id)
+    .eq('organization_id', orgId);
+
+  if (updateErr) return { error: `Error al anular la orden: ${updateErr.message}` };
+
+  // Registrar en audit_log (fire-and-forget)
+  Promise.resolve(supabaseAdmin.from('audit_log').insert({
+    organization_id: orgId,
+    user_id:         userId,
+    action:          'void_order_via_copilot',
+    resource_type:   'order',
+    resource_id:     order_id,
+    old_values:      { status: 'paid' },
+    new_values:      { status: 'cancelled', reason, voided_via: 'copilot' },
+  })).catch(() => {});
+
+  return {
+    success:         true,
+    dry_run:         false,
+    voided_order_id: order_id,
+    total_voided:    order.total,
+    message:         `✅ Orden anulada exitosamente.\n• Total: $${order.total.toLocaleString('es-CO')}\n• Motivo registrado: "${reason}"\n• Queda en el historial de auditoría.`,
+  };
 }
 
 

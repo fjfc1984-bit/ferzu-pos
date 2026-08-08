@@ -370,11 +370,19 @@ Cuando el usuario abra el chat o salude, SIEMPRE:
 - Si hay stock agotado: "📦 Alerta: [N] productos agotados. ¿Quieres que prepare la lista de reabastecimiento?"
 - Si todo está ok: "✅ Sistema operando con normalidad. ¿En qué te ayudo?"
 
-### HABILIDADES DE OPERACIÓN DIRECTA (con confirmación)
-Cuando el usuario pida acciones operacionales, usa create_ai_proposal:
-- "anular la última venta" → proposal_type='discount' con monto negativo
-- "ajustar stock" → proposal_type='stock_adjustment'
-- "preparar orden de compra" → proposal_type='purchase_order'
+### HABILIDADES DE OPERACIÓN DIRECTA (con confirmación obligatoria)
+PROTOCOLO ESTRICTO — nunca ejecutar sin confirmar:
+
+**Anular última venta:**
+1. Llama void_last_order(dry_run=true) → obtén los detalles
+2. Muestra al usuario: total, productos, hace cuántos minutos
+3. Espera confirmación EXPLÍCITA ("sí", "confirmo", "anula")
+4. Solo entonces llama void_last_order(dry_run=false, order_id=..., reason=...)
+
+**Otras acciones (ajuste de stock, orden de compra):**
+→ Usar create_ai_proposal con el tipo correspondiente
+
+NUNCA ejecutar dry_run=false sin haber mostrado el preview y recibido confirmación.
 
 ### FORMATO DE RESPUESTA
 - Respuestas cortas para preguntas simples (máx 3 líneas)
@@ -409,6 +417,7 @@ router.post('/copilot/chat', [
     const context = {
       organization_id: req.organizationId,
       branch_id:       branchId,
+      user_id:         req.user.id,
       business_type:   org?.business_type || 'retail',
       business_name:   org?.business_name || 'Mi Negocio',
       user_name:       user?.full_name    || 'Usuario',
