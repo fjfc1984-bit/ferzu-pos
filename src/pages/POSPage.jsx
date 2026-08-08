@@ -19,7 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   ShoppingCart, Search, Zap, User, ChevronDown,
   Package, BarChart3, LogOut, Wifi, WifiOff,
@@ -56,6 +56,14 @@ export default function POSPage() {
     connect:     connectPrinter,
     disconnect:  disconnectPrinter,
   } = useThermalPrinter();
+  const navigate = useNavigate();
+
+  // Guard: si no hay sucursal seleccionada, redirigir al selector
+  useEffect(() => {
+    if (!sessionLoading && !branchId) {
+      navigate('/branch-select', { replace: true });
+    }
+  }, [sessionLoading, branchId, navigate]);
 
   const [showCustomer,      setShowCustomer]      = useState(false);
   const [showPayment,       setShowPayment]       = useState(false);
@@ -2457,9 +2465,9 @@ function Modal({ children, title, onClose, hideClose = false, size = 'md' }) {
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={e => { if (e.target === e.currentTarget && !hideClose) onClose?.(); }}>
-      <div className={`bg-white rounded-3xl shadow-2xl shadow-gray-900/15 w-full ${sizeMap[size]} overflow-hidden ring-1 ring-gray-200/60`}>
+      <div className={`bg-white rounded-3xl shadow-2xl shadow-gray-900/15 w-full ${sizeMap[size]} max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden ring-1 ring-gray-200/60`}>
         {title && (
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
             <h2 className="font-semibold text-gray-900">{title}</h2>
             {!hideClose && (
               <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100">
@@ -2468,7 +2476,9 @@ function Modal({ children, title, onClose, hideClose = false, size = 'md' }) {
             )}
           </div>
         )}
-        {children}
+        <div className="overflow-y-auto">
+          {children}
+        </div>
       </div>
     </div>
   );
