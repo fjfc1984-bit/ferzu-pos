@@ -148,27 +148,27 @@ async function checkSyncChain() {
   // Si la columna `source` no existe en `orders`, fallamos silenciosamente
   // con pending=0 (no queremos que un schema incompleto marque todo como crítico)
   try {
+    // Órdenes sincronizadas desde offline (synced_at IS NOT NULL) que siguen abiertas
     const { count: pendingCount, error: pendErr } = await supabaseAdmin
       .from('orders')
       .select('id', { count: 'exact', head: true })
-      .eq('source', 'offline')
-      .neq('status', 'paid');
+      .not('synced_at', 'is', null)
+      .eq('status', 'open');
 
     if (pendErr) {
-      // Schema incompleto o columna inexistente → degradar a warning, no error
-      warnings.push(`orders.source: ${pendErr.message}`);
+      warnings.push(`orders.synced_at: ${pendErr.message || 'query error'}`);
     } else {
       pending = pendingCount ?? 0;
 
-      // Último intento de sync
-      const { data: lastOffline } = await supabaseAdmin
+      // Último sync = registro más reciente con synced_at
+      const { data: lastSynced } = await supabaseAdmin
         .from('orders')
-        .select('created_at')
-        .eq('source', 'offline')
-        .order('created_at', { ascending: false })
+        .select('synced_at')
+        .not('synced_at', 'is', null)
+        .order('synced_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      lastSyncAttempt = lastOffline?.created_at ?? null;
+      lastSyncAttempt = lastSynced?.synced_at ?? null;
     }
   } catch (err) {
     warnings.push(`orders query: ${err.message || 'unknown error'}`);
