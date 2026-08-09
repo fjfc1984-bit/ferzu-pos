@@ -28,6 +28,7 @@ import { useNavigate } from 'react-router-dom';
 import { formatCOP }  from '../lib/math.js';
 import toast          from 'react-hot-toast';
 import { useTrack }   from '../hooks/useTrack.js';
+import NicheContextBar from '../components/NicheContextBar.jsx';
 import { addDays, startOfWeek, format, isSameDay, parseISO, differenceInMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -164,6 +165,10 @@ export default function BarbershopPage() {
 
       {/* ── COLUMNA 2: Calendario de citas ── */}
       <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Barra de contexto activo — niche + sucursal */}
+        <div className="px-4 pt-3">
+          <NicheContextBar moduleLabel="Citas" />
+        </div>
         <AppointmentCalendar
           date={selectedDate}
           onDateChange={setSelectedDate}
@@ -563,13 +568,15 @@ function NewAppointmentModal({ slot, staffList, branchId, organizationId, onClos
   const [quickPhone, setQuickPhone] = useState('');
   const [searchDone, setSearchDone] = useState(false);
 
-  // Cargar servicios
+  // Cargar servicios — filtrados por niche 'barbershop' o 'general'
+  // (productos sin niche asignado quedan en 'general' y son visibles en todos los módulos)
   useEffect(() => {
     supabase.from('products')
-      .select('id, name, price, metadata')
+      .select('id, name, price, metadata, niche')
       .eq('organization_id', organizationId)
       .eq('item_type', 'service')
       .eq('is_active', true)
+      .in('niche', ['barbershop', 'general'])
       .then(({ data }) => setServiceOptions(data || []));
   }, [organizationId]);
 
@@ -617,6 +624,7 @@ function NewAppointmentModal({ slot, staffList, branchId, organizationId, onClos
         organization_id: organizationId,
         name,
         phone: quickPhone.trim() || null,
+        preferred_module: 'barbershop',
       }).select('id, name').single();
       if (error) throw error;
       setForm(f => ({ ...f, customer_id: data.id, customer_search: data.name }));

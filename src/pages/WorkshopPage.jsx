@@ -29,6 +29,7 @@ import toast         from 'react-hot-toast';
 import { useTrack }  from '../hooks/useTrack.js';
 import { format, parseISO, differenceInMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
+import NicheContextBar from '../components/NicheContextBar.jsx';
 
 // =============================================================================
 // Configuración de columnas Kanban del taller
@@ -103,6 +104,11 @@ export default function WorkshopPage() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
+      {/* Barra de contexto activo — niche + sucursal */}
+      <div className="px-5 pt-3 bg-white shrink-0">
+        <NicheContextBar moduleLabel="Órdenes de Trabajo" />
+      </div>
+
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
@@ -349,6 +355,19 @@ function WorkOrderForm({ order, branchId, organizationId, onClose, onSaved }) {
         await supabase.from('work_orders').update(payload).eq('id', order.id);
       } else {
         await supabase.from('work_orders').insert(payload);
+      }
+
+      // Registrar/actualizar cliente en la tabla customers con preferred_module='workshop'
+      // Esto permite que la búsqueda futura priorice este cliente en el módulo Taller
+      if (form.customer_name?.trim()) {
+        const phone = form.customer_phone?.trim() || null;
+        // Upsert: si ya existe por (org + nombre), actualiza preferred_module
+        await supabase.from('customers').upsert({
+          organization_id: organizationId,
+          name:             form.customer_name.trim(),
+          phone:            phone,
+          preferred_module: 'workshop',
+        }, { onConflict: 'organization_id,name', ignoreDuplicates: false });
       }
 
       toast.success(isEdit ? 'Orden actualizada' : '¡Orden de trabajo creada!');
