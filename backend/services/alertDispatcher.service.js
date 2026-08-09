@@ -343,31 +343,37 @@ let _twilioContentSid = process.env.TWILIO_CONTENT_SID || null;
 async function ensureTwilioContentSid(credentials) {
   if (_twilioContentSid) return _twilioContentSid;
 
-  logger.info('[AlertDispatcher/Twilio] Creando ContentSid genérico…');
-  const res = await fetch('https://content.twilio.com/v1/Content', {
-    method:  'POST',
-    headers: {
-      'Authorization': `Basic ${credentials}`,
-      'Content-Type':  'application/json',
-    },
-    body: JSON.stringify({
-      friendly_name: 'ferzu_alert_generic',
-      language:      'es',
-      types: {
-        'twilio/text': { body: '{{1}}' },
+  logger.info('[AlertDispatcher/Twilio] Creando ContentSid genérico via Content API…');
+  let res, data;
+  try {
+    res  = await fetch('https://content.twilio.com/v1/Content', {
+      method:  'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type':  'application/json',
       },
-    }),
-  });
+      body: JSON.stringify({
+        friendly_name: 'ferzu_alert_generic',
+        language:      'es',
+        types: {
+          'twilio/text': { body: '{{1}}' },
+        },
+      }),
+    });
+    data = await res.json();
+  } catch (fetchErr) {
+    throw new Error(`Content API fetch error: ${fetchErr.message}`);
+  }
 
-  const data = await res.json();
   if (res.ok && data.sid) {
     _twilioContentSid = data.sid;
-    logger.info('[AlertDispatcher/Twilio] ContentSid creado', { sid: _twilioContentSid });
+    logger.info(`[AlertDispatcher/Twilio] ContentSid creado: ${_twilioContentSid}`);
     return _twilioContentSid;
   }
 
-  // Si falla la creación, lanzar para que el caller maneje el error
-  throw new Error(`No se pudo crear ContentSid: ${data?.message || `HTTP ${res.status}`}`);
+  // Loguear respuesta completa para diagnóstico
+  const detail = JSON.stringify(data).slice(0, 300);
+  throw new Error(`Content API HTTP ${res.status}: ${detail}`);
 }
 
 async function sendViaTwilio(rawNumbers, text, org) {
@@ -431,7 +437,7 @@ async function sendViaTwilio(rawNumbers, text, org) {
         results.push({ phone: fullPhone, success: true, messageId: data?.sid });
       }
     } catch (err) {
-      logger.error('[AlertDispatcher/Twilio] Excepción al enviar', { error: err.message, to: fullPhone });
+      logger.error(`[AlertDispatcher/Twilio] Excepción al enviar a ${fullPhone}: ${err.message}`);
       results.push({ phone: fullPhone, success: false, error: err.message });
     }
   }
