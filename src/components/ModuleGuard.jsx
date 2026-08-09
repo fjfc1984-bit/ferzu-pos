@@ -682,6 +682,17 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
 
   const isAdmin = ['admin', 'owner'].includes(user?.role);
 
+  // Conteo de alertas no resueltas para badge del nav
+  const [alertCount, setAlertCount] = useState(0);
+  useEffect(() => {
+    if (!user) return;
+    import('../lib/api').then(({ default: api }) => {
+      api.get('/alerts/summary')
+        .then(r => setAlertCount(r.data?.total || 0))
+        .catch(() => {});
+    });
+  }, [user, currentPath]); // refrescar al navegar
+
   // Durante trial activo → todos los módulos son accesibles en el nav
   const isInTrial = trial && new Date(trial) > new Date();
   const ALL_MAIN = ['pos', 'barbershop', 'kitchen', 'workshop', 'minimarket', 'inventory', 'dashboard'];
@@ -862,6 +873,21 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
             }`}>
             <span className="text-sm leading-none">🔌</span>
             <span>Integraciones</span>
+          </Link>
+          <Link
+            to="/alertas"
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
+              currentPath?.startsWith('/alertas')
+                ? 'bg-white/20 text-white'
+                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+            }`}>
+            <Shield size={13} />
+            <span className="flex-1">Alertas</span>
+            {alertCount > 0 && (
+              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full leading-none">
+                {alertCount > 99 ? '99+' : alertCount}
+              </span>
+            )}
           </Link>
         </div>
       )}
