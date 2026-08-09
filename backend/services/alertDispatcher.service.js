@@ -172,9 +172,12 @@ export async function dispatchAlert(alert, orgId, supabase, overrideOrg = null) 
       results,
     });
 
+    return results;   // útil para el endpoint de test
+
   } catch (err) {
     // Nunca propagar errores — las alertas son always fire-and-forget
     logger.error('[AlertDispatcher] Error despachando alerta', { err: err.message, alert_type: alert.alert_type });
+    return [];
   }
 }
 
@@ -345,6 +348,7 @@ async function sendViaTwilio(rawNumbers, text, org) {
     const to        = `whatsapp:${fullPhone}`;
 
     try {
+      logger.info('[AlertDispatcher/Twilio] Enviando mensaje', { to: fullPhone, from });
       const body = new URLSearchParams({ From: from, To: to, Body: text });
       const res  = await fetch(url, {
         method:  'POST',
@@ -358,13 +362,14 @@ async function sendViaTwilio(rawNumbers, text, org) {
       const data = await res.json();
 
       if (!res.ok) {
-        logger.error('[AlertDispatcher/Twilio] Error enviando mensaje', { error: data?.message, code: data?.code });
+        logger.error('[AlertDispatcher/Twilio] Error enviando mensaje', { error: data?.message, code: data?.code, status: res.status });
         results.push({ phone: fullPhone, success: false, error: data?.message || `HTTP ${res.status}` });
       } else {
         logger.info('[AlertDispatcher/Twilio] Mensaje enviado', { sid: data?.sid, to: fullPhone });
         results.push({ phone: fullPhone, success: true, messageId: data?.sid });
       }
     } catch (err) {
+      logger.error('[AlertDispatcher/Twilio] Excepción al enviar', { error: err.message, to: fullPhone });
       results.push({ phone: fullPhone, success: false, error: err.message });
     }
   }

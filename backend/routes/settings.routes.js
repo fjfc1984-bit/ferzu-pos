@@ -300,11 +300,12 @@ router.post('/alerts/test', requireOrg, [
     };
 
     // Pasar overrideOrg al dispatcher — evita que lea la BD y usa la config de test.
-    await dispatchAlert(testAlert, req.organizationId, null, testOrgOverride);
+    const dispatchResults = await dispatchAlert(testAlert, req.organizationId, null, testOrgOverride);
 
     res.json({
       success: true,
       message: `Alerta de prueba enviada por canal: ${channel}. Revisa tu email${channel !== 'email' ? '/WhatsApp' : ''}.`,
+      debug: dispatchResults,   // incluir resultados para diagnóstico
     });
   } catch (err) {
     logger.error('[Settings] POST /alerts/test error:', { err: err.message });
