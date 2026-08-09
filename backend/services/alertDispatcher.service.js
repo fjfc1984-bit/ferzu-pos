@@ -74,15 +74,20 @@ const SEVERITY_COLORS = { low: '#6b7280', medium: '#f59e0b', high: '#f97316', cr
  * @param {Object} alert.metadata    - Datos adicionales del alert (ej. product_name, amount)
  * @param {string} orgId             - organization_id
  * @param {Object} supabase          - Cliente Supabase (con RLS del contexto)
+ * @param {Object} [overrideOrg]     - Opcional: org con settings ya construidos (para test endpoint)
  */
-export async function dispatchAlert(alert, orgId, supabase) {
+export async function dispatchAlert(alert, orgId, supabase, overrideOrg = null) {
   try {
     // ── 1. Leer configuración de alertas de la organización ──────────────────
-    const { data: org } = await supabaseAdmin
-      .from('organizations')
-      .select('business_name, email, settings')
-      .eq('id', orgId)
-      .single();
+    let org = overrideOrg;
+    if (!org) {
+      const { data } = await supabaseAdmin
+        .from('organizations')
+        .select('business_name, email, settings')
+        .eq('id', orgId)
+        .single();
+      org = data;
+    }
 
     if (!org) return;
 
@@ -144,7 +149,7 @@ export async function dispatchAlert(alert, orgId, supabase) {
       results.push({ channel: 'email', ...emailResult });
     }
 
-    if (channels.includes('whatsapp') && alertConfig.channels.whatsapp.enabled && isWhatsAppConfigured()) {
+    if (channels.includes('whatsapp') && alertConfig.channels.whatsapp.enabled && (isWhatsAppConfigured() || isTwilioConfigured())) {
       const waResult = await sendAlertWhatsApp(alert, org, alertConfig.channels.whatsapp);
       results.push({ channel: 'whatsapp', ...waResult });
     }
@@ -267,7 +272,7 @@ async function sendAlertEmail(alert, org, emailConfig) {
 //   TWILIO_WHATSAPP_FROM → Número sandbox Twilio (default: +14155238886)
 // =============================================================================
 
-function isTwilioConfigured() {
+export function isTwilioConfigured() {
   return !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN);
 }
 

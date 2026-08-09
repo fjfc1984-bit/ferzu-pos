@@ -15,7 +15,8 @@ import { supabaseAdmin }  from '../config/supabase.js';
 import logger             from '../config/logger.js';
 import { sendTestWhatsApp,
          isWhatsAppConfigured } from '../services/whatsapp.service.js';
-import { dispatchAlert }        from '../services/alertDispatcher.service.js';
+import { dispatchAlert,
+         isTwilioConfigured }   from '../services/alertDispatcher.service.js';
 
 const router = Router();
 
@@ -262,38 +263,40 @@ router.post('/alerts/test', requireOrg, [
     };
 
     // Forzar habilitación para el test independientemente de la config actual
-    const testSettings = {
-      ...org,
+    // overrideOrg se pasa al dispatcher para que NO lea la BD — usa esta config directa.
+    const waAvailable = isWhatsAppConfigured() || isTwilioConfigured();
+    const testOrgOverride = {
+      business_name: org?.business_name,
+      email:         org?.email,
       settings: {
-        ...(org?.settings || {}),
         alerts: {
-          ...(org?.settings?.alerts || {}),
           enabled:          true,
           cooldown_minutes: 0,   // sin cooldown en test
           channels: {
             email:    {
-              enabled:    channel === 'email'    || channel === 'all',
+              enabled:    channel === 'email' || channel === 'all',
               recipients: org?.settings?.alerts?.channels?.email?.recipients?.length
                 ? org.settings.alerts.channels.email.recipients
                 : [org.email].filter(Boolean),
             },
             whatsapp: {
-              enabled:      (channel === 'whatsapp' || channel === 'all') && isWhatsAppConfigured(),
+              enabled:       (channel === 'whatsapp' || channel === 'all') && waAvailable,
               phone_numbers: org?.settings?.alerts?.channels?.whatsapp?.phone_numbers || [],
             },
           },
           subscriptions: {
-            cash_discrepancy: { enabled: true, min_severity: 'low', channels: channel === 'all' ? ['email', 'whatsapp'] : [channel] },
+            cash_discrepancy: {
+              enabled:      true,
+              min_severity: 'low',
+              channels:     channel === 'all' ? ['email', 'whatsapp'] : [channel],
+            },
           },
         },
       },
     };
 
-    // Temporalmente parchear la org en memoria para que el dispatcher use la config de test
-    // Sin modificar la BD — el dispatcher lee la org via supabaseAdmin internamente,
-    // así que pasamos los datos de test directamente a las funciones internas.
-    // Usamos un mock mínimo: dispatch con config de test simulada.
-    await dispatchAlert(testAlert, req.organizationId, null);
+    // Pasar overrideOrg al dispatcher — evita que lea la BD y usa la config de test.
+    await dispatchAlert(testAlert, req.organizationId, null, testOrgOverride);
 
     res.json({
       success: true,
