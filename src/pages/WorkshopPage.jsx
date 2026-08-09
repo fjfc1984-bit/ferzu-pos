@@ -328,8 +328,8 @@ function WorkOrderForm({ order, branchId, organizationId, onClose, onSaved }) {
   function update(k, v) { setForm(f => ({ ...f, [k]: v })); }
 
   async function handleSave() {
-    if (!form.vehicle_plate || !form.customer_name) {
-      toast.error('Placa y nombre del cliente son obligatorios');
+    if (!form.vehicle_plate) {
+      toast.error('La placa del vehículo es obligatoria');
       return;
     }
     setSaving(true);

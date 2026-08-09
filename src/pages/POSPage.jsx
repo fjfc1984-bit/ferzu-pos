@@ -1819,10 +1819,13 @@ function PaymentModal({ onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function CustomerSearch({ onClose, organizationId }) {
-  const { dispatch }         = usePOS();
-  const [query, setQuery]    = useState('');
-  const [results, setResults]= useState([]);
-  const [loading, setLoading]= useState(false);
+  const { dispatch }               = usePOS();
+  const [query, setQuery]          = useState('');
+  const [results, setResults]      = useState([]);
+  const [loading, setLoading]      = useState(false);
+  const [creating, setCreating]    = useState(false);
+  const [quickPhone, setQuickPhone]= useState('');
+  const [saving, setSaving]        = useState(false);
 
   useEffect(() => {
     if (query.length < 2) { setResults([]); return; }
@@ -1846,6 +1849,26 @@ function CustomerSearch({ onClose, organizationId }) {
     dispatch({ type: 'SET_CUSTOMER', payload: { id: customer.id, name } });
     toast.success(`Cliente: ${name}`);
     onClose();
+  }
+
+  async function handleQuickCreate() {
+    const name = query.trim();
+    if (!name) return;
+    setSaving(true);
+    try {
+      const { default: api } = await import('../lib/api.js');
+      const { data } = await api.post('/customers', {
+        first_name: name.split(' ')[0],
+        last_name:  name.split(' ').slice(1).join(' ') || '',
+        phone:      quickPhone.trim() || undefined,
+      });
+      selectCustomer(data);
+      toast.success(`Cliente "${name}" creado`);
+    } catch (err) {
+      toast.error(err.message || 'Error al crear cliente');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -1885,13 +1908,39 @@ function CustomerSearch({ onClose, organizationId }) {
             </button>
           ))}
           {!loading && query.length >= 2 && results.length === 0 && (
-            <div className="text-center py-6">
-              <p className="text-sm text-gray-400 mb-3">No se encontró el cliente</p>
-              <button
-                onClick={() => toast('Creación de clientes disponible en módulo Clientes', { icon: '👥' })}
-                className="text-sm text-brand-600 hover:underline">
-                + Crear nuevo cliente
-              </button>
+            <div className="py-4">
+              <p className="text-sm text-gray-400 text-center mb-3">No se encontró "{query}"</p>
+              {!creating ? (
+                <button
+                  onClick={() => setCreating(true)}
+                  className="w-full text-sm text-brand-600 border border-dashed border-brand-300 rounded-xl py-2.5 hover:bg-brand-50 transition-colors">
+                  + Crear cliente <strong>"{query}"</strong>
+                </button>
+              ) : (
+                <div className="border border-brand-200 rounded-xl p-3 bg-brand-50 space-y-2">
+                  <p className="text-xs font-medium text-brand-700">Nuevo cliente: <strong>{query}</strong></p>
+                  <input
+                    type="tel"
+                    value={quickPhone}
+                    onChange={e => setQuickPhone(e.target.value)}
+                    placeholder="Teléfono (opcional)"
+                    className="w-full h-9 border border-gray-200 rounded-lg px-3 text-sm outline-none focus:ring-2 focus:ring-brand-400 bg-white"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleQuickCreate}
+                      disabled={saving}
+                      className="flex-1 bg-brand-600 text-white text-xs font-medium py-2 rounded-lg hover:bg-brand-700 disabled:opacity-50">
+                      {saving ? 'Creando...' : 'Crear y seleccionar'}
+                    </button>
+                    <button
+                      onClick={() => setCreating(false)}
+                      className="px-3 text-gray-400 hover:text-gray-600 text-xs">
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
