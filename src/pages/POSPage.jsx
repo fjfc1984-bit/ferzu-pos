@@ -25,7 +25,7 @@ import {
   Package, BarChart3, LogOut, Wifi, WifiOff,
   Clock, AlertCircle, CheckCircle2, X, Plus, Minus,
   Percent, DollarSign, CreditCard, Smartphone, Split,
-  Printer, RefreshCw, Settings, ChevronRight
+  Printer, RefreshCw, Settings, ChevronRight, FileText
 } from 'lucide-react';
 import { usePOS }                  from '../context/POSContext.jsx';
 import { useAuth }                 from '../context/AuthContext.jsx';
@@ -1182,6 +1182,12 @@ function PaymentModal({ onClose }) {
   const [loyaltyData,       setLoyaltyData]       = useState(null);   // { balance, value_cop, settings }
   const [redeemEnabled,     setRedeemEnabled]     = useState(false);  // toggle del cajero
   const [redeemPoints,      setRedeemPoints]      = useState(0);      // puntos a canjear
+  // DIAN: Factura electrónica opcional
+  const [invoiceRequired,   setInvoiceRequired]   = useState(false);  // toggle "¿Requiere factura?"
+  const [invoiceNit,        setInvoiceNit]        = useState('');     // NIT o CC del comprador
+  const [invoiceEmail,      setInvoiceEmail]      = useState('');     // Email para envío PDF
+  const [invoiceName,       setInvoiceName]       = useState('');     // Razón social o nombre
+  const [invoiceDocType,    setInvoiceDocType]    = useState('NIT');  // NIT | CC | CE
   const cashInputRef = useRef(null);
   const mixCashRef   = useRef(null);
 
@@ -1252,6 +1258,14 @@ function PaymentModal({ onClose }) {
       ? { loyaltyDiscount, loyaltyPoints: redeemPoints }
       : {};
 
+    // DIAN: construir overrides solo si el cajero activó "¿Requiere factura?"
+    const invoiceOverrides = invoiceRequired ? {
+      ...(invoiceNit.trim()   && { invoice_nit:      invoiceNit.trim() }),
+      ...(invoiceEmail.trim() && { invoice_email:    invoiceEmail.trim() }),
+      ...(invoiceName.trim()  && { invoice_name:     invoiceName.trim() }),
+      invoice_doc_type: invoiceDocType === 'NIT' ? '31' : invoiceDocType === 'CE' ? '22' : '13',
+    } : {};
+
     if (method === 'mixed') {
       if (!mixValid) {
         toast.error(`La suma debe ser exactamente ${formatCOP(totalFinal)}`);
@@ -1280,7 +1294,7 @@ function PaymentModal({ onClose }) {
       setFrozenItems([...items]);
       setFrozenCustomer(customerName || '');
       setFrozenTip(tipAmount);
-      const order = await processPayment(method, method === 'cash' ? cashAmt : totalFinal, tipAmount, loyaltyOpts);
+      const order = await processPayment(method, method === 'cash' ? cashAmt : totalFinal, tipAmount, loyaltyOpts, invoiceOverrides);
       setFinalChange(change);
       setStep(order?.offline ? 'done-offline' : 'done');
       track('sale_completed', 'pos', { method, total: totalFinal, tip: tipAmount, loyalty_discount: loyaltyDiscount, items: items.length });
@@ -1717,6 +1731,74 @@ function PaymentModal({ onClose }) {
             </div>
           </div>
         )}
+
+        {/* DIAN: Toggle "¿Requiere factura electrónica?" */}
+        <div className="border border-gray-100 rounded-2xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setInvoiceRequired(v => !v)}
+            className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
+              invoiceRequired
+                ? 'bg-blue-50 text-blue-700'
+                : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
+            }`}>
+            <FileText size={15} className={invoiceRequired ? 'text-blue-600' : 'text-gray-400'} />
+            <span className="flex-1 text-left font-medium">¿Requiere factura electrónica?</span>
+            <div className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 ${
+              invoiceRequired ? 'bg-blue-500' : 'bg-gray-300'
+            }`}>
+              <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                invoiceRequired ? 'translate-x-4' : 'translate-x-0'
+              }`} />
+            </div>
+          </button>
+
+          {invoiceRequired && (
+            <div className="px-4 pb-4 pt-2 bg-blue-50 space-y-2 border-t border-blue-100">
+              <p className="text-[11px] text-blue-500 font-medium">Datos del comprador para la DIAN</p>
+
+              {/* Tipo de documento + número */}
+              <div className="flex gap-2">
+                <select
+                  value={invoiceDocType}
+                  onChange={e => setInvoiceDocType(e.target.value)}
+                  className="h-9 px-2 text-xs border border-blue-200 rounded-xl bg-white text-gray-700 outline-none focus:ring-2 focus:ring-blue-300 shrink-0">
+                  <option value="NIT">NIT</option>
+                  <option value="CC">CC</option>
+                  <option value="CE">CE</option>
+                </select>
+                <input
+                  type="text"
+                  value={invoiceNit}
+                  onChange={e => setInvoiceNit(e.target.value.replace(/[^0-9-]/g, ''))}
+                  placeholder={invoiceDocType === 'NIT' ? 'NIT sin dígito verificador' : 'Número de documento'}
+                  className="flex-1 h-9 px-3 text-xs border border-blue-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-300"
+                />
+              </div>
+
+              {/* Razón social / nombre */}
+              <input
+                type="text"
+                value={invoiceName}
+                onChange={e => setInvoiceName(e.target.value)}
+                placeholder="Razón social o nombre completo"
+                className="w-full h-9 px-3 text-xs border border-blue-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-300"
+              />
+
+              {/* Email */}
+              <input
+                type="email"
+                value={invoiceEmail}
+                onChange={e => setInvoiceEmail(e.target.value)}
+                placeholder="Email para envío del PDF (opcional)"
+                className="w-full h-9 px-3 text-xs border border-blue-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-300"
+              />
+              <p className="text-[10px] text-blue-400">
+                Si el campo NIT queda vacío, se emite a "Consumidor final".
+              </p>
+            </div>
+          )}
+        </div>
 
         {/* Botón confirmar */}
         <button

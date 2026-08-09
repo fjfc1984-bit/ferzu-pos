@@ -356,7 +356,7 @@ export function POSProvider({ children }) {
   // ── PROCESAR PAGO ────────────────────────────────────────────────────────
   // REGLA DE ORO #1: el frontend solo envía ítems crudos; el backend calcula totales.
   // REGLA DE ORO #3: si no hay red, se guarda offline y sincroniza al reconectar.
-  const processPayment = useCallback(async (paymentMethod, cashReceived, tipAmount = 0, loyaltyOpts = {}) => {
+  const processPayment = useCallback(async (paymentMethod, cashReceived, tipAmount = 0, loyaltyOpts = {}, invoiceOverrides = {}) => {
     if (!state.cashSession) throw new Error('No hay sesión de caja activa')
     if (state.items.length === 0) throw new Error('El carrito está vacío')
 
@@ -391,6 +391,12 @@ export function POSProvider({ children }) {
       // F9-A: Fidelización (0 por defecto — no bloquea si el programa no está activo)
       loyalty_discount:        Math.round(Math.max(0, Number(loyaltyOpts.loyaltyDiscount) || 0)),
       loyalty_points_redeemed: Math.round(Math.max(0, Number(loyaltyOpts.loyaltyPoints)   || 0)),
+      // DIAN: datos del comprador para factura electrónica (opcionales)
+      // Solo se envían si el cajero activó "¿Requiere factura?" en el checkout
+      ...(invoiceOverrides.invoice_nit      && { invoice_nit:      invoiceOverrides.invoice_nit }),
+      ...(invoiceOverrides.invoice_email    && { invoice_email:    invoiceOverrides.invoice_email }),
+      ...(invoiceOverrides.invoice_name     && { invoice_name:     invoiceOverrides.invoice_name }),
+      ...(invoiceOverrides.invoice_doc_type && { invoice_doc_type: invoiceOverrides.invoice_doc_type }),
     }
 
     dispatch({ type: A.SET_PROCESSING, payload: true })

@@ -18,7 +18,7 @@ import {
   Lock, Zap, CheckCircle2, X, ChevronRight, Sparkles,
   Crown, ArrowRight, Star, Clock, AlertTriangle,
   RefreshCw, Shield, MessageCircle, ToggleLeft, Settings2,
-  Building2, ChevronDown, BarChart2, BarChart3, Users
+  Building2, ChevronDown, BarChart2, BarChart3, Users, FileText
 } from 'lucide-react';
 import { supabase }  from '../lib/supabase.js';
 import { useAuth }   from '../context/AuthContext.jsx';
@@ -908,6 +908,16 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
             }`}>
             <span className="text-sm leading-none">💛</span>
             <span>Retención</span>
+          </Link>
+          <Link
+            to="/dian"
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
+              currentPath?.startsWith('/dian')
+                ? 'bg-white/20 text-white'
+                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+            }`}>
+            <FileText size={13} />
+            <span>Facturación DIAN</span>
           </Link>
         </div>
       )}
