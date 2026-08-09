@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import { supabase }   from '../lib/supabase.js';
 import { useAuth }    from '../context/AuthContext.jsx';
+import { usePOS }     from '../context/POSContext.jsx';
+import { useNavigate } from 'react-router-dom';
 import { formatCOP }  from '../lib/math.js';
 import { differenceInSeconds, format, parseISO } from 'date-fns';
 
@@ -62,8 +64,9 @@ function playBeep(freq = 800, ms = 150) {
 // =============================================================================
 
 export default function KitchenDisplayPage() {
-  const { organizationId, user } = useAuth();
-  const branchId = localStorage.getItem('ferzu_branch_id') || user?.user_branches?.[0]?.branch_id;
+  const { organizationId } = useAuth();
+  const { branchId } = usePOS();
+  const navigate = useNavigate();
   const [sound,       setSound]       = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [filterTable,  setFilterTable]  = useState('all'); // 'all' | 'dine_in' | 'delivery'
@@ -106,6 +109,29 @@ export default function KitchenDisplayPage() {
       .eq('id', itemId);
 
     if (!error) refresh();
+  }
+
+  // Guard: KDS sin sucursal no puede mostrar pedidos
+  if (!branchId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-5 bg-gray-900 px-6 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-amber-900/40 flex items-center justify-center">
+          <ChefHat size={32} className="text-amber-400" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-white">Selecciona una sucursal</h2>
+          <p className="text-sm text-gray-400 mt-1 max-w-xs">
+            Para ver los pedidos de cocina necesitas abrir el POS y seleccionar la sucursal activa.
+          </p>
+        </div>
+        <button
+          onClick={() => navigate('/pos')}
+          className="px-5 py-2.5 bg-brand-600 text-white rounded-xl font-semibold
+                     hover:bg-brand-700 transition-colors text-sm">
+          Ir al POS →
+        </button>
+      </div>
+    );
   }
 
   return (

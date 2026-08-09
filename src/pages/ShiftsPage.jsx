@@ -14,6 +14,8 @@ import { format, parseISO, differenceInMinutes, differenceInSeconds } from 'date
 import { es } from 'date-fns/locale'
 import { api } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
+import { usePOS } from '../context/POSContext.jsx'
+import { useNavigate } from 'react-router-dom'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function formatCOP(n) {
@@ -232,9 +234,10 @@ function AdminSummary({ branchId }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function ShiftsPage() {
-  const { user }     = useAuth();
-  const branchId     = localStorage.getItem('ferzu_branch_id');
-  const isAdmin      = ['admin', 'owner'].includes(user?.role);
+  const { user }  = useAuth();
+  const { branchId } = usePOS();
+  const navigate  = useNavigate();
+  const isAdmin   = ['admin', 'owner'].includes(user?.role);
 
   const [activeShift,  setActiveShift]  = useState(null);   // turno activo (null = sin turno)
   const [loadingShift, setLoadingShift] = useState(true);
@@ -329,6 +332,29 @@ export default function ShiftsPage() {
     } finally {
       setActionLoading(false);
     }
+  }
+
+  // ─── Guard: sin sucursal activa no hay turno que registrar ──────────────────
+  if (!branchId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-5 bg-gray-50 px-6 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center">
+          <Clock size={32} className="text-amber-500" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800">Selecciona una sucursal</h2>
+          <p className="text-sm text-gray-500 mt-1 max-w-xs">
+            Para registrar tu turno necesitas abrir el POS y seleccionar la sucursal activa.
+          </p>
+        </div>
+        <button
+          onClick={() => navigate('/pos')}
+          className="px-5 py-2.5 bg-brand-600 text-white rounded-xl font-semibold
+                     hover:bg-brand-700 transition-colors text-sm">
+          Ir al POS →
+        </button>
+      </div>
+    );
   }
 
   // ─── Render ──────────────────────────────────────────────────────────────

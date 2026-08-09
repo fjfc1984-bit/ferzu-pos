@@ -889,6 +889,16 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
               </span>
             )}
           </Link>
+          <Link
+            to="/retencion"
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
+              currentPath?.startsWith('/retencion')
+                ? 'bg-white/20 text-white'
+                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+            }`}>
+            <span className="text-sm leading-none">💛</span>
+            <span>Retención</span>
+          </Link>
         </div>
       )}
 

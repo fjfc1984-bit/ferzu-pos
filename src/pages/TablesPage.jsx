@@ -11,6 +11,8 @@ import {
 import toast from 'react-hot-toast'
 import { api } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
+import { usePOS } from '../context/POSContext.jsx'
+import { useNavigate } from 'react-router-dom'
 
 // ─── Constantes del grid ─────────────────────────────────────────────────────
 const COLS      = 10   // columnas del mapa
@@ -229,9 +231,10 @@ function TableCard({ table, isSelected, onSelect, onDragStart, onEdit, onDelete 
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 export default function TablesPage() {
-  const { user }             = useAuth();
-  const branchId             = localStorage.getItem('ferzu_branch_id');
-  const isAdmin              = ['admin', 'owner'].includes(user?.role);
+  const { user }  = useAuth();
+  const { branchId } = usePOS();
+  const navigate  = useNavigate();
+  const isAdmin   = ['admin', 'owner'].includes(user?.role);
 
   const [tables,       setTables]       = useState([]);
   const [loading,      setLoading]      = useState(true);
@@ -326,14 +329,25 @@ export default function TablesPage() {
     ? tables
     : tables.filter(t => t.area === filterArea);
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  // ─── Guard: sin sucursal no hay mesas que gestionar ─────────────────────────
   if (!branchId) {
     return (
-      <div className="p-6 flex items-center justify-center h-full">
-        <div className="text-center text-gray-400">
-          <LayoutGrid size={36} className="mx-auto mb-3 opacity-30" />
-          <p className="font-medium text-gray-600">Selecciona una sucursal primero</p>
+      <div className="flex flex-col items-center justify-center h-full gap-5 bg-gray-50 px-6 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center">
+          <LayoutGrid size={32} className="text-amber-500" />
         </div>
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800">Selecciona una sucursal</h2>
+          <p className="text-sm text-gray-500 mt-1 max-w-xs">
+            Para gestionar las mesas necesitas abrir el POS y seleccionar la sucursal activa.
+          </p>
+        </div>
+        <button
+          onClick={() => navigate('/pos')}
+          className="px-5 py-2.5 bg-brand-600 text-white rounded-xl font-semibold
+                     hover:bg-brand-700 transition-colors text-sm">
+          Ir al POS →
+        </button>
       </div>
     );
   }

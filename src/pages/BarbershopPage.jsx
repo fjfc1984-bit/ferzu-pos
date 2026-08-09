@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { supabase }   from '../lib/supabase.js';
 import { useAuth }    from '../context/AuthContext.jsx';
+import { usePOS }     from '../context/POSContext.jsx';
+import { useNavigate } from 'react-router-dom';
 import { formatCOP }  from '../lib/math.js';
 import toast          from 'react-hot-toast';
 import { useTrack }   from '../hooks/useTrack.js';
@@ -35,10 +37,10 @@ import { es } from 'date-fns/locale';
 
 export default function BarbershopPage() {
   const { organizationId, user }  = useAuth();
+  const { branchId } = usePOS();
+  const navigate = useNavigate();
   const track = useTrack();
   useEffect(() => { track('module_view', 'barbershop') }, [track]);
-  // Computed, no useState — se actualiza cuando user carga de forma async
-  const branchId = user?.user_branches?.[0]?.branch_id || localStorage.getItem('ferzu_branch_id');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showNewAppt,  setShowNewAppt]  = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null); // {date, time, staffId}
@@ -62,6 +64,29 @@ export default function BarbershopPage() {
   const filteredAppts = activeStaff
     ? appointments.filter(a => a.staff_user_id === activeStaff)
     : appointments;
+
+  // Guard: sin sucursal activa no hay agenda que mostrar
+  if (!branchId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-5 bg-gray-50 px-6 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center">
+          <Scissors size={32} className="text-amber-500" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800">Selecciona una sucursal</h2>
+          <p className="text-sm text-gray-500 mt-1 max-w-xs">
+            Para ver la agenda necesitas abrir el POS y seleccionar la sucursal activa.
+          </p>
+        </div>
+        <button
+          onClick={() => navigate('/pos')}
+          className="px-5 py-2.5 bg-brand-600 text-white rounded-xl font-semibold
+                     hover:bg-brand-700 transition-colors text-sm">
+          Ir al POS →
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">

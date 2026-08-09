@@ -23,6 +23,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { formatCOP } from '../lib/math'
 import { useAuth } from '../context/AuthContext.jsx'
+import { usePOS }  from '../context/POSContext.jsx'
 import { useTrack } from '../hooks/useTrack.js'
 import { saveCustomersCache, loadCustomersCache } from '../lib/offlineCache.js'
 
@@ -558,9 +559,9 @@ function Modal({ open, title, children, onClose, size = 'md' }) {
 // ---------------------------------------------------------------------------
 export function CustomersPage() {
   const { organizationId } = useAuth()
+  const { branchId } = usePOS()
   const track = useTrack();
   useEffect(() => { track('module_view', 'customers') }, [track]);
-  const branchId = localStorage.getItem('ferzu_branch_id')
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedSegment, setSelectedSegment] = useState('all')
@@ -1003,7 +1004,7 @@ function CustomerRow({ customer, selected, onClick }) {
  *   compact  {boolean}      — versión reducida (solo input)
  */
 export function CustomerPicker({ value, onChange, required = false, compact = false }) {
-  const branchId = localStorage.getItem('ferzu_branch_id')
+  const { branchId } = usePOS()
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
