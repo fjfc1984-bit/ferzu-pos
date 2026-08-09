@@ -37,6 +37,7 @@ import { useTrack }                from '../hooks/useTrack.js';
 import { useBranchNiche }          from '../hooks/useBranchNiche.js';
 import { formatCOP }               from '../lib/math.js';
 import { cashAPI, api }            from '../lib/api.js';
+import { supabase }                from '../lib/supabase.js';
 import toast                       from 'react-hot-toast';
 
 // Sub-componentes (definidos en secciones siguientes)
@@ -1833,19 +1834,33 @@ function CustomerSearch({ onClose, organizationId }) {
     return () => clearTimeout(timer);
   }, [query]);
 
+  // Niche activo para priorizar clientes en la búsqueda
+  const currentModule = localStorage.getItem('ferzu_branch_niche') || 'general';
+
   async function search() {
     setLoading(true);
     try {
-      const { default: api } = await import('../lib/api.js');
-      const { data } = await api.get('/customers', { params: { search: query, limit: 10 } });
-      setResults(data || []);
+      const { data } = await supabase.from('customers')
+        .select('id, name, phone, preferred_module')
+        .eq('organization_id', organizationId)
+        .or(`name.ilike.%${query}%,phone.like.%${query}%`)
+        .limit(10);
+      // Priorizar clientes del módulo activo
+      const sorted = (data || [])
+        .sort((a, b) => {
+          const aScore = a.preferred_module === currentModule ? 0 : 1;
+          const bScore = b.preferred_module === currentModule ? 0 : 1;
+          return aScore - bScore;
+        })
+        .slice(0, 6);
+      setResults(sorted);
     } finally {
       setLoading(false);
     }
   }
 
   function selectCustomer(customer) {
-    const name = `${customer.first_name ?? ''} ${customer.last_name ?? ''}`.trim();
+    const name = customer.name || `${customer.first_name ?? ''} ${customer.last_name ?? ''}`.trim();
     dispatch({ type: 'SET_CUSTOMER', payload: { id: customer.id, name } });
     toast.success(`Cliente: ${name}`);
     onClose();
@@ -1856,12 +1871,13 @@ function CustomerSearch({ onClose, organizationId }) {
     if (!name) return;
     setSaving(true);
     try {
-      const { default: api } = await import('../lib/api.js');
-      const { data } = await api.post('/customers', {
-        first_name: name.split(' ')[0],
-        last_name:  name.split(' ').slice(1).join(' ') || '',
-        phone:      quickPhone.trim() || undefined,
-      });
+      const { data, error } = await supabase.from('customers').insert({
+        organization_id: organizationId,
+        name,
+        phone:            quickPhone.trim() || null,
+        preferred_module: currentModule,
+      }).select('id, name').single();
+      if (error) throw error;
       selectCustomer(data);
       toast.success(`Cliente "${name}" creado`);
     } catch (err) {
@@ -1891,20 +1907,24 @@ function CustomerSearch({ onClose, organizationId }) {
               onClick={() => selectCustomer(c)}
               className="w-full text-left flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 border border-gray-100">
               <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 text-xs font-bold shrink-0">
-                {(c.first_name?.[0] || '?').toUpperCase()}
+                {(c.name?.[0] || c.first_name?.[0] || '?').toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900">
-                  {c.first_name} {c.last_name}
+                  {c.name || `${c.first_name || ''} ${c.last_name || ''}`.trim()}
                 </p>
                 <p className="text-xs text-gray-400 truncate">
                   {c.phone || c.email || c.document_number}
                 </p>
               </div>
-              {c.segment === 'vip' && (
-                <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">VIP</span>
+              {c.preferred_module === currentModule && (
+                <span style={{ fontSize: 10, color: '#059669', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 999, padding: '1px 7px', fontWeight: 600, flexShrink: 0 }}>
+                  ★ habitual
+                </span>
               )}
-              <p className="text-xs text-gray-400 shrink-0">{formatCOP(c.total_spent || 0)}</p>
+              {c.segment === 'vip' && (
+                <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium shrink-0">VIP</span>
+              )}
             </button>
           ))}
           {!loading && query.length >= 2 && results.length === 0 && (

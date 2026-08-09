@@ -580,17 +580,25 @@ function NewAppointmentModal({ slot, staffList, branchId, organizationId, onClos
       .then(({ data }) => setServiceOptions(data || []));
   }, [organizationId]);
 
-  // Buscar clientes
+  // Buscar clientes — prioriza los de preferred_module='barbershop'
   useEffect(() => {
     const q = form.customer_search;
     if (q.length < 2) { setCustomerResults([]); return; }
     const timer = setTimeout(async () => {
       const { data } = await supabase.from('customers')
-        .select('id, name, phone')
+        .select('id, name, phone, preferred_module')
         .eq('organization_id', organizationId)
         .or(`name.ilike.%${q}%,phone.like.%${q}%`)
-        .limit(5);
-      setCustomerResults(data || []);
+        .limit(10);
+      // Ordenar: clientes del módulo actual primero
+      const sorted = (data || [])
+        .sort((a, b) => {
+          const aScore = a.preferred_module === 'barbershop' ? 0 : 1;
+          const bScore = b.preferred_module === 'barbershop' ? 0 : 1;
+          return aScore - bScore;
+        })
+        .slice(0, 5);
+      setCustomerResults(sorted);
     }, 300);
     return () => clearTimeout(timer);
   }, [form.customer_search, organizationId]);
@@ -723,9 +731,14 @@ function NewAppointmentModal({ slot, staffList, branchId, organizationId, onClos
                           customer_search: c.name,
                         }))}
                         className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm flex items-center gap-2">
-                        <User size={13} className="text-gray-400" />
-                        <span>{c.name}</span>
-                        <span className="text-gray-400 text-xs ml-auto">{c.phone}</span>
+                        <User size={13} className="text-gray-400 shrink-0" />
+                        <span className="flex-1">{c.name}</span>
+                        {c.preferred_module === 'barbershop' && (
+                          <span style={{ fontSize: 10, color: '#7c3aed', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 999, padding: '1px 6px', fontWeight: 600 }}>
+                            ✂️ habitual
+                          </span>
+                        )}
+                        <span className="text-gray-400 text-xs">{c.phone}</span>
                       </button>
                     ))}
                   </div>
