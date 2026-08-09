@@ -28,7 +28,7 @@ import { useNavigate } from 'react-router-dom';
 import { formatCOP }  from '../lib/math.js';
 import toast          from 'react-hot-toast';
 import { useTrack }   from '../hooks/useTrack.js';
-import NicheContextBar from '../components/NicheContextBar.jsx';
+// NicheContextBar se inyecta globalmente desde AppShell — no se importa aquí
 import { addDays, startOfWeek, format, isSameDay, parseISO, differenceInMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -165,10 +165,6 @@ export default function BarbershopPage() {
 
       {/* ── COLUMNA 2: Calendario de citas ── */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Barra de contexto activo — niche + sucursal */}
-        <div className="px-4 pt-3">
-          <NicheContextBar moduleLabel="Citas" />
-        </div>
         <AppointmentCalendar
           date={selectedDate}
           onDateChange={setSelectedDate}

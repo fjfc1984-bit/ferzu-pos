@@ -29,7 +29,7 @@ import toast         from 'react-hot-toast';
 import { useTrack }  from '../hooks/useTrack.js';
 import { format, parseISO, differenceInMinutes } from 'date-fns';
 import { es } from 'date-fns/locale';
-import NicheContextBar from '../components/NicheContextBar.jsx';
+// NicheContextBar se inyecta globalmente desde AppShell — no se importa aquí
 
 // =============================================================================
 // Configuración de columnas Kanban del taller
@@ -104,11 +104,6 @@ export default function WorkshopPage() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
-      {/* Barra de contexto activo — niche + sucursal */}
-      <div className="px-5 pt-3 bg-white shrink-0">
-        <NicheContextBar moduleLabel="Órdenes de Trabajo" />
-      </div>
-
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">

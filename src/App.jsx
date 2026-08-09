@@ -9,6 +9,7 @@ import { SyncProvider } from './context/SyncContext'
 import { OfflineBanner }   from './components/OfflineBanner'
 import { AIAssistant }    from './components/AIAssistant'
 import SyncStatusBadge    from './components/SyncStatusBadge'
+import NicheContextBar    from './components/NicheContextBar'
 
 // --- Landing page pública ---
 import LandingPage             from './pages/LandingPage'
@@ -144,6 +145,7 @@ function AppShell() {
       <AdaptiveNav />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TrialBanner />
+        <NicheContextBar />
         <OfflineBanner />
         {/* pb-14 en mobile para que el contenido no quede tapado por MobileBottomNav */}
         <main className="flex-1 overflow-auto pb-14 md:pb-0">
