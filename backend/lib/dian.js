@@ -487,7 +487,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-export async function triggerElectronicInvoice(orderId, organizationId) {
+export async function triggerElectronicInvoice(orderId, organizationId, overrides = {}) {
   try {
     // ── 1. Verificar que la organización tiene FE activa ──────────────────────
     const { data: dianConfig } = await supabaseAdmin
@@ -533,7 +533,9 @@ export async function triggerElectronicInvoice(orderId, organizationId) {
     const invoiceNumber = numData; // La función SQL es ATOMIC (SELECT + UPDATE en transacción)
 
     // ── 4. Preparar datos del comprador ───────────────────────────────────────
-    const buyer = prepareBuyer(order.customers);
+    // overrides: { customerNit, customerEmail, customerName, customerDocType }
+    // provienen del modal "¿Requiere factura?" del frontend (Tarea #41)
+    const buyer = prepareBuyer(order.customers, overrides);
 
     // ── 5. Preparar ítems (los totales ya están calculados en el backend) ─────
     const items = order.order_items.map(item => ({
@@ -739,22 +741,23 @@ export async function triggerElectronicInvoice(orderId, organizationId) {
   }
 }
 
-// Helper: Preparar datos del comprador desde el cliente de la orden
-function prepareBuyer(customer) {
-  if (!customer) {
-    // Consumidor final (sin datos)
-    return {
-      docType:   '13',
-      docNumber: '222222222222',
-      dv:        '0',
-      name:      'Consumidor final',
-      email:     null,
-      address:   'No especificada',
-      city:      'Bogotá',
-    };
-  }
+// Helper: Preparar datos del comprador desde el cliente de la orden.
+// `overrides` permite que el frontend inyecte NIT/email cuando el cliente
+// requiere factura a nombre de empresa (Tarea #41 — modal "¿Requiere factura?").
+function prepareBuyer(customer, overrides = {}) {
+  // Consumidor final base (sin cliente asociado)
+  const base = {
+    docType:   '13',
+    docNumber: '222222222222',
+    dv:        '0',
+    name:      'Consumidor final',
+    email:     null,
+    address:   'No especificada',
+    city:      'Bogotá',
+  };
 
-  return {
+  // Si hay cliente asociado, combinar sus datos
+  const fromCustomer = customer ? {
     docType:   DIAN_DOC_TYPES[customer.document_type] || '13',
     docNumber: customer.document_number,
     dv:        '0',
@@ -763,6 +766,16 @@ function prepareBuyer(customer) {
     phone:     customer.phone,
     address:   customer.address || 'No especificada',
     city:      customer.city || 'Bogotá',
+  } : base;
+
+  // Los overrides del frontend tienen máxima prioridad
+  // (NIT de empresa, email de facturación, nombre fiscal)
+  return {
+    ...fromCustomer,
+    ...(overrides.customerNit       && { docNumber: overrides.customerNit, docType: '31' }), // NIT → tipo 31
+    ...(overrides.customerEmail     && { email:     overrides.customerEmail }),
+    ...(overrides.customerName      && { name:      overrides.customerName }),
+    ...(overrides.customerDocType   && { docType:   overrides.customerDocType }),
   };
 }
 

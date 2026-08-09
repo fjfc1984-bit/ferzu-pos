@@ -10,6 +10,7 @@ import { requireAuth, requireRole, requireBranchAccess } from '../middleware/aut
 import { validate }                               from '../middleware/validate.js';
 import { logAudit }                               from '../middleware/audit.js';
 import { processPaymentInternal, markOrderPaid }  from '../services/orders.service.js';
+import { triggerElectronicInvoice }               from '../lib/dian.js';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -175,17 +176,42 @@ router.post('/', [
     if (itemsErr) throw itemsErr;
 
     // 7. Pago inmediato opcional
+    let orderWasPaid = false;
     if (payment_method) {
       if (is_courtesy && total === 0) {
         // Cortesía total: marcar pagado directamente sin movimiento de caja
         await markOrderPaid(order.id, req.organizationId, req.user.id);
+        orderWasPaid = true;
       } else {
         await processPaymentInternal(order.id, payment_method, total, cash_received, req.user.id);
         await markOrderPaid(order.id, req.organizationId, req.user.id);
+        orderWasPaid = true;
       }
     } else if (is_courtesy && total === 0) {
       // Sin método de pago explícito pero es cortesía → cerrar automáticamente
       await markOrderPaid(order.id, req.organizationId, req.user.id);
+      orderWasPaid = true;
+    }
+
+    // ── DIAN: Factura electrónica (fire-and-forget) ────────────────────────
+    // Solo si la orden quedó efectivamente pagada en este request.
+    // Las cortesías NO generan factura electrónica (total = 0).
+    if (orderWasPaid && !is_courtesy) {
+      const invoiceOverrides = {};
+      if (req.body.invoice_nit)      invoiceOverrides.customerNit     = req.body.invoice_nit;
+      if (req.body.invoice_email)    invoiceOverrides.customerEmail   = req.body.invoice_email;
+      if (req.body.invoice_name)     invoiceOverrides.customerName    = req.body.invoice_name;
+      if (req.body.invoice_doc_type) invoiceOverrides.customerDocType = req.body.invoice_doc_type;
+
+      Promise.resolve(
+        triggerElectronicInvoice(order.id, req.organizationId, invoiceOverrides)
+      ).catch(err =>
+        logger.error('[DIAN] Error generando factura electrónica (no afecta la venta):', {
+          orderId: order.id,
+          orgId:   req.organizationId,
+          err:     err.message,
+        })
+      );
     }
 
     // F9-A: Canjear puntos de fidelización (si aplica)
@@ -249,6 +275,27 @@ router.post('/:id/payment', [
     if (totalPaid >= order.total) {
       await markOrderPaid(id, req.organizationId, req.user.id);
       orderStatus = 'paid';
+
+      // ── DIAN: Factura electrónica (fire-and-forget) ────────────────────────
+      // NO bloquea la respuesta del POS. Si la org no tiene DIAN configurado,
+      // triggerElectronicInvoice() retorna silenciosamente (guard interno).
+      // Overrides opcionales: el frontend puede enviar NIT/email del cliente
+      // cuando el comprador requiere factura a nombre de empresa.
+      const invoiceOverrides = {};
+      if (req.body.invoice_nit)        invoiceOverrides.customerNit      = req.body.invoice_nit;
+      if (req.body.invoice_email)      invoiceOverrides.customerEmail    = req.body.invoice_email;
+      if (req.body.invoice_name)       invoiceOverrides.customerName     = req.body.invoice_name;
+      if (req.body.invoice_doc_type)   invoiceOverrides.customerDocType  = req.body.invoice_doc_type;
+
+      Promise.resolve(
+        triggerElectronicInvoice(id, req.organizationId, invoiceOverrides)
+      ).catch(err =>
+        logger.error('[DIAN] Error generando factura electrónica (no afecta la venta):', {
+          orderId: id,
+          orgId:   req.organizationId,
+          err:     err.message,
+        })
+      );
     }
 
     res.json({ success: true, cash_change, total_paid: totalPaid, status: orderStatus });
