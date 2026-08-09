@@ -686,7 +686,7 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
   const [alertCount, setAlertCount] = useState(0);
   useEffect(() => {
     if (!user) return;
-    import('../lib/api').then(({ default: api }) => {
+    import('../lib/api').then(({ api }) => {
       api.get('/alerts/summary')
         .then(r => setAlertCount(r.data?.total || 0))
         .catch(() => {});
