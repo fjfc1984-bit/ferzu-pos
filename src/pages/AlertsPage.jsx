@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { format, formatDistanceToNow, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
-import api from '../lib/api'
+import { api } from '../lib/api'
 
 // =============================================================================
 // Configuración visual de severidades

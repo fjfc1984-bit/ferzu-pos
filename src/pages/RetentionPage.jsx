@@ -3,7 +3,7 @@
 // Módulo de Retención y Reactivación de Clientes
 // =============================================================================
 import { useState, useEffect, useCallback } from 'react'
-import api from '../lib/api'
+import { api } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 
 // ---------------------------------------------------------------------------
