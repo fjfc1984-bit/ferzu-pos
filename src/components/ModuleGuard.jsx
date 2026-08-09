@@ -48,7 +48,7 @@ export function PlanProvider({ children }) {
 
     // Escuchar cambios de plan y active_modules en tiempo real
     const ch = supabase
-      .channel(`plan:${organizationId}`)
+      .channel(`plan:${organizationId}:${Date.now()}`)
       .on('postgres_changes', {
         event:  'UPDATE',
         schema: 'public',

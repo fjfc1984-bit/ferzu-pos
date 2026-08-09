@@ -549,7 +549,7 @@ export function useKitchenOrders(branchId, { onNewOrder, onReadyOrder } = {}) {
     if (!branchId) return;
 
     const channel = supabase
-      .channel(`kitchen:${branchId}`)
+      .channel(`kitchen:${branchId}:${Date.now()}`)
       // Nuevos pedidos
       .on('postgres_changes', {
         event:  'INSERT',

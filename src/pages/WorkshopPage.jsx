@@ -737,7 +737,7 @@ export function useWorkOrders(branchId) {
 
   useEffect(() => {
     if (!branchId) return;
-    const ch = supabase.channel(`workshop:${branchId}`)
+    const ch = supabase.channel(`workshop:${branchId}:${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'work_orders', filter: `branch_id=eq.${branchId}` }, () => load())
       .subscribe();
     return () => supabase.removeChannel(ch);

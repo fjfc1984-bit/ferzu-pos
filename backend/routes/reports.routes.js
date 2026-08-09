@@ -66,7 +66,7 @@ function buildDailyReport(orders, date) {
   for (const order of orders) {
     const rev  = Number(order.total)           || 0;
     const tax  = Number(order.tax_total)       || 0;
-    const disc = Number(order.discount_total)  || 0;
+    const disc = Number(order.discount_amount) || 0;
     const tip  = Number(order.tip_amount)      || 0;
     const cou  = Number(order.courtesy_amount) || 0;  // F10
 
@@ -83,8 +83,8 @@ function buildDailyReport(orders, date) {
     hourMap[hour].orders  += 1;
     hourMap[hour].revenue += rev;
 
-    // Agrupar por método de pago
-    const pm = order.payment_method || 'other';
+    // Agrupar por método de pago (desde payments[] join o metadata)
+    const pm = order.payments?.[0]?.method || order.metadata?.payment_method || 'other';
     if (!paymentMap[pm]) paymentMap[pm] = { method: pm, label: PAYMENT_LABELS[pm] || pm, orders: 0, revenue: 0 };
     paymentMap[pm].orders  += 1;
     paymentMap[pm].revenue += rev;
@@ -189,23 +189,22 @@ router.get('/daily', async (req, res) => {
     const nextDateStr = nextDate.toISOString().split('T')[0];
     const dayEnd   = `${nextDateStr}T05:00:00.000Z`;
 
+    if (!branch_id) return res.status(400).json({ error: 'branch_id requerido' });
+    await assertBranchOwnership(branch_id, req.organizationId);
+
     let query = supabaseAdmin
       .from('orders')
       .select(`
-        id, total, subtotal, tax_total, discount_total, tip_amount,
-        courtesy_amount, is_courtesy,
-        payment_method, status, created_at,
+        id, total, subtotal, tax_total, discount_amount, tip_amount,
+        courtesy_amount, is_courtesy, metadata, status, created_at,
+        payments(method, amount),
         order_items(product_id, product_name, quantity, unit_price, total_price)
       `)
-      .eq('organization_id', req.organizationId)
+      .eq('branch_id', branch_id)
       .eq('status', 'completed')
       .gte('created_at', dayStart)
       .lt('created_at', dayEnd)
       .order('created_at', { ascending: true });
-
-    if (branch_id) {
-      query = query.eq('branch_id', branch_id);
-    }
 
     const { data: orders, error } = await query;
     if (error) throw error;
@@ -267,24 +266,22 @@ router.get('/weekly', async (req, res) => {
     const nextDayEnd = new Date(currentDates[6] + 'T05:00:00.000Z');
     nextDayEnd.setUTCDate(nextDayEnd.getUTCDate() + 1);
 
+    if (!branch_id) return res.status(400).json({ error: 'branch_id requerido' });
+    await assertBranchOwnership(branch_id, req.organizationId);
+
     let query = supabaseAdmin
       .from('orders')
       .select(`
-        id, total, subtotal, tax_total, discount_total, tip_amount,
-        courtesy_amount, is_courtesy,
-        payment_method, status, created_at,
+        id, total, subtotal, tax_total, discount_amount, tip_amount,
+        courtesy_amount, is_courtesy, metadata, status, created_at,
+        payments(method, amount),
         order_items(product_id, product_name, quantity, unit_price, total_price)
       `)
-      .eq('organization_id', req.organizationId)
+      .eq('branch_id', branch_id)
       .eq('status', 'completed')
       .gte('created_at', rangeStart)
       .lt('created_at', nextDayEnd.toISOString())
       .order('created_at', { ascending: true });
-
-    if (branch_id) {
-      await assertBranchOwnership(branch_id, req.organizationId);
-      query = query.eq('branch_id', branch_id);
-    }
 
     const { data: allOrders, error } = await query;
     if (error) throw error;
@@ -371,10 +368,11 @@ router.post('/daily/send-email', async (req, res) => {
     nextDate.setDate(nextDate.getDate() + 1);
     const dayEnd = `${nextDate.toISOString().split('T')[0]}T05:00:00.000Z`;
 
+    if (branch_id) await assertBranchOwnership(branch_id, req.organizationId);
+
     let query = supabaseAdmin
       .from('orders')
-      .select('id, total, tax_total, discount_total, payment_method, created_at, order_items(product_name, quantity, total_price)')
-      .eq('organization_id', req.organizationId)
+      .select('id, total, tax_total, discount_amount, metadata, created_at, payments(method, amount), order_items(product_name, quantity, total_price)')
       .eq('status', 'completed')
       .gte('created_at', dayStart)
       .lt('created_at', dayEnd);
@@ -532,20 +530,22 @@ router.get('/period', async (req, res) => {
     toDate.setUTCDate(toDate.getUTCDate() + 1);
     const rangeEnd = toDate.toISOString().split('T')[0] + 'T05:00:00.000Z';
 
+    if (!branch_id) return res.status(400).json({ error: 'branch_id requerido' });
+    await assertBranchOwnership(branch_id, req.organizationId);
+
     let query = supabaseAdmin
       .from('orders')
       .select(`
-        id, total, subtotal, tax_total, discount_total, tip_amount,
-        payment_method, status, created_at,
+        id, total, subtotal, tax_total, discount_amount, tip_amount,
+        metadata, status, created_at,
+        payments(method, amount),
         order_items(product_id, product_name, quantity, unit_price, total_price)
       `)
-      .eq('organization_id', req.organizationId)
+      .eq('branch_id', branch_id)
       .eq('status', 'completed')
       .gte('created_at', rangeStart)
       .lt('created_at', rangeEnd)
       .order('created_at', { ascending: true });
-
-    if (branch_id) query = query.eq('branch_id', branch_id);
 
     const { data: orders, error } = await query;
     if (error) throw error;
@@ -561,7 +561,7 @@ router.get('/period', async (req, res) => {
       const rev  = Number(o.total) || 0;
       totalRevenue  += rev;
       totalOrders++;
-      totalDiscount += Number(o.discount_total) || 0;
+      totalDiscount += Number(o.discount_amount) || 0;
       totalTax      += Number(o.tax_total) || 0;
 
       // Hora Colombia
@@ -579,7 +579,7 @@ router.get('/period', async (req, res) => {
       dayMap[dayKey].revenue += rev;
 
       // Por método de pago
-      const pm = o.payment_method || 'other';
+      const pm = o.payments?.[0]?.method || o.metadata?.payment_method || 'other';
       if (!paymentMap[pm]) paymentMap[pm] = { method: pm, label: PAYMENT_LABELS[pm] || pm, orders: 0, revenue: 0 };
       paymentMap[pm].orders++;
       paymentMap[pm].revenue += rev;
@@ -651,16 +651,17 @@ router.get('/monthly', async (req, res) => {
     const rangeStart = `${year - 1}-01-01T05:00:00.000Z`;
     const rangeEnd   = `${year + 1}-01-01T05:00:00.000Z`;
 
+    if (!branch_id) return res.status(400).json({ error: 'branch_id requerido' });
+    await assertBranchOwnership(branch_id, req.organizationId);
+
     let query = supabaseAdmin
       .from('orders')
-      .select('total, created_at, payment_method')
-      .eq('organization_id', req.organizationId)
+      .select('total, created_at')
+      .eq('branch_id', branch_id)
       .eq('status', 'completed')
       .gte('created_at', rangeStart)
       .lt('created_at', rangeEnd)
       .order('created_at', { ascending: true });
-
-    if (branch_id) query = query.eq('branch_id', branch_id);
 
     const { data: orders, error } = await query;
     if (error) throw error;
@@ -773,7 +774,6 @@ router.get('/branch-comparison', async (req, res) => {
       supabaseAdmin
         .from('orders')
         .select('branch_id, total, created_at')
-        .eq('organization_id', req.organizationId)
         .eq('status', 'completed')
         .gte('created_at', rangeStart)
         .lt('created_at', rangeEnd),

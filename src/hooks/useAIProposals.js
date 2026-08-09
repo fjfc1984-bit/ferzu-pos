@@ -27,9 +27,12 @@ export function useAIProposals(branchId) {
 
     load()
 
-    // Suscripción Realtime
+    // Suscripción Realtime — nombre único por instancia para evitar
+    // "cannot add postgres_changes callbacks after subscribe()" cuando
+    // el componente remonta antes de que removeChannel complete.
+    const channelName = `ai_proposals:${branchId}:${Date.now()}`
     const channel = supabase
-      .channel(`ai_proposals:${branchId}`)
+      .channel(channelName)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',

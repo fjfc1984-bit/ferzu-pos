@@ -1057,7 +1057,7 @@ export function useAppointments(branchId, date) {
     if (!branchId) return;
 
     const channel = supabase
-      .channel(`appointments:${branchId}`)
+      .channel(`appointments:${branchId}:${Date.now()}`)
       .on('postgres_changes', {
         event:  '*',
         schema: 'public',
