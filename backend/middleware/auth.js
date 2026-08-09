@@ -62,6 +62,64 @@ export function requireRole(...roles) {
 }
 
 /**
+ * requirePlanFeature(moduleKey)
+ * Middleware factory — verifica que la organización tenga el módulo habilitado.
+ * Considera el trial activo como acceso completo.
+ * Debe usarse DESPUÉS de requireAuth.
+ *
+ * Uso: router.post('/chat', requireAuth, requirePlanFeature('ai'), handler)
+ *
+ * Retorna 402 Payment Required si:
+ *   - El trial expiró y el módulo no está en enabled_modules
+ *   - El plan no incluye el módulo
+ */
+export function requirePlanFeature(moduleKey) {
+  return async (req, res, next) => {
+    if (!req.organizationId) {
+      return res.status(401).json({ error: 'Sin organización autenticada' });
+    }
+
+    try {
+      const { data: org, error } = await supabaseAdmin
+        .from('organizations')
+        .select('plan_id, enabled_modules, trial_ends_at')
+        .eq('id', req.organizationId)
+        .single();
+
+      if (error || !org) {
+        return res.status(403).json({ error: 'Organización no encontrada' });
+      }
+
+      // Trial activo → acceso completo a todos los módulos
+      const trialActive = org.trial_ends_at && new Date(org.trial_ends_at) > new Date();
+      if (trialActive) return next();
+
+      // Verificar que el módulo esté en enabled_modules
+      const enabledModules = org.enabled_modules || [];
+      if (enabledModules.includes(moduleKey)) return next();
+
+      // Módulo no disponible en el plan actual
+      logger.warn(`[Auth] Módulo '${moduleKey}' bloqueado por plan`, {
+        orgId: req.organizationId,
+        plan:  org.plan_id,
+        moduleKey,
+      });
+
+      return res.status(402).json({
+        error:            `El módulo '${moduleKey}' no está incluido en tu plan actual`,
+        upgrade_required: true,
+        module_required:  moduleKey,
+        current_plan:     org.plan_id || 'free',
+        upgrade_url:      '/pricing',
+      });
+    } catch (err) {
+      logger.error('[Auth] Error verificando plan', { err: err.message });
+      return res.status(500).json({ error: 'Error verificando plan' });
+    }
+  };
+}
+
+/**
  * assertBranchOwnership(branchId, organizationId)
  * Verifica que una sucursal pertenece a la organización del usuario.
  * Lanza Error si no pertenece o no existe.

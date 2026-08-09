@@ -240,13 +240,23 @@ export default function CopilotChat({ className = '' }) {
 
   // ── Enviar al endpoint ────────────────────────────────────────────────────
   const callCopilot = useCallback(async (text, history) => {
-    const { data } = await api.post('/ai/copilot/chat', {
-      message:              text,
-      branch_id:            branchId || undefined,
-      conversation_history: history,
-      page_context:         pathname,
-    }, { timeout: 90000 })
-    return data.text || data.response
+    try {
+      const { data } = await api.post('/ai/copilot/chat', {
+        message:              text,
+        branch_id:            branchId || undefined,
+        conversation_history: history,
+        page_context:         pathname,
+      }, { timeout: 90000 })
+      return data.text || data.response
+    } catch (err) {
+      // 402 = trial expirado / plan no incluye IA
+      if (err.response?.status === 402) {
+        const e = new Error('upgrade_required')
+        e.isUpgrade = true
+        throw e
+      }
+      throw err
+    }
   }, [branchId, pathname])
 
   // ── Check proactivo al montar ─────────────────────────────────────────────
@@ -281,8 +291,15 @@ export default function CopilotChat({ className = '' }) {
       const reply = await callCopilot(msg, history)
       setMessages(prev => [...prev, { role: 'assistant', content: reply }])
     } catch (err) {
-      const errMsg = err.response?.data?.error || 'No pude procesar tu pregunta. Intenta de nuevo.'
-      setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${errMsg}` }])
+      if (err.isUpgrade) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: '🔒 El Co-Piloto IA requiere un plan **Pro**. Tu prueba gratuita ha finalizado.\n\n[Ver planes →](/pricing)',
+        }])
+      } else {
+        const errMsg = err.response?.data?.error || 'No pude procesar tu pregunta. Intenta de nuevo.'
+        setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${errMsg}` }])
+      }
     } finally {
       setLoading(false)
     }

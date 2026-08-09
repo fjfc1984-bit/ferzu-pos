@@ -6,7 +6,7 @@ import { body } from 'express-validator';
 import { supabaseAdmin }      from '../config/supabase.js';
 import logger                 from '../config/logger.js';
 import { aiRateLimit }        from '../config/rateLimits.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requireRole, requirePlanFeature } from '../middleware/auth.js';
 import { validate }           from '../middleware/validate.js';
 import { logAudit }           from '../middleware/audit.js';
 import { runFerzuAgent }      from '../ferzu_claude_tools.js';
@@ -15,6 +15,7 @@ import Anthropic from '@anthropic-ai/sdk';
 
 const router = express.Router();
 router.use(requireAuth);
+router.use(requirePlanFeature('ai'));  // Bloquea si trial expiró o plan no incluye IA
 router.use(aiRateLimit);
 
 // POST /ai/chat — Conversación con el agente

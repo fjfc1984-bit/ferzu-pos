@@ -32,7 +32,8 @@ import { es } from 'date-fns/locale';
 import { ReportExporter } from '../components/ReportExporter.jsx';
 import { useTrack }       from '../hooks/useTrack.js';
 import { saveDashboardCache, loadDashboardCache } from '../lib/offlineCache.js';
-import CopilotChat from '../components/CopilotChat/CopilotChat.jsx';
+import CopilotChat            from '../components/CopilotChat/CopilotChat.jsx';
+import { ModuleGuard }        from '../components/ModuleGuard';
 
 // =============================================================================
 // SECCIÓN 1: DashboardPage — Layout principal
@@ -359,7 +360,9 @@ export default function DashboardPage() {
 
       {/* ── Panel Co-Piloto lateral — visible desde xl (≥1280px) ── */}
       <div className="hidden xl:flex w-80 border-l border-gray-200 shrink-0 flex-col">
-        <CopilotChat className="flex-1 min-h-0" />
+        <ModuleGuard moduleKey="ai">
+          <CopilotChat className="flex-1 min-h-0" />
+        </ModuleGuard>
       </div>
 
       </div>{/* fin flex contenido+panel */}
