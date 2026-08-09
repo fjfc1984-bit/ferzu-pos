@@ -845,6 +845,118 @@ REGLAS:
       },
       required: ["dry_run", "product_name", "from_branch_name", "to_branch_name", "quantity"]
     }
+  },
+
+  // ─── Tool 16: get_sales_summary ─────────────────────────────────────────────
+  {
+    name: "get_sales_summary",
+    description: `Consulta el resumen de ventas del negocio para un período específico.
+Úsala cuando el usuario pregunte: "¿cuánto vendí hoy?", "¿cómo van las ventas esta semana/mes?",
+"¿cuánto llevamos?", "¿cómo estuvo el día?", "¿cómo vamos?", "dame el resumen de ventas".
+Devuelve: total en pesos, número de órdenes, ticket promedio, hora pico y comparativa vs período anterior.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        period: {
+          type: "string",
+          enum: ["today", "week", "month", "yesterday"],
+          description: "Período a consultar. 'today'=hoy, 'yesterday'=ayer, 'week'=esta semana, 'month'=este mes."
+        }
+      },
+      required: ["period"]
+    }
+  },
+
+  // ─── Tool 17: get_retention_summary ─────────────────────────────────────────
+  {
+    name: "get_retention_summary",
+    description: `Consulta el estado de retención de clientes del negocio.
+Úsala cuando el usuario pregunte: "¿cuántos clientes tengo dormidos?", "¿cómo está la retención?",
+"¿quiénes no han vuelto?", "¿cuántos clientes en riesgo?", "¿hay cumpleaños hoy?",
+"¿cuántos clientes VIP tengo?", "dame el resumen de clientes".
+Devuelve: conteos por segmento (activos, en riesgo, dormidos, VIP), tasa de retención y cumpleaños del día.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        include_birthdays: {
+          type: "boolean",
+          description: "Si true, incluye clientes con cumpleaños hoy y esta semana. Default: true."
+        },
+        top_dormant: {
+          type: "integer",
+          description: "Número de clientes dormidos a mostrar por nombre (para acción inmediata). Default: 3."
+        }
+      },
+      required: []
+    }
+  },
+
+  // ─── Tool 18: close_day ─────────────────────────────────────────────────────
+  {
+    name: "close_day",
+    description: `Genera el resumen de cierre del día y opcionalmente envía el reporte por email.
+Úsala cuando el usuario diga: "cierra el día", "genera el reporte del día", "envía el resumen",
+"¿cómo terminamos hoy?", "mándame el reporte", "cierre de día".
+Obtiene ventas del día, genera el resumen ejecutivo y puede enviarlo por email al dueño.
+IMPORTANTE: Esta tool NO cierra la sesión de caja — eso lo hace close_cash_session.
+Esta tool solo genera el reporte de ventas del día.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        send_email: {
+          type: "boolean",
+          description: "Si true, envía el reporte al email del dueño registrado en la organización."
+        },
+        date: {
+          type: "string",
+          description: "Fecha del reporte en formato YYYY-MM-DD. Si no se especifica, usa hoy."
+        }
+      },
+      required: []
+    }
+  },
+
+  // ─── Tool 19: get_top_products ──────────────────────────────────────────────
+  {
+    name: "get_top_products",
+    description: `Consulta los productos más vendidos del negocio en un período.
+Úsala cuando el usuario pregunte: "¿qué producto se está vendiendo más?", "¿cuál es el más popular?",
+"top productos", "¿qué está saliendo bien?", "¿qué vendo más?", "dame el ranking de productos".
+Devuelve: top 10 productos con unidades vendidas, ingresos generados y % del total.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        period: {
+          type: "string",
+          enum: ["today", "week", "month"],
+          description: "Período a analizar. Default: 'week'."
+        },
+        limit: {
+          type: "integer",
+          description: "Número de productos a retornar (máx 10). Default: 5."
+        }
+      },
+      required: []
+    }
+  },
+
+  // ─── Tool 20: get_birthday_alert ────────────────────────────────────────────
+  {
+    name: "get_birthday_alert",
+    description: `Consulta clientes con cumpleaños hoy o esta semana para enviarles un mensaje especial.
+Úsala cuando el usuario pregunte: "¿hay cumpleaños hoy?", "¿quién cumple años?",
+"clientes con cumpleaños", "¿a quién felicitar hoy?".
+Devuelve: lista de clientes con cumpleaños hoy y en los próximos 7 días, con su teléfono.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        days_ahead: {
+          type: "integer",
+          description: "Días hacia adelante para buscar cumpleaños. Default: 7."
+        }
+      },
+      required: []
+    }
   }
 ];
 
@@ -1014,6 +1126,21 @@ async function executeTool(toolName, toolInput, context) {
 
     case 'transfer_stock':
       return await transferStock(toolInput, context);
+
+    case 'get_sales_summary':
+      return await getSalesSummary(toolInput, context);
+
+    case 'get_retention_summary':
+      return await getRetentionSummary(toolInput, context);
+
+    case 'close_day':
+      return await closeDayReport(toolInput, context);
+
+    case 'get_top_products':
+      return await getTopProducts(toolInput, context);
+
+    case 'get_birthday_alert':
+      return await getBirthdayAlert(toolInput, context);
 
     default:
       return { error: `Tool desconocida: ${toolName}` };
@@ -2672,6 +2799,423 @@ async function transferStock(
     success:      true,
     reference:    transferRef,
     message:      `✅ Traslado completado exitosamente.\n• **${qtyRounded} ${unit}** de **${product.name}** movidas de "${fromBranch.name}" → "${toBranch.name}"\n• Stock ${fromBranch.name}: ${fromQty} → **${fromQty - qtyRounded} ${unit}**\n• Stock ${toBranch.name}: ${toQty} → **${toQty + qtyRounded} ${unit}**\n• Referencia: ${transferRef}`,
+  };
+}
+
+
+// =============================================================================
+// HANDLERS TOOLS 16-20: CO-PILOTO EXPANSION
+// =============================================================================
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HANDLER TOOL 16: getSalesSummary
+// Consulta ventas de hoy, ayer, semana o mes via /reports/period
+// ─────────────────────────────────────────────────────────────────────────────
+async function getSalesSummary({ period = 'today' }, context) {
+  const { supabase } = context;
+  const orgId    = context.organization_id;
+  const branchId = context.branch_id;
+
+  // Calcular rango de fechas en hora Colombia (UTC-5)
+  const nowCO = new Date(Date.now() - 5 * 3600000);
+  const todayStr = nowCO.toISOString().slice(0, 10);
+
+  let fromDate, toDate, labelPeriod;
+  let fromPrev, toPrev; // período anterior para comparativa
+
+  if (period === 'today') {
+    fromDate = toDate = todayStr;
+    const yd = new Date(nowCO); yd.setDate(yd.getDate() - 1);
+    fromPrev = toPrev = yd.toISOString().slice(0, 10);
+    labelPeriod = 'Hoy';
+  } else if (period === 'yesterday') {
+    const yd = new Date(nowCO); yd.setDate(yd.getDate() - 1);
+    fromDate = toDate = yd.toISOString().slice(0, 10);
+    const dd = new Date(nowCO); dd.setDate(dd.getDate() - 2);
+    fromPrev = toPrev = dd.toISOString().slice(0, 10);
+    labelPeriod = 'Ayer';
+  } else if (period === 'week') {
+    const dow = nowCO.getDay(); // 0=Sun
+    const monday = new Date(nowCO); monday.setDate(nowCO.getDate() - (dow === 0 ? 6 : dow - 1));
+    fromDate = monday.toISOString().slice(0, 10);
+    toDate   = todayStr;
+    const prevMon = new Date(monday); prevMon.setDate(monday.getDate() - 7);
+    const prevSun = new Date(monday); prevSun.setDate(monday.getDate() - 1);
+    fromPrev = prevMon.toISOString().slice(0, 10);
+    toPrev   = prevSun.toISOString().slice(0, 10);
+    labelPeriod = 'Esta semana';
+  } else { // month
+    fromDate = `${todayStr.slice(0, 7)}-01`;
+    toDate   = todayStr;
+    const prevMonth = new Date(nowCO); prevMonth.setDate(1); prevMonth.setMonth(prevMonth.getMonth() - 1);
+    fromPrev = prevMonth.toISOString().slice(0, 7) + '-01';
+    const lastDay = new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0);
+    toPrev   = lastDay.toISOString().slice(0, 10);
+    labelPeriod = 'Este mes';
+  }
+
+  // Construir query base sobre orders
+  const buildQuery = (from, to) => {
+    let q = supabase
+      .from('orders')
+      .select('total, payment_method, created_at')
+      .eq('organization_id', orgId)
+      .eq('status', 'paid')
+      .gte('created_at', `${from}T05:00:00.000Z`) // 00:00 CO = 05:00 UTC
+      .lte('created_at', `${to}T28:59:59.999Z`);  // extendido para cubrir todo el día CO
+    if (branchId) q = q.eq('branch_id', branchId);
+    return q;
+  };
+
+  const [{ data: current }, { data: prev }] = await Promise.all([
+    buildQuery(fromDate, toDate),
+    buildQuery(fromPrev, toPrev),
+  ]);
+
+  const sumRevenue = (rows) => (rows || []).reduce((s, r) => s + (r.total || 0), 0);
+  const currentRevenue = sumRevenue(current);
+  const prevRevenue    = sumRevenue(prev);
+  const currentOrders  = (current || []).length;
+  const avgTicket      = currentOrders > 0 ? Math.round(currentRevenue / currentOrders) : 0;
+  const delta          = prevRevenue > 0 ? ((currentRevenue - prevRevenue) / prevRevenue * 100).toFixed(1) : null;
+
+  // Hora pico
+  const hourCounts = {};
+  (current || []).forEach(r => {
+    const h = new Date(new Date(r.created_at).getTime() - 5 * 3600000).getHours();
+    hourCounts[h] = (hourCounts[h] || 0) + 1;
+  });
+  const peakHour = Object.keys(hourCounts).length
+    ? Object.entries(hourCounts).sort((a, b) => b[1] - a[1])[0][0]
+    : null;
+
+  const fmtCOP = n => `$${Math.round(n).toLocaleString('es-CO')}`;
+  const deltaStr = delta !== null
+    ? (parseFloat(delta) >= 0 ? `📈 +${delta}%` : `📉 ${delta}%`) + ' vs período anterior'
+    : '';
+
+  return {
+    success:       true,
+    period:        labelPeriod,
+    from_date:     fromDate,
+    to_date:       toDate,
+    total_revenue: currentRevenue,
+    total_orders:  currentOrders,
+    avg_ticket:    avgTicket,
+    peak_hour:     peakHour !== null ? `${peakHour}:00` : null,
+    delta_pct:     delta,
+    message: [
+      `📊 **${labelPeriod}** (${fromDate === toDate ? fromDate : `${fromDate} → ${toDate}`})`,
+      `• Ventas totales: **${fmtCOP(currentRevenue)}** ${deltaStr}`,
+      `• Órdenes: **${currentOrders}**`,
+      `• Ticket promedio: **${fmtCOP(avgTicket)}**`,
+      peakHour !== null ? `• Hora pico: **${peakHour}:00 – ${parseInt(peakHour) + 1}:00** (${hourCounts[peakHour]} órdenes)` : '',
+    ].filter(Boolean).join('\n'),
+  };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HANDLER TOOL 17: getRetentionSummary
+// Cuenta clientes por segmento y trae cumpleaños del día
+// ─────────────────────────────────────────────────────────────────────────────
+async function getRetentionSummary({ include_birthdays = true, top_dormant = 3 }, context) {
+  const { supabase } = context;
+  const orgId = context.organization_id;
+
+  // Traer clientes con su última compra
+  const { data: customers } = await supabase
+    .from('customers')
+    .select('id, name, phone, birth_date, last_purchase_date, total_spent, visit_count')
+    .eq('organization_id', orgId)
+    .eq('is_active', true);
+
+  const now = new Date();
+  const segments = { vip: [], activo: [], en_riesgo: [], dormido: [] };
+
+  (customers || []).forEach(c => {
+    const days = c.last_purchase_date
+      ? Math.floor((now - new Date(c.last_purchase_date)) / 86400000)
+      : 999;
+    const allSpends = (customers || []).map(x => x.total_spent || 0).sort((a, b) => b - a);
+    const top10Idx  = Math.floor(allSpends.length * 0.10);
+    const vipThresh = allSpends[top10Idx] || 0;
+    const isVip     = (c.total_spent >= vipThresh && vipThresh > 0) || (c.visit_count || 0) >= 10;
+
+    if (isVip)         segments.vip.push(c);
+    else if (days <= 30)   segments.activo.push(c);
+    else if (days <= 60)   segments.en_riesgo.push(c);
+    else                   segments.dormido.push(c);
+  });
+
+  const total = (customers || []).length;
+  const retentionRate = total > 0
+    ? Math.round(((segments.vip.length + segments.activo.length) / total) * 100)
+    : 0;
+
+  // Cumpleaños hoy
+  const todayMD = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const birthdays = include_birthdays
+    ? (customers || []).filter(c => c.birth_date && c.birth_date.slice(5) === todayMD)
+    : [];
+
+  // Top dormidos para contactar
+  const topDormant = segments.dormido
+    .sort((a, b) => (b.total_spent || 0) - (a.total_spent || 0))
+    .slice(0, top_dormant);
+
+  return {
+    success: true,
+    total_customers: total,
+    retention_rate: retentionRate,
+    segments: {
+      vip:       segments.vip.length,
+      activo:    segments.activo.length,
+      en_riesgo: segments.en_riesgo.length,
+      dormido:   segments.dormido.length,
+    },
+    birthdays_today: birthdays.map(c => ({ name: c.name, phone: c.phone })),
+    top_dormant_to_contact: topDormant.map(c => ({ name: c.name, phone: c.phone, total_spent: c.total_spent })),
+    message: [
+      `👥 **Resumen de clientes** — ${total} total`,
+      `• Tasa de retención: **${retentionRate}%**`,
+      `• 🌟 VIP: ${segments.vip.length} | ✅ Activos: ${segments.activo.length} | ⚠️ En riesgo: ${segments.en_riesgo.length} | 😴 Dormidos: ${segments.dormido.length}`,
+      birthdays.length ? `• 🎂 Cumpleaños hoy: **${birthdays.map(b => b.name).join(', ')}**` : '',
+      topDormant.length ? `• Para reactivar: ${topDormant.map(d => d.name).join(', ')}` : '',
+    ].filter(Boolean).join('\n'),
+  };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HANDLER TOOL 18: closeDayReport
+// Genera el resumen ejecutivo del día y opcionalmente lo envía por email
+// ─────────────────────────────────────────────────────────────────────────────
+async function closeDayReport({ send_email = false, date }, context) {
+  const { supabase } = context;
+  const orgId    = context.organization_id;
+  const branchId = context.branch_id;
+
+  const nowCO     = new Date(Date.now() - 5 * 3600000);
+  const targetDay = date || nowCO.toISOString().slice(0, 10);
+
+  // Ventas del día
+  let q = supabase
+    .from('orders')
+    .select('total, payment_method, created_at, order_items(product_name, quantity, price)')
+    .eq('organization_id', orgId)
+    .eq('status', 'paid')
+    .gte('created_at', `${targetDay}T05:00:00.000Z`)
+    .lte('created_at', `${targetDay}T28:59:59.999Z`);
+  if (branchId) q = q.eq('branch_id', branchId);
+
+  const { data: orders } = await q;
+
+  const totalRevenue = (orders || []).reduce((s, o) => s + (o.total || 0), 0);
+  const totalOrders  = (orders || []).length;
+  const avgTicket    = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
+
+  // Métodos de pago
+  const payMethods = {};
+  (orders || []).forEach(o => {
+    const m = o.payment_method || 'otro';
+    payMethods[m] = (payMethods[m] || 0) + (o.total || 0);
+  });
+
+  // Top productos del día
+  const prodSales = {};
+  (orders || []).forEach(o => {
+    (o.order_items || []).forEach(item => {
+      const k = item.product_name;
+      if (!prodSales[k]) prodSales[k] = { qty: 0, revenue: 0 };
+      prodSales[k].qty     += item.quantity || 1;
+      prodSales[k].revenue += (item.price || 0) * (item.quantity || 1);
+    });
+  });
+  const topProducts = Object.entries(prodSales)
+    .sort((a, b) => b[1].revenue - a[1].revenue)
+    .slice(0, 5);
+
+  const fmtCOP = n => `$${Math.round(n).toLocaleString('es-CO')}`;
+
+  const summaryLines = [
+    `📋 **Cierre del día — ${targetDay}**`,
+    ``,
+    `💰 Ingresos totales: **${fmtCOP(totalRevenue)}**`,
+    `🧾 Órdenes procesadas: **${totalOrders}**`,
+    `📊 Ticket promedio: **${fmtCOP(avgTicket)}**`,
+    ``,
+    `💳 Por método de pago:`,
+    ...Object.entries(payMethods).map(([m, v]) => `   • ${m}: ${fmtCOP(v)}`),
+    ``,
+    topProducts.length ? `🏆 Productos más vendidos:` : '',
+    ...topProducts.map(([name, s], i) => `   ${i + 1}. ${name} — ${s.qty} und. / ${fmtCOP(s.revenue)}`),
+  ].filter(l => l !== null);
+
+  // Envío por email si se solicita
+  let emailSent = false;
+  if (send_email) {
+    try {
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('owner_email, name')
+        .eq('id', orgId)
+        .single();
+
+      if (org?.owner_email) {
+        // Fire-and-forget via el endpoint interno de email
+        fetch(`${process.env.BACKEND_URL || 'http://localhost:3001'}/api/reports/daily/send-email`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            organization_id: orgId,
+            branch_id:       branchId,
+            date:            targetDay,
+            to_email:        org.owner_email,
+          }),
+        }).catch(() => {});
+        emailSent = true;
+      }
+    } catch { /* no bloquear */ }
+  }
+
+  return {
+    success:        true,
+    date:           targetDay,
+    total_revenue:  totalRevenue,
+    total_orders:   totalOrders,
+    avg_ticket:     avgTicket,
+    payment_methods: payMethods,
+    top_products:   topProducts.map(([name, s]) => ({ name, qty: s.qty, revenue: s.revenue })),
+    email_sent:     emailSent,
+    message:        summaryLines.join('\n') + (emailSent ? '\n\n📧 Resumen enviado al email del propietario.' : ''),
+  };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HANDLER TOOL 19: getTopProducts
+// Top N productos más vendidos en el período
+// ─────────────────────────────────────────────────────────────────────────────
+async function getTopProducts({ period = 'week', limit = 5 }, context) {
+  const { supabase } = context;
+  const orgId    = context.organization_id;
+  const branchId = context.branch_id;
+
+  const nowCO    = new Date(Date.now() - 5 * 3600000);
+  const todayStr = nowCO.toISOString().slice(0, 10);
+  let fromDate, labelPeriod;
+
+  if (period === 'today') {
+    fromDate = todayStr; labelPeriod = 'Hoy';
+  } else if (period === 'week') {
+    const dow = nowCO.getDay();
+    const monday = new Date(nowCO); monday.setDate(nowCO.getDate() - (dow === 0 ? 6 : dow - 1));
+    fromDate = monday.toISOString().slice(0, 10); labelPeriod = 'Esta semana';
+  } else {
+    fromDate = `${todayStr.slice(0, 7)}-01`; labelPeriod = 'Este mes';
+  }
+
+  // Obtener order_items con join a orders (solo paid y en rango)
+  let q = supabase
+    .from('order_items')
+    .select('product_name, product_id, quantity, price, orders!inner(organization_id, branch_id, status, created_at)')
+    .eq('orders.organization_id', orgId)
+    .eq('orders.status', 'paid')
+    .gte('orders.created_at', `${fromDate}T05:00:00.000Z`);
+  if (branchId) q = q.eq('orders.branch_id', branchId);
+
+  const { data: items } = await q;
+
+  // Agrupar
+  const prodMap = {};
+  (items || []).forEach(item => {
+    const k = item.product_id || item.product_name;
+    if (!prodMap[k]) prodMap[k] = { name: item.product_name, qty: 0, revenue: 0 };
+    prodMap[k].qty     += item.quantity || 1;
+    prodMap[k].revenue += (item.price || 0) * (item.quantity || 1);
+  });
+
+  const topList = Object.values(prodMap)
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, Math.min(limit, 10));
+
+  const totalRevenue = topList.reduce((s, p) => s + p.revenue, 0);
+  const fmtCOP = n => `$${Math.round(n).toLocaleString('es-CO')}`;
+
+  return {
+    success:    true,
+    period:     labelPeriod,
+    products:   topList.map((p, i) => ({
+      rank:    i + 1,
+      name:    p.name,
+      qty:     p.qty,
+      revenue: p.revenue,
+      share_pct: totalRevenue > 0 ? Math.round(p.revenue / totalRevenue * 100) : 0,
+    })),
+    message: [
+      `🏆 **Top ${topList.length} productos — ${labelPeriod}**`,
+      ...topList.map((p, i) =>
+        `${i + 1}. **${p.name}** — ${p.qty} und. / ${fmtCOP(p.revenue)} (${totalRevenue > 0 ? Math.round(p.revenue / totalRevenue * 100) : 0}%)`
+      ),
+    ].join('\n'),
+  };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HANDLER TOOL 20: getBirthdayAlert
+// Clientes con cumpleaños hoy y en los próximos N días
+// ─────────────────────────────────────────────────────────────────────────────
+async function getBirthdayAlert({ days_ahead = 7 }, context) {
+  const { supabase } = context;
+  const orgId = context.organization_id;
+
+  const { data: customers } = await supabase
+    .from('customers')
+    .select('id, name, phone, birth_date')
+    .eq('organization_id', orgId)
+    .eq('is_active', true)
+    .not('birth_date', 'is', null);
+
+  const now = new Date();
+  const toDay = (d) => {
+    const dt = new Date(d);
+    return new Date(now.getFullYear(), dt.getMonth(), dt.getDate());
+  };
+  const todayNorm = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const todayBirthdays  = [];
+  const upcomingBirthdays = [];
+
+  (customers || []).forEach(c => {
+    if (!c.birth_date) return;
+    const bDay = toDay(c.birth_date);
+    const diff = Math.floor((bDay - todayNorm) / 86400000);
+    if (diff === 0) todayBirthdays.push(c);
+    else if (diff > 0 && diff <= days_ahead) upcomingBirthdays.push({ ...c, days_until: diff });
+  });
+
+  upcomingBirthdays.sort((a, b) => a.days_until - b.days_until);
+
+  const lines = [`🎂 **Alertas de cumpleaños**`];
+  if (todayBirthdays.length) {
+    lines.push(`\n**Hoy:** ${todayBirthdays.map(c => c.name).join(', ')}`);
+  } else {
+    lines.push(`\nHoy no hay cumpleaños.`);
+  }
+  if (upcomingBirthdays.length) {
+    lines.push(`\n**Próximos ${days_ahead} días:**`);
+    upcomingBirthdays.forEach(c => {
+      lines.push(`• ${c.name} — en ${c.days_until} día(s)`);
+    });
+  }
+
+  return {
+    success:    true,
+    today:      todayBirthdays.map(c => ({ name: c.name, phone: c.phone })),
+    upcoming:   upcomingBirthdays.map(c => ({ name: c.name, phone: c.phone, days_until: c.days_until })),
+    message:    lines.join('\n'),
   };
 }
 
