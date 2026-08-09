@@ -559,6 +559,9 @@ function NewAppointmentModal({ slot, staffList, branchId, organizationId, onClos
   const [customerResults, setCustomerResults] = useState([]);
   const [serviceOptions,  setServiceOptions]  = useState([]);
   const [saving, setSaving] = useState(false);
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
+  const [quickPhone, setQuickPhone] = useState('');
+  const [searchDone, setSearchDone] = useState(false);
 
   // Cargar servicios
   useEffect(() => {
@@ -604,8 +607,31 @@ function NewAppointmentModal({ slot, staffList, branchId, organizationId, onClos
 
   const totalPrice = form.services.reduce((s, svc) => s + svc.price, 0);
 
+  // Crear cliente rápido desde el modal sin salir de la cita
+  async function handleQuickCreateCustomer() {
+    const name = form.customer_search.trim();
+    if (!name) return;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.from('customers').insert({
+        organization_id: organizationId,
+        name,
+        phone: quickPhone.trim() || null,
+      }).select('id, name').single();
+      if (error) throw error;
+      setForm(f => ({ ...f, customer_id: data.id, customer_search: data.name }));
+      setCreatingCustomer(false);
+      setQuickPhone('');
+      toast.success(`Cliente "${name}" creado`);
+    } catch (err) {
+      toast.error(err.message || 'Error al crear cliente');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleSave() {
-    if (!form.customer_id)      { toast.error('Selecciona un cliente'); return; }
+    // Cliente es opcional — se permite walk-in sin registro
     if (!form.staff_user_id)    { toast.error('Asigna un estilista'); return; }
     if (!form.services.length)  { toast.error('Agrega al menos un servicio'); return; }
 
@@ -614,15 +640,20 @@ function NewAppointmentModal({ slot, staffList, branchId, organizationId, onClos
       const startAt = `${form.date}T${form.start_time}:00-05:00`;
       const endAt   = `${form.date}T${endTime}:00-05:00`;
 
+      // Walk-in: guardar nombre en notas si no hay cliente registrado
+      const walkInNote = !form.customer_id && form.customer_search.trim()
+        ? `[Walk-in: ${form.customer_search.trim()}] `
+        : '';
+
       const { error } = await supabase.from('appointments').insert({
         branch_id:     branchId,
-        customer_id:   form.customer_id,
+        customer_id:   form.customer_id || null,
         staff_user_id: form.staff_user_id,
         start_at:      startAt,
         end_at:        endAt,
         status:        'scheduled',
         services:      form.services,
-        notes:         form.notes,
+        notes:         walkInNote + (form.notes || ''),
       });
 
       if (error) throw error;
@@ -662,10 +693,17 @@ function NewAppointmentModal({ slot, staffList, branchId, organizationId, onClos
                 <input
                   type="text"
                   value={form.customer_search}
-                  onChange={e => setForm(f => ({ ...f, customer_search: e.target.value }))}
-                  placeholder="Buscar por nombre o teléfono..."
+                  onChange={e => {
+                    setForm(f => ({ ...f, customer_search: e.target.value }));
+                    setCreatingCustomer(false);
+                    setSearchDone(false);
+                  }}
+                  onBlur={() => setTimeout(() => setSearchDone(true), 200)}
+                  placeholder="Buscar nombre o teléfono... (opcional)"
                   className="w-full h-10 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-brand-400"
                 />
+
+                {/* Resultados de búsqueda */}
                 {customerResults.length > 0 && (
                   <div className="mt-1 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                     {customerResults.map(c => (
@@ -683,6 +721,51 @@ function NewAppointmentModal({ slot, staffList, branchId, organizationId, onClos
                       </button>
                     ))}
                   </div>
+                )}
+
+                {/* Crear cliente nuevo si no hay resultados */}
+                {form.customer_search.trim().length >= 2 && customerResults.length === 0 && (
+                  <div className="mt-1 bg-white border border-dashed border-brand-300 rounded-xl overflow-hidden">
+                    {!creatingCustomer ? (
+                      <button
+                        onClick={() => setCreatingCustomer(true)}
+                        className="w-full text-left px-3 py-2 hover:bg-brand-50 text-sm flex items-center gap-2 text-brand-700">
+                        <Plus size={13} className="text-brand-500" />
+                        Crear cliente <strong>"{form.customer_search.trim()}"</strong>
+                      </button>
+                    ) : (
+                      <div className="p-3 space-y-2">
+                        <p className="text-xs font-medium text-brand-700">Nuevo cliente: <strong>{form.customer_search.trim()}</strong></p>
+                        <input
+                          type="tel"
+                          value={quickPhone}
+                          onChange={e => setQuickPhone(e.target.value)}
+                          placeholder="Teléfono (opcional)"
+                          className="w-full h-9 border border-gray-200 rounded-lg px-3 text-sm outline-none focus:ring-2 focus:ring-brand-400"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleQuickCreateCustomer}
+                            disabled={saving}
+                            className="flex-1 bg-brand-600 text-white text-xs font-medium py-1.5 rounded-lg hover:bg-brand-700 disabled:opacity-50">
+                            {saving ? 'Creando...' : 'Crear y seleccionar'}
+                          </button>
+                          <button
+                            onClick={() => setCreatingCustomer(false)}
+                            className="px-3 text-gray-400 hover:text-gray-600 text-xs">
+                            Cancelar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Walk-in sin datos */}
+                {!form.customer_search.trim() && (
+                  <p className="text-xs text-gray-400 mt-1.5">
+                    Déjalo vacío para atender sin registro (walk-in)
+                  </p>
                 )}
               </>
             )}
