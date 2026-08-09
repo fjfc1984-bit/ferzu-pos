@@ -307,7 +307,13 @@ function AlertsSection() {
   const handleTest = async (channel) => {
     setTesting(channel)
     try {
-      const { data } = await api.post('/settings/alerts/test', { channel })
+      // Enviar los números actuales en UI (pueden no estar aún en BD si el usuario
+      // acaba de escribirlos sin haber hecho PATCH previo)
+      const body = { channel }
+      if (channel === 'whatsapp' || channel === 'all') {
+        body.phone_numbers = waCfg.phone_numbers || []
+      }
+      const { data } = await api.post('/settings/alerts/test', body)
       showFeedback('success', data.message || 'Alerta de prueba enviada')
     } catch (err) {
       showFeedback('error', err?.response?.data?.error || 'Error enviando prueba')

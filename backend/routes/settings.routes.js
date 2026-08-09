@@ -242,10 +242,11 @@ router.patch('/alerts', requireOrg, [
 // =============================================================================
 router.post('/alerts/test', requireOrg, [
   body('channel').isIn(['email', 'whatsapp', 'all']),
+  body('phone_numbers').optional().isArray(),
   validate,
 ], async (req, res) => {
   try {
-    const { channel } = req.body;
+    const { channel, phone_numbers: bodyPhoneNumbers } = req.body;
 
     const { data: org } = await supabaseAdmin
       .from('organizations')
@@ -281,7 +282,10 @@ router.post('/alerts/test', requireOrg, [
             },
             whatsapp: {
               enabled:       (channel === 'whatsapp' || channel === 'all') && waAvailable,
-              phone_numbers: org?.settings?.alerts?.channels?.whatsapp?.phone_numbers || [],
+              // bodyPhoneNumbers (del request) tiene prioridad sobre lo guardado en BD
+              phone_numbers: bodyPhoneNumbers?.length
+                ? bodyPhoneNumbers
+                : (org?.settings?.alerts?.channels?.whatsapp?.phone_numbers || []),
             },
           },
           subscriptions: {
