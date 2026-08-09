@@ -1841,9 +1841,9 @@ function CustomerSearch({ onClose, organizationId }) {
     setLoading(true);
     try {
       const { data } = await supabase.from('customers')
-        .select('id, name, phone, preferred_module')
+        .select('id, first_name, last_name, phone, preferred_module')
         .eq('organization_id', organizationId)
-        .or(`name.ilike.%${query}%,phone.like.%${query}%`)
+        .or(`first_name.ilike.%${query}%,phone.like.%${query}%`)
         .limit(10);
       // Priorizar clientes del módulo activo
       const sorted = (data || [])
@@ -1873,10 +1873,10 @@ function CustomerSearch({ onClose, organizationId }) {
     try {
       const { data, error } = await supabase.from('customers').insert({
         organization_id: organizationId,
-        name,
+        first_name:       name,
         phone:            quickPhone.trim() || null,
         preferred_module: currentModule,
-      }).select('id, name').single();
+      }).select('id, first_name, last_name').single();
       if (error) throw error;
       selectCustomer(data);
       toast.success(`Cliente "${name}" creado`);

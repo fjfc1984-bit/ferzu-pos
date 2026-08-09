@@ -361,13 +361,21 @@ function WorkOrderForm({ order, branchId, organizationId, onClose, onSaved }) {
       // Esto permite que la búsqueda futura priorice este cliente en el módulo Taller
       if (form.customer_name?.trim()) {
         const phone = form.customer_phone?.trim() || null;
-        // Upsert: si ya existe por (org + nombre), actualiza preferred_module
-        await supabase.from('customers').upsert({
-          organization_id: organizationId,
-          name:             form.customer_name.trim(),
-          phone:            phone,
-          preferred_module: 'workshop',
-        }, { onConflict: 'organization_id,name', ignoreDuplicates: false });
+        // Upsert por (org + phone) cuando hay teléfono; INSERT simple si no.
+        if (phone) {
+          await supabase.from('customers').upsert({
+            organization_id: organizationId,
+            first_name:       form.customer_name.trim(),
+            phone,
+            preferred_module: 'workshop',
+          }, { onConflict: 'organization_id,phone', ignoreDuplicates: false });
+        } else {
+          await supabase.from('customers').insert({
+            organization_id: organizationId,
+            first_name:       form.customer_name.trim(),
+            preferred_module: 'workshop',
+          }).throwOnError();
+        }
       }
 
       toast.success(isEdit ? 'Orden actualizada' : '¡Orden de trabajo creada!');

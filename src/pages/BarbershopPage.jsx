@@ -586,12 +586,13 @@ function NewAppointmentModal({ slot, staffList, branchId, organizationId, onClos
     if (q.length < 2) { setCustomerResults([]); return; }
     const timer = setTimeout(async () => {
       const { data } = await supabase.from('customers')
-        .select('id, name, phone, preferred_module')
+        .select('id, first_name, last_name, phone, preferred_module')
         .eq('organization_id', organizationId)
-        .or(`name.ilike.%${q}%,phone.like.%${q}%`)
+        .or(`first_name.ilike.%${q}%,phone.like.%${q}%`)
         .limit(10);
       // Ordenar: clientes del módulo actual primero
       const sorted = (data || [])
+        .map(c => ({ ...c, name: `${c.first_name || ''} ${c.last_name || ''}`.trim() }))
         .sort((a, b) => {
           const aScore = a.preferred_module === 'barbershop' ? 0 : 1;
           const bScore = b.preferred_module === 'barbershop' ? 0 : 1;
@@ -630,12 +631,13 @@ function NewAppointmentModal({ slot, staffList, branchId, organizationId, onClos
     try {
       const { data, error } = await supabase.from('customers').insert({
         organization_id: organizationId,
-        name,
+        first_name: name,
         phone: quickPhone.trim() || null,
         preferred_module: 'barbershop',
-      }).select('id, name').single();
+      }).select('id, first_name, last_name').single();
       if (error) throw error;
-      setForm(f => ({ ...f, customer_id: data.id, customer_search: data.name }));
+      const fullName = `${data.first_name || ''} ${data.last_name || ''}`.trim();
+      setForm(f => ({ ...f, customer_id: data.id, customer_search: fullName }));
       setCreatingCustomer(false);
       setQuickPhone('');
       toast.success(`Cliente "${name}" creado`);
