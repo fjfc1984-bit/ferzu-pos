@@ -46,6 +46,7 @@ const ShiftsPage         = lazy(() => import('./pages/ShiftsPage'))
 const IntegrationsPage   = lazy(() => import('./pages/IntegrationsPage'))
 const AlertsPage         = lazy(() => import('./pages/AlertsPage'))
 const RetentionPage      = lazy(() => import('./pages/RetentionPage'))
+const AnalyticsPage      = lazy(() => import('./pages/AnalyticsPage'))
 
 // ---------------------------------------------------------------------------
 // ErrorBoundary global — evita pantalla blanca en errores no capturados
@@ -249,6 +250,7 @@ export default function App() {
                   <Route path="/integraciones" element={<IntegrationsPage />} />
                   <Route path="/alertas"      element={<AlertsPage />} />
                   <Route path="/retencion"    element={<RetentionPage />} />
+                  <Route path="/analytics"    element={<AnalyticsPage />} />
                   <Route path="/admin"        element={<AdminPage />} />
 
                 </Route>

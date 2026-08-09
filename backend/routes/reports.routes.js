@@ -510,4 +510,187 @@ router.post('/daily/send-email', async (req, res) => {
   }
 });
 
+// =============================================================================
+// GET /api/reports/monthly?year=2026&branch_id=
+// 12 meses del año solicitado + comparativa mismo mes año anterior
+// =============================================================================
+router.get('/monthly', async (req, res) => {
+  try {
+    const year     = parseInt(req.query.year || new Date().getFullYear(), 10);
+    const branch_id = req.query.branch_id || null;
+
+    if (branch_id) await assertBranchOwnership(branch_id, req.organizationId);
+
+    // Rango: 1 ene año-1 → 31 dic año (UTC+5 offset Colombia)
+    const rangeStart = `${year - 1}-01-01T05:00:00.000Z`;
+    const rangeEnd   = `${year + 1}-01-01T05:00:00.000Z`;
+
+    let query = supabaseAdmin
+      .from('orders')
+      .select('total, created_at, payment_method')
+      .eq('organization_id', req.organizationId)
+      .eq('status', 'completed')
+      .gte('created_at', rangeStart)
+      .lt('created_at', rangeEnd)
+      .order('created_at', { ascending: true });
+
+    if (branch_id) query = query.eq('branch_id', branch_id);
+
+    const { data: orders, error } = await query;
+    if (error) throw error;
+
+    // Agrupar por año-mes en hora Colombia (UTC-5)
+    const monthMap = {};
+    for (const o of orders || []) {
+      const local = toLocalDateCO(o.created_at);
+      const y = local.getFullYear();
+      const m = local.getMonth() + 1; // 1-12
+      const key = `${y}-${String(m).padStart(2, '0')}`;
+      if (!monthMap[key]) monthMap[key] = { year: y, month: m, orders: 0, revenue: 0 };
+      monthMap[key].orders++;
+      monthMap[key].revenue += Number(o.total) || 0;
+    }
+
+    const MONTH_NAMES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+    // Construir array de 12 meses para el año solicitado con comparativa
+    const current = Array.from({ length: 12 }, (_, i) => {
+      const m   = i + 1;
+      const key = `${year}-${String(m).padStart(2, '0')}`;
+      const prevKey = `${year - 1}-${String(m).padStart(2, '0')}`;
+      const cur  = monthMap[key]  || { orders: 0, revenue: 0 };
+      const prev = monthMap[prevKey] || { orders: 0, revenue: 0 };
+      const delta = prev.revenue > 0
+        ? Math.round(((cur.revenue - prev.revenue) / prev.revenue) * 100)
+        : null;
+      return {
+        month:        m,
+        month_name:   MONTH_NAMES[i],
+        year,
+        orders:       cur.orders,
+        revenue:      cur.revenue,
+        avg_ticket:   cur.orders > 0 ? Math.round(cur.revenue / cur.orders) : 0,
+        prev_revenue: prev.revenue,
+        prev_orders:  prev.orders,
+        delta_pct:    delta,
+      };
+    });
+
+    // Totales del año
+    const totals = current.reduce((acc, m) => ({
+      revenue:    acc.revenue + m.revenue,
+      orders:     acc.orders  + m.orders,
+    }), { revenue: 0, orders: 0 });
+
+    const prevTotals = Array.from({ length: 12 }, (_, i) => {
+      const m = i + 1;
+      const key = `${year - 1}-${String(m).padStart(2, '0')}`;
+      return monthMap[key] || { orders: 0, revenue: 0 };
+    }).reduce((acc, m) => ({ revenue: acc.revenue + m.revenue, orders: acc.orders + m.orders }), { revenue: 0, orders: 0 });
+
+    const yearDelta = prevTotals.revenue > 0
+      ? Math.round(((totals.revenue - prevTotals.revenue) / prevTotals.revenue) * 100)
+      : null;
+
+    logger.info(`[reports] monthly year=${year} org=${req.organizationId} revenue=${totals.revenue}`);
+    res.json({
+      year,
+      months:      current,
+      totals:      { ...totals, avg_ticket: totals.orders > 0 ? Math.round(totals.revenue / totals.orders) : 0 },
+      prev_totals: { ...prevTotals, year: year - 1 },
+      year_delta_pct: yearDelta,
+    });
+  } catch (err) {
+    logger.error('[reports] monthly error', { err: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =============================================================================
+// GET /api/reports/branch-comparison?period=week|month|year&date=YYYY-MM-DD
+// Ranking de desempeño por sucursal para el período solicitado
+// =============================================================================
+router.get('/branch-comparison', async (req, res) => {
+  try {
+    const { period = 'month', date = new Date().toISOString().split('T')[0] } = req.query;
+
+    // Calcular rango según período
+    const ref = new Date(date + 'T12:00:00.000Z');
+    let rangeStart, rangeEnd;
+
+    if (period === 'week') {
+      // Semana actual (lunes a domingo)
+      const day = ref.getUTCDay();
+      const daysFromMon = day === 0 ? 6 : day - 1;
+      const monday = new Date(ref);
+      monday.setUTCDate(ref.getUTCDate() - daysFromMon);
+      rangeStart = monday.toISOString().split('T')[0] + 'T05:00:00.000Z';
+      const sunday = new Date(monday);
+      sunday.setUTCDate(monday.getUTCDate() + 7);
+      rangeEnd = sunday.toISOString().split('T')[0] + 'T05:00:00.000Z';
+    } else if (period === 'month') {
+      const y = ref.getUTCFullYear();
+      const m = ref.getUTCMonth() + 1;
+      rangeStart = `${y}-${String(m).padStart(2,'0')}-01T05:00:00.000Z`;
+      const nextM = m === 12 ? 1 : m + 1;
+      const nextY = m === 12 ? y + 1 : y;
+      rangeEnd = `${nextY}-${String(nextM).padStart(2,'0')}-01T05:00:00.000Z`;
+    } else {
+      // year
+      const y = ref.getUTCFullYear();
+      rangeStart = `${y}-01-01T05:00:00.000Z`;
+      rangeEnd   = `${y + 1}-01-01T05:00:00.000Z`;
+    }
+
+    // Traer órdenes y sucursales
+    const [ordersRes, branchesRes] = await Promise.all([
+      supabaseAdmin
+        .from('orders')
+        .select('branch_id, total, created_at')
+        .eq('organization_id', req.organizationId)
+        .eq('status', 'completed')
+        .gte('created_at', rangeStart)
+        .lt('created_at', rangeEnd),
+      supabaseAdmin
+        .from('branches')
+        .select('id, name')
+        .eq('organization_id', req.organizationId),
+    ]);
+
+    if (ordersRes.error) throw ordersRes.error;
+
+    const branchMap = {};
+    for (const b of branchesRes.data || []) {
+      branchMap[b.id] = { id: b.id, name: b.name, orders: 0, revenue: 0 };
+    }
+
+    for (const o of ordersRes.data || []) {
+      if (!o.branch_id) continue;
+      if (!branchMap[o.branch_id]) branchMap[o.branch_id] = { id: o.branch_id, name: 'Sin nombre', orders: 0, revenue: 0 };
+      branchMap[o.branch_id].orders++;
+      branchMap[o.branch_id].revenue += Number(o.total) || 0;
+    }
+
+    const branches = Object.values(branchMap)
+      .map(b => ({
+        ...b,
+        avg_ticket: b.orders > 0 ? Math.round(b.revenue / b.orders) : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .map((b, i) => ({ ...b, rank: i + 1 }));
+
+    const totalRevenue = branches.reduce((s, b) => s + b.revenue, 0);
+    const result = branches.map(b => ({
+      ...b,
+      share_pct: totalRevenue > 0 ? Math.round((b.revenue / totalRevenue) * 100) : 0,
+    }));
+
+    res.json({ period, branches: result, total_revenue: totalRevenue });
+  } catch (err) {
+    logger.error('[reports] branch-comparison error', { err: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
+

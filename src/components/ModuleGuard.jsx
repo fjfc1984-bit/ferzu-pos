@@ -18,7 +18,7 @@ import {
   Lock, Zap, CheckCircle2, X, ChevronRight, Sparkles,
   Crown, ArrowRight, Star, Clock, AlertTriangle,
   RefreshCw, Shield, MessageCircle, ToggleLeft, Settings2,
-  Building2, ChevronDown, BarChart2, Users
+  Building2, ChevronDown, BarChart2, BarChart3, Users
 } from 'lucide-react';
 import { supabase }  from '../lib/supabase.js';
 import { useAuth }   from '../context/AuthContext.jsx';
@@ -783,6 +783,16 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
 
       {/* Links visibles para todos los usuarios */}
       <div className="px-2 pb-1 space-y-0.5">
+        <Link
+          to="/analytics"
+          className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
+            currentPath?.startsWith('/analytics')
+              ? 'bg-white/20 text-white'
+              : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+          }`}>
+          <BarChart3 size={13} />
+          <span>Analíticas</span>
+        </Link>
         <Link
           to="/reporte"
           className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
