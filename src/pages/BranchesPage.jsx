@@ -238,6 +238,7 @@ export default function BranchesPage() {
   function activateBranch(branch) {
     localStorage.setItem('ferzu_branch_id',    branch.id)
     localStorage.setItem('ferzu_branch_niche', branch.niche || 'general')
+    localStorage.setItem('ferzu_branch_name',  branch.name  || 'Sucursal')
     dispatch({ type: 'SET_BRANCH',       payload: branch.id })
     dispatch({ type: 'SET_BRANCH_NICHE', payload: branch.niche || 'general' })
     toast.success(`Sucursal "${branch.name}" activada`)

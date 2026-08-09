@@ -1,105 +1,95 @@
 // =============================================================================
 // FERZU POS — NicheContextBar
 // Barra visual que confirma al usuario en qué nicho y sucursal está operando.
-// Uso: <NicheContextBar /> — sin props, lee el contexto global.
+// Uso: <NicheContextBar moduleLabel="Citas" />
+// Usa inline styles para evitar purging de clases Tailwind dinámicas.
 // =============================================================================
 
 import { useBranchNiche } from '../hooks/useBranchNiche.js'
 import { usePOS }         from '../context/POSContext.jsx'
 
 const NICHE_CONFIG = {
-  barbershop: {
-    icon:    '✂️',
-    label:   'Barbería / Spa',
-    bg:      'bg-violet-50',
-    border:  'border-violet-200',
-    text:    'text-violet-700',
-    dot:     'bg-violet-500',
-  },
-  workshop: {
-    icon:    '🔧',
-    label:   'Taller Automotriz',
-    bg:      'bg-orange-50',
-    border:  'border-orange-200',
-    text:    'text-orange-700',
-    dot:     'bg-orange-500',
-  },
-  restaurant: {
-    icon:    '🍽️',
-    label:   'Restaurante',
-    bg:      'bg-red-50',
-    border:  'border-red-200',
-    text:    'text-red-700',
-    dot:     'bg-red-500',
-  },
-  minimarket: {
-    icon:    '🛒',
-    label:   'Minimarket',
-    bg:      'bg-green-50',
-    border:  'border-green-200',
-    text:    'text-green-700',
-    dot:     'bg-green-500',
-  },
-  general: {
-    icon:    '🏪',
-    label:   'General',
-    bg:      'bg-blue-50',
-    border:  'border-blue-200',
-    text:    'text-blue-700',
-    dot:     'bg-blue-500',
-  },
+  barbershop: { icon: '✂️', label: 'Barbería / Spa',      color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
+  workshop:   { icon: '🔧', label: 'Taller Automotriz',   color: '#c2410c', bg: '#fff7ed', border: '#fed7aa' },
+  restaurant: { icon: '🍽️', label: 'Restaurante',         color: '#b91c1c', bg: '#fef2f2', border: '#fecaca' },
+  minimarket: { icon: '🛒', label: 'Minimarket',           color: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
+  general:    { icon: '🏪', label: 'Negocio General',      color: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
 }
 
-/**
- * NicheContextBar — barra de contexto activo.
- * @param {string} [moduleLabel] - Etiqueta del módulo para mostrar (ej. "Citas", "Órdenes de Trabajo").
- *                                  Si se omite, se muestra solo el niche.
- */
 export default function NicheContextBar({ moduleLabel }) {
-  const { branchNiche }           = useBranchNiche()
-  const { branchName, branchId }  = usePOS()
+  const { branchNiche }  = useBranchNiche()
+  const { branchId }     = usePOS()
 
-  if (!branchId) return null   // sin sucursal activa → no mostrar
+  // Fallback a localStorage si el contexto aún no cargó
+  const effectiveBranchId    = branchId    || localStorage.getItem('ferzu_branch_id')
+  const effectiveBranchName  = localStorage.getItem('ferzu_branch_name') || 'Sucursal'
+  const effectiveNiche       = branchNiche || localStorage.getItem('ferzu_branch_niche') || 'general'
 
-  const cfg = NICHE_CONFIG[branchNiche] || NICHE_CONFIG.general
+  if (!effectiveBranchId) return null
+
+  const cfg = NICHE_CONFIG[effectiveNiche] || NICHE_CONFIG.general
 
   return (
-    <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl border ${cfg.bg} ${cfg.border} mb-4`}>
-      {/* Dot de estado activo */}
-      <span className="relative flex h-2.5 w-2.5 shrink-0">
-        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${cfg.dot} opacity-50`} />
-        <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${cfg.dot}`} />
+    <div style={{
+      display:        'flex',
+      alignItems:     'center',
+      gap:            '10px',
+      padding:        '8px 14px',
+      borderRadius:   '14px',
+      border:         `1px solid ${cfg.border}`,
+      backgroundColor: cfg.bg,
+      marginBottom:   '12px',
+      fontSize:       '13px',
+    }}>
+      {/* Dot animado */}
+      <span style={{ position: 'relative', display: 'inline-flex', width: 10, height: 10, flexShrink: 0 }}>
+        <span style={{
+          position: 'absolute', inset: 0, borderRadius: '50%',
+          backgroundColor: cfg.color, opacity: 0.4,
+          animation: 'ping 1.5s cubic-bezier(0,0,0.2,1) infinite',
+        }} />
+        <span style={{
+          position: 'relative', display: 'inline-flex', width: 10, height: 10,
+          borderRadius: '50%', backgroundColor: cfg.color,
+        }} />
       </span>
 
-      {/* Niche icon + label */}
-      <span className={`text-sm font-semibold ${cfg.text} flex items-center gap-1.5`}>
-        <span>{cfg.icon}</span>
-        <span>{cfg.label}</span>
+      {/* Niche */}
+      <span style={{ fontWeight: 600, color: cfg.color }}>
+        {cfg.icon} {cfg.label}
       </span>
 
-      {/* Separador */}
-      <span className={`text-xs ${cfg.text} opacity-40`}>·</span>
+      <span style={{ color: cfg.color, opacity: 0.4 }}>·</span>
 
       {/* Sucursal */}
-      <span className={`text-xs ${cfg.text} opacity-70 font-medium truncate max-w-[160px]`}>
-        {branchName || 'Sucursal'}
+      <span style={{ color: cfg.color, opacity: 0.75, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {effectiveBranchName}
       </span>
 
-      {/* Módulo opcional */}
       {moduleLabel && (
         <>
-          <span className={`text-xs ${cfg.text} opacity-40`}>·</span>
-          <span className={`text-xs ${cfg.text} opacity-60`}>{moduleLabel}</span>
+          <span style={{ color: cfg.color, opacity: 0.4 }}>·</span>
+          <span style={{ color: cfg.color, opacity: 0.6 }}>{moduleLabel}</span>
         </>
       )}
 
-      {/* Spacer */}
-      <div className="flex-1" />
+      <div style={{ flex: 1 }} />
 
-      {/* Badge de contexto activo */}
-      <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${cfg.border} ${cfg.text} opacity-60`}>
+      {/* Badge */}
+      <span style={{
+        fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em',
+        padding: '2px 8px', borderRadius: 999,
+        border: `1px solid ${cfg.border}`, color: cfg.color, opacity: 0.65,
+      }}>
         Contexto activo
       </span>
+
+      {/* keyframes para el ping */}
+      <style>{`
+        @keyframes ping {
+          75%, 100% { transform: scale(2); opacity: 0; }
+        }
+      `}</style>
     </div>
   )
 }
