@@ -25,6 +25,7 @@ import {
 import { supabase }      from '../lib/supabase.js';
 import { api }           from '../lib/api.js';
 import { useAuth }       from '../context/AuthContext.jsx';
+import { usePOS }        from '../context/POSContext.jsx';
 import { formatCOP }     from '../lib/math.js';
 import toast             from 'react-hot-toast';
 import VATClassifier, { RATE_LABELS } from '../components/dian/VATClassifier.jsx';
@@ -33,6 +34,7 @@ import BatchVATClassifier from '../components/dian/BatchVATClassifier.jsx';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useTrack } from '../hooks/useTrack.js';
+import { useNavigate } from 'react-router-dom';
 
 // =============================================================================
 // SECCIÓN 1: InventoryPage — Layout con tabs
@@ -44,23 +46,9 @@ export default function InventoryPage() {
   const [tab, setTab] = useState('products'); // 'products' | 'movements' | 'suppliers' | 'insights'
   const [criticalCount, setCriticalCount] = useState(0);
   const { organizationId } = useAuth();
-  // branchId vive en POSContext/localStorage — no en AuthContext
-  const [branchId, setBranchId] = useState(localStorage.getItem('ferzu_branch_id') || null);
-
-  // FIX: auto-resolver primera sucursal si localStorage está vacío
-  useEffect(() => {
-    if (branchId || !organizationId) return;
-    supabase.from('branches').select('id')
-      .eq('organization_id', organizationId)
-      .order('created_at', { ascending: true })
-      .limit(1).maybeSingle()
-      .then(({ data }) => {
-        if (data?.id) {
-          setBranchId(data.id);
-          localStorage.setItem('ferzu_branch_id', data.id);
-        }
-      });
-  }, [organizationId]);
+  // Fix C: branchId viene de POSContext (reactivo) en vez de localStorage directo
+  const { branchId } = usePOS();
+  const navigate = useNavigate();
 
   const TABS = [
     { key: 'products',   label: 'Productos',   icon: Package   },
@@ -68,6 +56,29 @@ export default function InventoryPage() {
     { key: 'suppliers',  label: 'Proveedores', icon: Truck     },
     { key: 'insights',   label: 'Alertas IA',  icon: Sparkles, badge: criticalCount },
   ];
+
+  // Fix A: Guard visual — sin sucursal no hay datos que mostrar
+  if (!branchId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-5 bg-gray-50 px-6 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center">
+          <Package size={32} className="text-amber-500" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800">Selecciona una sucursal</h2>
+          <p className="text-sm text-gray-500 mt-1 max-w-xs">
+            Para ver el inventario necesitas abrir el POS y seleccionar la sucursal activa.
+          </p>
+        </div>
+        <button
+          onClick={() => navigate('/pos')}
+          className="px-5 py-2.5 bg-brand-600 text-white rounded-xl font-semibold
+                     hover:bg-brand-700 transition-colors text-sm">
+          Ir al POS →
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
@@ -528,6 +539,12 @@ function ProductForm({ product, organizationId, branchId, categories, onClose, o
         if (error) throw error;
         productId = data.id;
 
+        // Fix D: branchId requerido para registrar inventario inicial
+        if (!branchId) {
+          toast.error('Selecciona una sucursal antes de crear productos con stock');
+          setSaving(false);
+          return;
+        }
         // Crear registro de inventario inicial
         const initialQty = Math.round(Number(form.initial_stock || '0'));
         await supabase.from('inventory').insert({
@@ -950,6 +967,7 @@ function StockAdjustment({ product, currentStock, branchId, onClose, onSaved }) 
     : currentStock + selectedType.sign * numQty;
 
   async function handleSave() {
+    if (!branchId) { toast.error('Sin sucursal activa — abre el POS primero'); return; }
     if (!qty) { toast.error('Ingresa la cantidad'); return; }
     if (Number(qty) < 0) { toast.error('La cantidad no puede ser negativa'); return; }
     setSaving(true);
