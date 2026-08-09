@@ -511,6 +511,132 @@ router.post('/daily/send-email', async (req, res) => {
 });
 
 // =============================================================================
+// GET /api/reports/period?from=YYYY-MM-DD&to=YYYY-MM-DD&branch_id=
+// Agrega ventas de cualquier rango en UNA sola query al backend.
+// Retorna: { total_revenue, total_orders, avg_ticket, by_hour[], by_payment[], top_products[], chart[] }
+// "chart" = un entry por día en el rango con { date, label, revenue, orders }
+// =============================================================================
+router.get('/period', async (req, res) => {
+  try {
+    const { from, to, branch_id } = req.query;
+    if (!from || !to) return res.status(400).json({ error: 'from y to son requeridos (YYYY-MM-DD)' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      return res.status(400).json({ error: 'Formato de fecha inválido. Usar YYYY-MM-DD' });
+    }
+
+    if (branch_id) await assertBranchOwnership(branch_id, req.organizationId);
+
+    // Ventana UTC ajustada a Colombia (UTC-5): from T05:00Z → (to+1) T05:00Z
+    const rangeStart = `${from}T05:00:00.000Z`;
+    const toDate = new Date(to + 'T12:00:00Z');
+    toDate.setUTCDate(toDate.getUTCDate() + 1);
+    const rangeEnd = toDate.toISOString().split('T')[0] + 'T05:00:00.000Z';
+
+    let query = supabaseAdmin
+      .from('orders')
+      .select(`
+        id, total, subtotal, tax_total, discount_total, tip_amount,
+        payment_method, status, created_at,
+        order_items(product_id, product_name, quantity, unit_price, total_price)
+      `)
+      .eq('organization_id', req.organizationId)
+      .eq('status', 'completed')
+      .gte('created_at', rangeStart)
+      .lt('created_at', rangeEnd)
+      .order('created_at', { ascending: true });
+
+    if (branch_id) query = query.eq('branch_id', branch_id);
+
+    const { data: orders, error } = await query;
+    if (error) throw error;
+
+    // Acumuladores
+    let totalRevenue = 0, totalOrders = 0, totalDiscount = 0, totalTax = 0;
+    const hourMap    = {};
+    const paymentMap = {};
+    const productMap = {};
+    const dayMap     = {};
+
+    for (const o of orders || []) {
+      const rev  = Number(o.total) || 0;
+      totalRevenue  += rev;
+      totalOrders++;
+      totalDiscount += Number(o.discount_total) || 0;
+      totalTax      += Number(o.tax_total) || 0;
+
+      // Hora Colombia
+      const local  = toLocalDateCO(o.created_at);
+      const hour   = local.getHours();
+      const dayKey = local.toISOString().split('T')[0];
+
+      if (!hourMap[hour]) hourMap[hour] = { orders: 0, revenue: 0 };
+      hourMap[hour].orders++;
+      hourMap[hour].revenue += rev;
+
+      // Por día (para chart)
+      if (!dayMap[dayKey]) dayMap[dayKey] = { orders: 0, revenue: 0 };
+      dayMap[dayKey].orders++;
+      dayMap[dayKey].revenue += rev;
+
+      // Por método de pago
+      const pm = o.payment_method || 'other';
+      if (!paymentMap[pm]) paymentMap[pm] = { method: pm, label: PAYMENT_LABELS[pm] || pm, orders: 0, revenue: 0 };
+      paymentMap[pm].orders++;
+      paymentMap[pm].revenue += rev;
+
+      // Por producto
+      for (const item of o.order_items || []) {
+        const key  = item.product_id || item.product_name;
+        const name = item.product_name || 'Sin nombre';
+        if (!productMap[key]) productMap[key] = { name, qty: 0, revenue: 0 };
+        productMap[key].qty     += Number(item.quantity) || 0;
+        productMap[key].revenue += Number(item.total_price) || 0;
+      }
+    }
+
+    // Construir chart: un entry por día en el rango
+    const chart = [];
+    const cursor = new Date(from + 'T12:00:00Z');
+    const endD   = new Date(to + 'T12:00:00Z');
+    while (cursor <= endD) {
+      const dayKey = cursor.toISOString().split('T')[0];
+      const day    = dayMap[dayKey] || { orders: 0, revenue: 0 };
+      chart.push({
+        date:    dayKey,
+        label:   String(cursor.getUTCDate()),
+        revenue: day.revenue,
+        orders:  day.orders,
+      });
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+
+    const by_hour = Array.from({ length: 24 }, (_, h) => ({
+      hour: h, orders: hourMap[h]?.orders || 0, revenue: hourMap[h]?.revenue || 0,
+    }));
+    const by_payment  = Object.values(paymentMap).sort((a, b) => b.revenue - a.revenue);
+    const top_products = Object.values(productMap)
+      .sort((a, b) => b.revenue - a.revenue).slice(0, 10)
+      .map((p, i) => ({ rank: i + 1, ...p }));
+
+    res.json({
+      from, to,
+      total_revenue:  totalRevenue,
+      total_orders:   totalOrders,
+      total_discount: totalDiscount,
+      total_tax:      totalTax,
+      avg_ticket:     totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0,
+      by_hour,
+      by_payment,
+      top_products,
+      chart,
+    });
+  } catch (err) {
+    logger.error('[reports] period error', { err: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =============================================================================
 // GET /api/reports/monthly?year=2026&branch_id=
 // 12 meses del año solicitado + comparativa mismo mes año anterior
 // =============================================================================
