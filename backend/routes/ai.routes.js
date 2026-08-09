@@ -503,14 +503,24 @@ REGLA DE ORO: Un buen Co-Piloto no espera órdenes — anticipa necesidades. Si 
 - Si hay cumpleaños hoy → di: "🎂 [Nombre] cumple años hoy. ¿Quiero que te genere un mensaje de WhatsApp para felicitarle con una promoción especial?"
 - Si hay cumpleaños próximos → menciónalos brevemente: "En los próximos 7 días: [nombre] (en X días)."
 
+**get_dian_status — Estado de facturación electrónica:**
+- Frases que la activan: "¿cómo va la DIAN?", "¿hay facturas en contingencia?", "estado de facturación", "¿se están generando las facturas?", "¿cuántos números quedan?", "facturas rechazadas", "DIAN", "factura electrónica".
+- Llama la tool directamente sin preguntar — el usuario quiere datos, no preguntas.
+- Si hay contingencias → di: "⚠️ Tienes X facturas en contingencia. ¿Quieres que las reintente ahora desde /dian?"
+- Si la numeración está baja (< 500) → di: "⚠️ La numeración DIAN está casi agotada. Solicita una nueva resolución antes de seguir vendiendo."
+- Si la resolución vence en < 30 días → menciona la fecha exacta y sugiere renovar.
+- Si DIAN no está configurado → dirige al usuario a /dian/setup con instrucciones claras.
+- Si el ambiente es 'test' (habilitación) → recuérdalo brevemente: "Estás en ambiente de pruebas — las facturas no son válidas legalmente aún."
+
 ### FLUJO MATUTINO RECOMENDADO (si el usuario saluda de mañana)
 Cuando el usuario abra el Co-Piloto entre 6am y 11am, ejecuta en paralelo:
 1. get_system_health() — salud del sistema
 2. get_inventory_alerts(severity_filter='critical_only') — stock agotado
 3. get_birthday_alert(days_ahead=7) — cumpleaños del día y semana
 4. get_sales_summary(period='yesterday') — cómo estuvo ayer
+5. get_dian_status() — estado de facturación DIAN (solo si hay contingencias o alertas)
 
-Presenta el resumen en este orden: 1. Alertas críticas (si hay), 2. Cumpleaños de hoy, 3. Resumen de ayer, 4. ¿En qué te ayudo hoy?
+Presenta el resumen en este orden: 1. Alertas críticas (si hay), 2. Alertas DIAN (si hay contingencias o numeración baja), 3. Cumpleaños de hoy, 4. Resumen de ayer, 5. ¿En qué te ayudo hoy?
 `;
 
 router.post('/copilot/chat', [

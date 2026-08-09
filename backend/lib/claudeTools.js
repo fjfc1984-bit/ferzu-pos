@@ -940,6 +940,26 @@ Devuelve: top 10 productos con unidades vendidas, ingresos generados y % del tot
     }
   },
 
+  // ─── Tool 21: get_dian_status ───────────────────────────────────────────────
+  {
+    name: "get_dian_status",
+    description: `Consulta el estado de la facturación electrónica DIAN del negocio.
+Úsala cuando el usuario pregunte: "¿cómo va la facturación DIAN?", "¿hay facturas en contingencia?",
+"¿cuántos números de factura quedan?", "¿la DIAN está funcionando?", "facturas del día",
+"¿se están generando las facturas?", "estado DIAN", "hay facturas rechazadas?".
+Devuelve: facturas del día (aceptadas/pendientes/rechazadas/contingencia), numeración restante y alertas.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        include_today_invoices: {
+          type: "boolean",
+          description: "Si true, lista las facturas generadas hoy con su estado. Default: true."
+        }
+      },
+      required: []
+    }
+  },
+
   // ─── Tool 20: get_birthday_alert ────────────────────────────────────────────
   {
     name: "get_birthday_alert",
@@ -1141,6 +1161,9 @@ async function executeTool(toolName, toolInput, context) {
 
     case 'get_birthday_alert':
       return await getBirthdayAlert(toolInput, context);
+
+    case 'get_dian_status':
+      return await getDianStatus(toolInput, context);
 
     default:
       return { error: `Tool desconocida: ${toolName}` };
@@ -3216,6 +3239,107 @@ async function getBirthdayAlert({ days_ahead = 7 }, context) {
     today:      todayBirthdays.map(c => ({ name: c.name, phone: c.phone })),
     upcoming:   upcomingBirthdays.map(c => ({ name: c.name, phone: c.phone, days_until: c.days_until })),
     message:    lines.join('\n'),
+  };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HANDLER TOOL 21: getDianStatus
+// Estado de facturación DIAN: facturas del día, contingencias, numeración
+// ─────────────────────────────────────────────────────────────────────────────
+async function getDianStatus({ include_today_invoices = true }, context) {
+  const { supabase } = context;
+  const orgId = context.organization_id;
+
+  // ── 1. Configuración DIAN activa ─────────────────────────────────────────
+  const { data: dianCfg } = await supabase
+    .from('dian_configs')
+    .select('*')
+    .eq('organization_id', orgId)
+    .eq('is_active', true)
+    .single();
+
+  if (!dianCfg) {
+    return {
+      success:    true,
+      configured: false,
+      message:    '⚠️ **DIAN no configurado** — Esta organización no tiene facturación electrónica activa.\n¿Quieres que te guíe para configurarla en /dian/setup?',
+    };
+  }
+
+  // Calcular numeración disponible
+  const currentNum = dianCfg.current_number || 1;
+  const toNum      = dianCfg.to_number || dianCfg.resolution_to || 9999999;
+  const fromNum    = dianCfg.from_number || dianCfg.resolution_from || 1;
+  const remaining  = toNum - currentNum + 1;
+  const totalRange = toNum - fromNum + 1;
+  const usedPct    = Math.round(((currentNum - fromNum) / totalRange) * 100);
+
+  // Fecha de vencimiento resolución
+  const expiresAt = dianCfg.resolution_end_date || dianCfg.resolution_expires_at;
+  const daysUntilExpiry = expiresAt
+    ? Math.floor((new Date(expiresAt) - new Date()) / 86400000)
+    : null;
+
+  // ── 2. Facturas del día ───────────────────────────────────────────────────
+  const nowCO    = new Date(Date.now() - 5 * 3600000);
+  const todayStr = nowCO.toISOString().slice(0, 10);
+
+  const { data: todayInvoices } = await supabase
+    .from('electronic_invoices')
+    .select('invoice_number, dian_status, total, customer_name, issued_at')
+    .eq('organization_id', orgId)
+    .gte('issued_at', `${todayStr}T05:00:00.000Z`)
+    .order('issued_at', { ascending: false });
+
+  const invoices  = todayInvoices || [];
+  const byStatus  = {
+    accepted:    invoices.filter(i => i.dian_status === 'accepted').length,
+    pending:     invoices.filter(i => ['pending', 'sending'].includes(i.dian_status)).length,
+    contingency: invoices.filter(i => i.dian_status === 'contingency').length,
+    rejected:    invoices.filter(i => i.dian_status === 'rejected').length,
+  };
+
+  // ── 3. Construir respuesta ────────────────────────────────────────────────
+  const alerts = [];
+  if (remaining < 100)    alerts.push(`🔴 Numeración crítica: solo ${remaining} facturas disponibles`);
+  else if (remaining < 500) alerts.push(`🟡 Numeración baja: ${remaining} facturas restantes`);
+  if (byStatus.contingency > 0) alerts.push(`⚠️ ${byStatus.contingency} factura(s) en contingencia — requieren reintento`);
+  if (byStatus.rejected > 0)    alerts.push(`❌ ${byStatus.rejected} factura(s) rechazada(s) por la DIAN`);
+  if (daysUntilExpiry !== null && daysUntilExpiry < 30)
+    alerts.push(`📅 La resolución DIAN vence en ${daysUntilExpiry} día(s)`);
+
+  const lines = [
+    `🧾 **Estado DIAN — ${todayStr}**`,
+    ``,
+    `📋 Resolución: ${dianCfg.resolution_prefix || dianCfg.prefix || 'FE'}${fromNum}→${toNum}`,
+    `🔢 Numeración: **${remaining.toLocaleString('es-CO')} disponibles** (${usedPct}% usado)`,
+    expiresAt ? `📅 Vence: ${new Date(expiresAt).toLocaleDateString('es-CO')}` : '',
+    `🌐 Ambiente: ${dianCfg.environment === 'production' ? '**Producción** ✅' : '**Habilitación (pruebas)** 🧪'}`,
+    ``,
+    `📊 **Facturas de hoy** (${invoices.length} total):`,
+    byStatus.accepted    > 0 ? `• ✅ Aceptadas: ${byStatus.accepted}` : '',
+    byStatus.pending     > 0 ? `• ⏳ Pendientes: ${byStatus.pending}` : '',
+    byStatus.contingency > 0 ? `• ⚠️ Contingencia: ${byStatus.contingency}` : '',
+    byStatus.rejected    > 0 ? `• ❌ Rechazadas: ${byStatus.rejected}` : '',
+    invoices.length === 0    ? '• Ninguna factura emitida hoy' : '',
+    alerts.length > 0 ? `\n🚨 **Alertas:**\n${alerts.map(a => `• ${a}`).join('\n')}` : '',
+  ].filter(Boolean).join('\n');
+
+  return {
+    success:    true,
+    configured: true,
+    environment: dianCfg.environment,
+    numbering: { current: currentNum, from: fromNum, to: toNum, remaining, used_pct: usedPct },
+    expires_at:  expiresAt,
+    days_until_expiry: daysUntilExpiry,
+    today: {
+      total:       invoices.length,
+      by_status:   byStatus,
+      invoices:    include_today_invoices ? invoices.slice(0, 10) : [],
+    },
+    alerts,
+    message: lines,
   };
 }
 
