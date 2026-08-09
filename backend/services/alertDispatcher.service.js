@@ -331,6 +331,45 @@ async function sendAlertWhatsApp(alert, org, waConfig) {
 // TWILIO WhatsApp Sandbox
 // Requiere que el número destinatario haya enviado "join <keyword>" al sandbox.
 // =============================================================================
+
+// Cache de ContentSid para evitar recrear el template en cada llamada.
+// Se inicializa desde la variable de entorno TWILIO_CONTENT_SID si existe.
+let _twilioContentSid = process.env.TWILIO_CONTENT_SID || null;
+
+/**
+ * Crea un template genérico en la Content API de Twilio y cachea su SID.
+ * Se llama solo si Twilio devuelve el error 63016 (ContentSid Required).
+ */
+async function ensureTwilioContentSid(credentials) {
+  if (_twilioContentSid) return _twilioContentSid;
+
+  logger.info('[AlertDispatcher/Twilio] Creando ContentSid genérico…');
+  const res = await fetch('https://content.twilio.com/v1/Content', {
+    method:  'POST',
+    headers: {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type':  'application/json',
+    },
+    body: JSON.stringify({
+      friendly_name: 'ferzu_alert_generic',
+      language:      'es',
+      types: {
+        'twilio/text': { body: '{{1}}' },
+      },
+    }),
+  });
+
+  const data = await res.json();
+  if (res.ok && data.sid) {
+    _twilioContentSid = data.sid;
+    logger.info('[AlertDispatcher/Twilio] ContentSid creado', { sid: _twilioContentSid });
+    return _twilioContentSid;
+  }
+
+  // Si falla la creación, lanzar para que el caller maneje el error
+  throw new Error(`No se pudo crear ContentSid: ${data?.message || `HTTP ${res.status}`}`);
+}
+
 async function sendViaTwilio(rawNumbers, text, org) {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken  = process.env.TWILIO_AUTH_TOKEN;
@@ -349,17 +388,40 @@ async function sendViaTwilio(rawNumbers, text, org) {
 
     try {
       logger.info('[AlertDispatcher/Twilio] Enviando mensaje', { to: fullPhone, from });
-      const body = new URLSearchParams({ From: from, To: to, Body: text });
-      const res  = await fetch(url, {
+
+      // Intento 1: envío freeform con Body
+      let bodyParams = new URLSearchParams({ From: from, To: to, Body: text });
+      let res  = await fetch(url, {
         method:  'POST',
         headers: {
           'Authorization': `Basic ${credentials}`,
           'Content-Type':  'application/x-www-form-urlencoded',
         },
-        body: body.toString(),
+        body: bodyParams.toString(),
       });
+      let data = await res.json();
 
-      const data = await res.json();
+      // Si Twilio exige ContentSid (error 63016), crear template y reintentar
+      if (!res.ok && (data?.code === 63016 || data?.message?.includes('ContentSid'))) {
+        logger.warn('[AlertDispatcher/Twilio] ContentSid requerido — creando template genérico…');
+        const contentSid = await ensureTwilioContentSid(credentials);
+
+        bodyParams = new URLSearchParams({
+          From:             from,
+          To:               to,
+          ContentSid:       contentSid,
+          ContentVariables: JSON.stringify({ '1': text }),
+        });
+        res  = await fetch(url, {
+          method:  'POST',
+          headers: {
+            'Authorization': `Basic ${credentials}`,
+            'Content-Type':  'application/x-www-form-urlencoded',
+          },
+          body: bodyParams.toString(),
+        });
+        data = await res.json();
+      }
 
       if (!res.ok) {
         logger.error('[AlertDispatcher/Twilio] Error enviando mensaje', { error: data?.message, code: data?.code, status: res.status });
