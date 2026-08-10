@@ -269,6 +269,9 @@ function TagInput({ values = [], onChange, placeholder, type = 'text' }) {
 // =============================================================================
 function OrgProfileSection({ settings, onSaved }) {
   const org = settings?.org || {}
+  const [name,       setName]       = useState(org.name || org.legal_name || '')
+  const [nit,        setNit]        = useState(org.nit || '')
+  const [nitDv,      setNitDv]      = useState(org.nit_dv || '')
   const [address,    setAddress]    = useState(org.address    || '')
   const [phone,      setPhone]      = useState(org.phone      || '')
   const [taxRegime,  setTaxRegime]  = useState(org.tax_regime || 'No responsable de IVA')
@@ -276,9 +279,15 @@ function OrgProfileSection({ settings, onSaved }) {
   const [feedback,   setFeedback]   = useState(null)
 
   useEffect(() => {
+    const nm   = org.name || org.legal_name || ''
+    const nt   = org.nit       || ''
+    const ntdv = org.nit_dv    || ''
     const addr = org.address    || ''
     const ph   = org.phone      || ''
     const tr   = org.tax_regime || 'No responsable de IVA'
+    setName(nm)
+    setNit(nt)
+    setNitDv(ntdv)
     setAddress(addr)
     setPhone(ph)
     setTaxRegime(tr)
@@ -286,7 +295,7 @@ function OrgProfileSection({ settings, onSaved }) {
     addr ? localStorage.setItem('ferzu_org_address',    addr) : localStorage.removeItem('ferzu_org_address')
     ph   ? localStorage.setItem('ferzu_org_phone',      ph)   : localStorage.removeItem('ferzu_org_phone')
     tr   ? localStorage.setItem('ferzu_org_tax_regime', tr)   : localStorage.removeItem('ferzu_org_tax_regime')
-  }, [org.address, org.phone, org.tax_regime])
+  }, [org.name, org.legal_name, org.nit, org.nit_dv, org.address, org.phone, org.tax_regime])
 
   const showFeedback = (type, msg) => {
     setFeedback({ type, msg })
@@ -296,7 +305,7 @@ function OrgProfileSection({ settings, onSaved }) {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await api.patch('/settings/org', { address, phone, tax_regime: taxRegime })
+      await api.patch('/settings/org', { name, nit, nit_dv: nitDv, address, phone, tax_regime: taxRegime })
       // Persistir en localStorage para que los recibos los lean sin API call
       address   ? localStorage.setItem('ferzu_org_address',    address)    : localStorage.removeItem('ferzu_org_address')
       phone     ? localStorage.setItem('ferzu_org_phone',      phone)      : localStorage.removeItem('ferzu_org_phone')
@@ -322,18 +331,36 @@ function OrgProfileSection({ settings, onSaved }) {
         </div>
       </div>
 
-      {/* Campos de solo lectura (del onboarding) */}
+      {/* Nombre / Razón social y NIT — editables */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">Nombre / Razón social</label>
-          <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700 border border-gray-100">
-            {org.name || org.legal_name || '—'}
-          </div>
+          <label className="text-xs font-medium text-gray-700 mb-1 block">Nombre / Razón social</label>
+          <input
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="Ej: Mi Negocio S.A.S."
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
         </div>
         <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">NIT</label>
-          <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700 border border-gray-100">
-            {org.nit ? `${org.nit}${org.nit_dv ? '-' + org.nit_dv : ''}` : '—'}
+          <label className="text-xs font-medium text-gray-700 mb-1 block">NIT</label>
+          <div className="flex gap-1">
+            <input
+              type="text"
+              value={nit}
+              onChange={e => setNit(e.target.value)}
+              placeholder="900123456"
+              className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+            <input
+              type="text"
+              value={nitDv}
+              onChange={e => setNitDv(e.target.value)}
+              placeholder="DV"
+              maxLength={1}
+              className="w-12 px-2 py-2 border border-gray-200 rounded-lg text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
           </div>
         </div>
       </div>

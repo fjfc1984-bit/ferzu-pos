@@ -323,13 +323,19 @@ router.post('/alerts/test', requireOrg, [
 // Body: { address?, phone?, tax_regime? }
 // =============================================================================
 router.patch('/org', requireOrg, [
+  body('name').optional().isString().trim(),
+  body('nit').optional().isString().trim(),
+  body('nit_dv').optional().isString().trim(),
   body('address').optional().isString().trim(),
   body('phone').optional().isString().trim(),
   body('tax_regime').optional().isString().trim(),
 ], validate, async (req, res) => {
   try {
-    const { address, phone, tax_regime } = req.body;
+    const { name, nit, nit_dv, address, phone, tax_regime } = req.body;
     const updates = {};
+    if (name       !== undefined) updates.name       = name       || null;
+    if (nit        !== undefined) updates.nit        = nit        || null;
+    if (nit_dv     !== undefined) updates.nit_dv     = nit_dv     || null;
     if (address    !== undefined) updates.address    = address    || null;
     if (phone      !== undefined) updates.phone      = phone      || null;
     if (tax_regime !== undefined) updates.tax_regime = tax_regime || null;
