@@ -37,8 +37,9 @@ export async function requireAuth(req, res, next) {
 
     next();
   } catch (err) {
-    logger.error('Auth error', { err });
-    res.status(500).json({ error: 'Error de autenticación' });
+    // Token malformado, red caída o excepción de Supabase → 401, nunca 500
+    logger.warn('Auth error (token inválido/expirado)', { message: err.message });
+    res.status(401).json({ error: 'Token inválido o expirado' });
   }
 }
 
