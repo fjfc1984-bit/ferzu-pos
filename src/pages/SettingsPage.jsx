@@ -4,7 +4,7 @@
 // =============================================================================
 
 import { useState, useEffect } from 'react'
-import { MessageSquare, CheckCircle2, XCircle, Send, Info, ExternalLink, Bell, Mail, Phone, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { MessageSquare, CheckCircle2, XCircle, Send, Info, ExternalLink, Bell, Mail, Phone, Plus, Trash2, ChevronDown, ChevronUp, Building2 } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useTrack } from '../hooks/useTrack.js'
 
@@ -263,6 +263,135 @@ function TagInput({ values = [], onChange, placeholder, type = 'text' }) {
     </div>
   )
 }
+
+// =============================================================================
+// OrgProfileSection — Datos del negocio para recibos/facturas
+// =============================================================================
+function OrgProfileSection({ settings, onSaved }) {
+  const org = settings?.org || {}
+  const [address,    setAddress]    = useState(org.address    || '')
+  const [phone,      setPhone]      = useState(org.phone      || '')
+  const [taxRegime,  setTaxRegime]  = useState(org.tax_regime || 'No responsable de IVA')
+  const [saving,     setSaving]     = useState(false)
+  const [feedback,   setFeedback]   = useState(null)
+
+  useEffect(() => {
+    const addr = org.address    || ''
+    const ph   = org.phone      || ''
+    const tr   = org.tax_regime || 'No responsable de IVA'
+    setAddress(addr)
+    setPhone(ph)
+    setTaxRegime(tr)
+    // Sincronizar localStorage con lo que viene del servidor
+    addr ? localStorage.setItem('ferzu_org_address',    addr) : localStorage.removeItem('ferzu_org_address')
+    ph   ? localStorage.setItem('ferzu_org_phone',      ph)   : localStorage.removeItem('ferzu_org_phone')
+    tr   ? localStorage.setItem('ferzu_org_tax_regime', tr)   : localStorage.removeItem('ferzu_org_tax_regime')
+  }, [org.address, org.phone, org.tax_regime])
+
+  const showFeedback = (type, msg) => {
+    setFeedback({ type, msg })
+    setTimeout(() => setFeedback(null), 4000)
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await api.patch('/settings/org', { address, phone, tax_regime: taxRegime })
+      // Persistir en localStorage para que los recibos los lean sin API call
+      address   ? localStorage.setItem('ferzu_org_address',    address)    : localStorage.removeItem('ferzu_org_address')
+      phone     ? localStorage.setItem('ferzu_org_phone',      phone)      : localStorage.removeItem('ferzu_org_phone')
+      taxRegime ? localStorage.setItem('ferzu_org_tax_regime', taxRegime)  : localStorage.removeItem('ferzu_org_tax_regime')
+      showFeedback('success', 'Datos guardados')
+      onSaved?.()
+    } catch (err) {
+      showFeedback('error', err?.response?.data?.error || 'Error guardando')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+          <Building2 size={20} className="text-blue-600" />
+        </div>
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">Datos del negocio</h2>
+          <p className="text-xs text-gray-500">Se muestran en tus recibos y facturas</p>
+        </div>
+      </div>
+
+      {/* Campos de solo lectura (del onboarding) */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs font-medium text-gray-500 mb-1 block">Nombre / Razón social</label>
+          <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700 border border-gray-100">
+            {org.name || org.legal_name || '—'}
+          </div>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-gray-500 mb-1 block">NIT</label>
+          <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700 border border-gray-100">
+            {org.nit ? `${org.nit}${org.nit_dv ? '-' + org.nit_dv : ''}` : '—'}
+          </div>
+        </div>
+      </div>
+
+      {/* Campos editables */}
+      <div>
+        <label className="text-xs font-medium text-gray-700 mb-1 block">Dirección</label>
+        <input
+          type="text"
+          value={address}
+          onChange={e => setAddress(e.target.value)}
+          placeholder="Ej: Calle 10 #5-30, Medellín"
+          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+        />
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-gray-700 mb-1 block">Teléfono</label>
+        <input
+          type="text"
+          value={phone}
+          onChange={e => setPhone(e.target.value)}
+          placeholder="Ej: 604 123 4567"
+          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+        />
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-gray-700 mb-1 block">Régimen tributario</label>
+        <select
+          value={taxRegime}
+          onChange={e => setTaxRegime(e.target.value)}
+          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+        >
+          <option value="No responsable de IVA">No responsable de IVA</option>
+          <option value="Responsable de IVA">Responsable de IVA</option>
+          <option value="Gran Contribuyente">Gran Contribuyente</option>
+          <option value="Régimen Simple de Tributación">Régimen Simple de Tributación</option>
+        </select>
+      </div>
+
+      {feedback && (
+        <div className={`text-sm px-3 py-2 rounded-lg ${feedback.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+          {feedback.msg}
+        </div>
+      )}
+
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="w-full py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors"
+      >
+        {saving ? 'Guardando…' : 'Guardar datos del negocio'}
+      </button>
+    </div>
+  )
+}
+
 
 function AlertsSection() {
   const [config,        setConfig]        = useState(null)
@@ -581,6 +710,7 @@ export default function SettingsPage() {
         <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-sm text-red-700">{error}</div>
       )}
 
+      <OrgProfileSection settings={settings} onSaved={loadSettings} />
       <WhatsAppSection settings={settings} onSaved={loadSettings} />
       <AlertsSection />
     </div>

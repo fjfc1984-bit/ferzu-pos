@@ -131,29 +131,33 @@ export class ThermalPrinter {
   }
 
   // ── Imprimir recibo ─────────────────────────────────────────────────────────
-  async printReceipt({ order, businessName, branchName, cashierName, nit }) {
+  async printReceipt({ order, businessName, branchName, cashierName, nit, address, phone, taxRegime }) {
     const W = this.charWidth
 
     const {
       order_number,
-      order_items = [],
-      subtotal    = 0,
+      order_items     = [],
+      subtotal        = 0,
       discount_amount = 0,
-      tax_amount  = 0,
-      total       = 0,
+      loyalty_discount = 0,
+      tax_amount      = 0,
+      total           = 0,
       payment_method,
       cash_received,
       change_amount,
       created_at,
+      buyer_nit,
+      buyer_name,
+      buyer_email,
+      cufe,
     } = order
 
-    const metodoPago = {
-      cash:     'Efectivo',
-      card:     'Tarjeta',
-      bold:     'Bold / Nequi',
-      transfer: 'Transferencia',
-      split:    'Mixto',
-    }[payment_method] || payment_method || '—'
+    const METODO = {
+      cash: 'Efectivo', card: 'Tarjeta', card_debit: 'T. Débito',
+      card_credit: 'T. Crédito', bold: 'Bold/Nequi', nequi: 'Nequi',
+      daviplata: 'Daviplata', transfer: 'Transferencia', mixed: 'Mixto',
+    }
+    const metodoPago = METODO[payment_method] || payment_method || '—'
 
     const fecha = new Date(created_at || Date.now()).toLocaleString('es-CO', {
       day: '2-digit', month: '2-digit', year: 'numeric',
@@ -169,31 +173,44 @@ export class ThermalPrinter {
     push(CMD.INIT, CMD.ALIGN_CENTER, CMD.BOLD_ON, CMD.DOUBLE_ON)
     txt(businessName + '\n')
     push(CMD.DOUBLE_OFF)
-    if (nit) txt(`NIT: ${nit}\n`)
+    if (nit)        txt(`NIT: ${nit}\n`)
+    if (taxRegime)  txt(`${taxRegime}\n`)
+    if (address)    txt(`${address}\n`)
+    if (phone)      txt(`Tel: ${phone}\n`)
     if (branchName) txt(branchName + '\n')
     push(CMD.BOLD_OFF)
     txt('================================\n'.slice(0, W + 1))
     txt(`Orden #${order_number || '—'}\n`)
     txt(`${fecha}\n`)
     if (cashierName) txt(`Cajero: ${cashierName}\n`)
+    txt(`Pago: ${metodoPago}\n`)
     txt('================================\n'.slice(0, W + 1))
 
     // Items
     push(CMD.ALIGN_LEFT)
     order_items.forEach(item => {
-      const itemTotal = COP(item.unit_price * item.quantity)
-      txt(pad2cols(`${item.quantity}x ${item.product_name}`, itemTotal, W))
-      if (item.quantity > 1) {
-        txt(`   c/u ${COP(item.unit_price)}\n`)
+      if (item.is_courtesy) {
+        txt(pad2cols(`${item.quantity}x ${item.product_name} *`, 'GRATIS', W))
+      } else {
+        const itemTotal = COP(item.unit_price * item.quantity)
+        txt(pad2cols(`${item.quantity}x ${item.product_name}`, itemTotal, W))
+        if (item.quantity > 1) {
+          txt(`   c/u ${COP(item.unit_price)}\n`)
+        }
       }
     })
 
     txt('--------------------------------\n'.slice(0, W + 1))
 
     // Totales
+    if (discount_amount > 0 || loyalty_discount > 0) {
+      txt(pad2cols('Subtotal:', COP(subtotal + discount_amount + loyalty_discount), W))
+    }
     if (discount_amount > 0) {
-      txt(pad2cols('Subtotal:', COP(subtotal), W))
       txt(pad2cols('Descuento:', `-${COP(discount_amount)}`, W))
+    }
+    if (loyalty_discount > 0) {
+      txt(pad2cols('Puntos:', `-${COP(loyalty_discount)}`, W))
     }
     if (tax_amount > 0) {
       txt(pad2cols('IVA:', COP(tax_amount), W))
@@ -202,18 +219,28 @@ export class ThermalPrinter {
     push(CMD.BOLD_ON)
     txt(pad2cols('TOTAL:', COP(total), W))
     push(CMD.BOLD_OFF)
-    txt(pad2cols('Método:', metodoPago, W))
+    txt(pad2cols('Metodo:', metodoPago, W))
 
-    if (payment_method === 'cash' && cash_received) {
+    if (cash_received) {
       txt(pad2cols('Recibido:', COP(cash_received), W))
       txt(pad2cols('Cambio:', COP(change_amount || 0), W))
+    }
+
+    // Datos comprador (factura electrónica)
+    if (buyer_nit || buyer_name) {
+      txt('--------------------------------\n'.slice(0, W + 1))
+      txt('FACTURA ELECTRONICA\n')
+      if (buyer_nit)   txt(`NIT/CC: ${buyer_nit}\n`)
+      if (buyer_name)  txt(`Nombre: ${buyer_name}\n`)
+      if (buyer_email) txt(`Email: ${buyer_email}\n`)
+      if (cufe)        txt(`CUFE: ${cufe.slice(0, W - 6)}...\n`)
     }
 
     txt('================================\n'.slice(0, W + 1))
 
     // Footer
     push(CMD.ALIGN_CENTER)
-    txt('¡Gracias por tu compra!\n')
+    txt('¡Gracias por su compra!\n')
     txt('Powered by FERZU POS\n')
     txt('\n\n\n')
 

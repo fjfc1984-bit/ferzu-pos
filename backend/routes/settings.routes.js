@@ -37,7 +37,7 @@ router.get('/', requireOrg, async (req, res) => {
   try {
     const { data: org } = await supabaseAdmin
       .from('organizations')
-      .select('name, legal_name, nit, nit_dv, email, settings')
+      .select('name, legal_name, nit, nit_dv, email, address, phone, tax_regime, settings')
       .eq('id', req.organizationId)
       .single();
 
@@ -50,6 +50,9 @@ router.get('/', requireOrg, async (req, res) => {
         nit:        org?.nit,
         nit_dv:     org?.nit_dv,
         email:      org?.email,
+        address:    org?.address    || '',
+        phone:      org?.phone      || '',
+        tax_regime: org?.tax_regime || '',
       },
       whatsapp: {
         configured:      isWhatsAppConfigured(),
@@ -310,6 +313,43 @@ router.post('/alerts/test', requireOrg, [
   } catch (err) {
     logger.error('[Settings] POST /alerts/test error:', { err: err.message });
     res.status(500).json({ error: 'Error enviando alerta de prueba' });
+  }
+});
+
+
+// =============================================================================
+// PATCH /api/settings/org
+// Actualiza datos de contacto del negocio (para recibos/facturas)
+// Body: { address?, phone?, tax_regime? }
+// =============================================================================
+router.patch('/org', requireOrg, [
+  body('address').optional().isString().trim(),
+  body('phone').optional().isString().trim(),
+  body('tax_regime').optional().isString().trim(),
+], validate, async (req, res) => {
+  try {
+    const { address, phone, tax_regime } = req.body;
+    const updates = {};
+    if (address    !== undefined) updates.address    = address    || null;
+    if (phone      !== undefined) updates.phone      = phone      || null;
+    if (tax_regime !== undefined) updates.tax_regime = tax_regime || null;
+
+    if (Object.keys(updates).length === 0) {
+      return res.json({ ok: true, message: 'Sin cambios' });
+    }
+
+    const { error } = await supabaseAdmin
+      .from('organizations')
+      .update(updates)
+      .eq('id', req.organizationId);
+
+    if (error) throw error;
+
+    logger.info('[Settings] PATCH /org OK', { org: req.organizationId, updates });
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error('[Settings] PATCH /org error:', { err: err.message });
+    res.status(500).json({ error: 'Error actualizando datos del negocio' });
   }
 });
 

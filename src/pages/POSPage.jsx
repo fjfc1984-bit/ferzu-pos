@@ -1179,6 +1179,8 @@ function PaymentModal({ onClose }) {
   const [tipPct,            setTipPct]            = useState(null); // null | 5 | 10 | 15 | 20 | 'custom'
   const [tipCustom,         setTipCustom]         = useState('');
   const [frozenTip,         setFrozenTip]         = useState(0);
+  const [frozenOrder,       setFrozenOrder]       = useState(null);  // orden guardada para imprimir
+  const [frozenMethod,      setFrozenMethod]      = useState('');    // método de pago para recibo
   // F9-A: Fidelización
   const [loyaltyData,       setLoyaltyData]       = useState(null);   // { balance, value_cop, settings }
   const [redeemEnabled,     setRedeemEnabled]     = useState(false);  // toggle del cajero
@@ -1278,6 +1280,8 @@ function PaymentModal({ onClose }) {
         setFrozenCustomer(customerName || '');
         setFrozenTip(tipAmount);
         const order = await processPaymentMixed(mixCashAmt, mixCardAmt, tipAmount);
+        setFrozenOrder(order || null);
+        setFrozenMethod('mixed');
         setFinalChange(0);
         setStep(order?.offline ? 'done-offline' : 'done');
         track('sale_completed', 'pos', { method: 'mixed', total: totalFinal, tip: tipAmount, loyalty_discount: loyaltyDiscount, items: items.length });
@@ -1296,6 +1300,8 @@ function PaymentModal({ onClose }) {
       setFrozenCustomer(customerName || '');
       setFrozenTip(tipAmount);
       const order = await processPayment(method, method === 'cash' ? cashAmt : totalFinal, tipAmount, loyaltyOpts, invoiceOverrides);
+      setFrozenOrder(order || null);
+      setFrozenMethod(method);
       setFinalChange(change);
       setStep(order?.offline ? 'done-offline' : 'done');
       track('sale_completed', 'pos', { method, total: totalFinal, tip: tipAmount, loyalty_discount: loyaltyDiscount, items: items.length });
@@ -1310,77 +1316,124 @@ function PaymentModal({ onClose }) {
   }
 
   async function handlePrint() {
-    // ── Ruta 1: Impresora térmica ESC/POS via Web USB ──────────────────────
+    // ── Datos del negocio ──────────────────────────────────────────────────
     const businessName = user?.organizations?.business_name
       || localStorage.getItem('ferzu_org_name')
       || 'FERZU POS';
-    const branchName  = localStorage.getItem('ferzu_branch_name') || '';
-    const cashierName = user?.full_name || '';
-    const orgNit      = user?.organizations?.nit    || '';
-    const orgNitDv    = user?.organizations?.nit_dv || '';
-    const nitStr      = orgNit
-      ? `NIT: ${orgNit}${orgNitDv ? '-' + orgNitDv : ''}`
-      : '';
+    const branchName   = localStorage.getItem('ferzu_branch_name') || '';
+    const cashierName  = user?.full_name || '';
+    const orgNit       = user?.organizations?.nit    || '';
+    const orgNitDv     = user?.organizations?.nit_dv || '';
+    const nitStr       = orgNit ? `${orgNit}${orgNitDv ? '-' + orgNitDv : ''}` : '';
+    const orgAddress   = localStorage.getItem('ferzu_org_address')    || '';
+    const orgPhone     = localStorage.getItem('ferzu_org_phone')      || '';
+    const taxRegime    = localStorage.getItem('ferzu_org_tax_regime') || '';
 
+    const receiptTotal = frozenTotal || totals.total;
+    const receiptItems = frozenItems.length > 0 ? frozenItems : items;
+    const cashAmt      = Number(cashReceived) || 0;
+
+    // ── Ruta 1: Impresora térmica ESC/POS via Web USB ──────────────────────
     const orderData = {
-      order_number:    null,
-      order_items:     items.map(i => ({
-        product_name: i.product_name,
-        quantity:     i.quantity,
-        unit_price:   i.unit_price,
+      order_number:    frozenOrder?.order_number || null,
+      order_items:     receiptItems.map(i => ({
+        product_name:  i.product_name,
+        quantity:      i.quantity,
+        unit_price:    i.unit_price,
+        vat_rate:      i.vat_rate || 0,
+        is_courtesy:   i.is_courtesy || false,
       })),
       subtotal:        totals.subtotal,
       discount_amount: totals.discount_amount,
+      loyalty_discount: frozenOrder?.loyalty_discount || 0,
       tax_amount:      totals.tax_total,
       tip_amount:      frozenTip,
-      total:           frozenTotal || totals.total,
-      payment_method:  method,
-      cash_received:   method === 'cash' ? cashAmt : null,
+      total:           receiptTotal,
+      payment_method:  frozenMethod || method,
+      cash_received:   frozenMethod === 'cash' || method === 'cash' ? cashAmt : null,
       change_amount:   finalChange,
+      buyer_nit:       frozenOrder?.buyer_nit   || invoiceNit   || '',
+      buyer_name:      frozenOrder?.buyer_name  || invoiceName  || '',
+      buyer_email:     frozenOrder?.buyer_email || invoiceEmail || '',
+      cufe:            frozenOrder?.cufe || '',
       created_at:      new Date().toISOString(),
     };
 
-    const printed = await printReceipt({ order: orderData, businessName, branchName, cashierName, nit: nitStr });
+    const printed = await printReceipt({
+      order: orderData, businessName, branchName, cashierName,
+      nit: nitStr, address: orgAddress, phone: orgPhone, taxRegime,
+    });
     if (printed) return;
 
     // ── Ruta 2: Fallback window.print() con CSS de recibo ──────────────────
     const existing = document.getElementById('print-receipt');
     if (existing) existing.remove();
 
-    // Calcular % de IVA para mostrar en etiqueta (ej: "IVA 19%")
-    const vatRates = [...new Set(items.filter(i => i.vat_rate > 0).map(i => i.vat_rate))];
+    const vatRates = [...new Set(receiptItems.filter(i => i.vat_rate > 0).map(i => i.vat_rate))];
     const ivaLabel = vatRates.length === 1 ? `IVA ${vatRates[0]}%` : 'IVA';
-    const receiptTotal  = frozenTotal || totals.total;
-    const receiptItems  = frozenItems.length > 0 ? frozenItems : items;
+
+    const METODO = {
+      cash: 'Efectivo', card: 'Tarjeta', card_debit: 'Tarjeta débito',
+      card_credit: 'Tarjeta crédito', bold: 'Bold / Nequi', nequi: 'Nequi',
+      daviplata: 'Daviplata', transfer: 'Transferencia', mixed: 'Pago mixto',
+    };
+    const metodoPago = METODO[frozenMethod || method] || frozenMethod || method || '—';
+    const orderNum   = frozenOrder?.order_number || '—';
+    const fecha      = new Date().toLocaleString('es-CO', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    const receiptCustomer = frozenCustomer || customerName || '';
+    const loyaltyDisc = frozenOrder?.loyalty_discount || 0;
 
     const itemLines = [];
-    if (customerName) itemLines.push(`<div class="receipt-row"><span>Cliente</span><span>${customerName}</span></div>`);
     receiptItems.forEach(i => {
-      itemLines.push(`<div class="receipt-row"><span>${i.product_name} x${i.quantity}</span><span>$${(i.unit_price * i.quantity).toLocaleString('es-CO')}</span></div>`);
-      if (i.quantity > 1) {
+      const isCourtesy = i.is_courtesy;
+      const price = isCourtesy ? 'GRATIS' : `$${(i.unit_price * i.quantity).toLocaleString('es-CO')}`;
+      itemLines.push(`<div class="receipt-row"${isCourtesy ? ' style="color:#999;text-decoration:line-through"' : ''}><span>${i.product_name} x${i.quantity}${isCourtesy ? ' ★' : ''}</span><span>${price}</span></div>`);
+      if (i.quantity > 1 && !isCourtesy) {
         itemLines.push(`<div class="receipt-row" style="font-size:9px;color:#555"><span>  c/u</span><span>$${Number(i.unit_price).toLocaleString('es-CO')}</span></div>`);
       }
     });
+
+    // Datos del comprador (factura electrónica)
+    const hasBuyer  = invoiceRequired && (invoiceNit || invoiceName);
+    const buyerRows = hasBuyer ? `
+      <div class="receipt-divider"></div>
+      <div class="receipt-row" style="font-size:9px;font-weight:600"><span colspan="2">FACTURA — DATOS COMPRADOR</span></div>
+      ${invoiceNit   ? `<div class="receipt-row" style="font-size:9px"><span>${invoiceDocType}</span><span>${invoiceNit}</span></div>` : ''}
+      ${invoiceName  ? `<div class="receipt-row" style="font-size:9px"><span>Nombre</span><span>${invoiceName}</span></div>` : ''}
+      ${invoiceEmail ? `<div class="receipt-row" style="font-size:9px"><span>Email</span><span>${invoiceEmail}</span></div>` : ''}
+    ` : '';
 
     const div = document.createElement('div');
     div.id = 'print-receipt';
     div.style.display = 'none';
     div.innerHTML = `
       <div class="receipt-logo">${businessName}</div>
-      ${nitStr ? `<div class="receipt-nit">${nitStr}</div>` : ''}
+      ${nitStr     ? `<div class="receipt-nit">NIT: ${nitStr}</div>` : ''}
+      ${taxRegime  ? `<div class="receipt-nit">${taxRegime}</div>` : ''}
+      ${orgAddress ? `<div class="receipt-nit">${orgAddress}</div>` : ''}
+      ${orgPhone   ? `<div class="receipt-nit">Tel: ${orgPhone}</div>` : ''}
+      ${branchName ? `<div class="receipt-nit" style="font-weight:600">${branchName}</div>` : ''}
       <div class="receipt-divider"></div>
-      <div class="receipt-row" style="font-size:9px"><span>Fecha</span><span>${new Date().toLocaleString('es-CO', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span></div>
+      <div class="receipt-row" style="font-size:9px"><span>Orden</span><span>#${orderNum}</span></div>
+      <div class="receipt-row" style="font-size:9px"><span>Fecha</span><span>${fecha}</span></div>
+      ${cashierName    ? `<div class="receipt-row" style="font-size:9px"><span>Cajero</span><span>${cashierName}</span></div>` : ''}
+      <div class="receipt-row" style="font-size:9px"><span>Pago</span><span>${metodoPago}</span></div>
+      ${receiptCustomer ? `<div class="receipt-row" style="font-size:9px"><span>Cliente</span><span>${receiptCustomer}</span></div>` : ''}
       <div class="receipt-divider"></div>
       ${itemLines.join('')}
       <div class="receipt-divider"></div>
-      ${totals.discount_amount > 0 ? `<div class="receipt-row"><span>Subtotal</span><span>$${totals.subtotal.toLocaleString('es-CO')}</span></div>` : ''}
+      ${(totals.discount_amount > 0 || loyaltyDisc > 0) ? `<div class="receipt-row"><span>Subtotal</span><span>$${(totals.subtotal + totals.discount_amount + loyaltyDisc).toLocaleString('es-CO')}</span></div>` : ''}
       ${totals.discount_amount > 0 ? `<div class="receipt-row"><span>Descuento</span><span>-$${totals.discount_amount.toLocaleString('es-CO')}</span></div>` : ''}
+      ${loyaltyDisc > 0 ? `<div class="receipt-row"><span>Puntos canjeados</span><span>-$${loyaltyDisc.toLocaleString('es-CO')}</span></div>` : ''}
       ${totals.tax_total > 0 ? `<div class="receipt-row"><span>${ivaLabel}</span><span>$${totals.tax_total.toLocaleString('es-CO')}</span></div>` : ''}
       ${frozenTip > 0 ? `<div class="receipt-row"><span>Propina</span><span>+$${frozenTip.toLocaleString('es-CO')}</span></div>` : ''}
       <div class="receipt-row receipt-total"><span>TOTAL</span><span>$${receiptTotal.toLocaleString('es-CO')}</span></div>
+      ${(frozenMethod === 'cash' || method === 'cash') && cashAmt > 0 ? `<div class="receipt-row"><span>Recibido</span><span>$${cashAmt.toLocaleString('es-CO')}</span></div>` : ''}
       ${finalChange > 0 ? `<div class="receipt-change">Vuelto: $${finalChange.toLocaleString('es-CO')}</div>` : ''}
+      ${buyerRows}
       <div class="receipt-divider"></div>
       <div class="receipt-footer">¡Gracias por su compra!</div>
+      <div class="receipt-footer" style="font-size:8px;color:#bbb">Powered by FERZU POS</div>
     `;
     document.body.appendChild(div);
     window.print();
