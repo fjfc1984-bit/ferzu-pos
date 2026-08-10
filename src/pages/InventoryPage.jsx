@@ -580,6 +580,7 @@ function ProductForm({ product, organizationId, branchId, categories, niche = 'g
         vat_included:    form.vat_included,                  // columna real en DB
         description:     form.description || null,
         min_stock:       Math.round(Number(form.min_stock || '5')),  // columna en products
+        track_inventory: form.item_type === 'product',               // true para productos físicos
         is_active:       true,
       };
 
@@ -601,14 +602,18 @@ function ProductForm({ product, organizationId, branchId, categories, niche = 'g
         }
         // Crear registro de inventario inicial
         const initialQty = Math.round(Number(form.initial_stock || '0'));
-        await supabase.from('inventory').insert({
+        const { error: invErr } = await supabase.from('inventory').upsert({
           product_id: productId,
           branch_id:  branchId,
           quantity:   initialQty,
-        });
+        }, { onConflict: 'product_id,branch_id' });
+        if (invErr) {
+          console.error('inventory upsert error:', invErr);
+          toast.error(`Producto creado pero stock no se guardó: ${invErr.message}`);
+        }
 
         // Registrar movimiento inicial si > 0
-        if (initialQty > 0) {
+        if (initialQty > 0 && !invErr) {
           await supabase.from('inventory_movements').insert({
             product_id:     productId,
             branch_id:      branchId,
