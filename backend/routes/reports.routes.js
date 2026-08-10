@@ -94,7 +94,7 @@ function buildDailyReport(orders, date) {
       const key  = item.product_id || item.product_name;
       const name = item.product_name || 'Producto sin nombre';
       const qty  = Number(item.quantity)    || 0;
-      const tot  = Number(item.total_price) || 0;
+      const tot  = Number(item.subtotal) || 0;
       if (!productMap[key]) productMap[key] = { name, qty: 0, revenue: 0 };
       productMap[key].qty     += qty;
       productMap[key].revenue += tot;
@@ -198,7 +198,7 @@ router.get('/daily', async (req, res) => {
         id, total, subtotal, tax_total, discount_amount, tip_amount,
         courtesy_amount, is_courtesy, metadata, status, created_at,
         payments(payment_method, amount),
-        order_items(product_id, product_name, quantity, unit_price, total_price)
+        order_items(product_id, product_name, quantity, unit_price, subtotal)
       `)
       .eq('branch_id', branch_id)
       .eq('status', 'completed')
@@ -275,7 +275,7 @@ router.get('/weekly', async (req, res) => {
         id, total, subtotal, tax_total, discount_amount, tip_amount,
         courtesy_amount, is_courtesy, metadata, status, created_at,
         payments(payment_method, amount),
-        order_items(product_id, product_name, quantity, unit_price, total_price)
+        order_items(product_id, product_name, quantity, unit_price, subtotal)
       `)
       .eq('branch_id', branch_id)
       .eq('status', 'completed')
@@ -372,7 +372,7 @@ router.post('/daily/send-email', async (req, res) => {
 
     let query = supabaseAdmin
       .from('orders')
-      .select('id, total, tax_total, discount_amount, metadata, created_at, payments(payment_method, amount), order_items(product_name, quantity, total_price)')
+      .select('id, total, tax_total, discount_amount, metadata, created_at, payments(payment_method, amount), order_items(product_name, quantity, subtotal)')
       .eq('status', 'completed')
       .gte('created_at', dayStart)
       .lt('created_at', dayEnd);
@@ -539,7 +539,7 @@ router.get('/period', async (req, res) => {
         id, total, subtotal, tax_total, discount_amount, tip_amount,
         metadata, status, created_at,
         payments(payment_method, amount),
-        order_items(product_id, product_name, quantity, unit_price, total_price)
+        order_items(product_id, product_name, quantity, unit_price, subtotal)
       `)
       .eq('branch_id', branch_id)
       .eq('status', 'completed')
@@ -590,7 +590,7 @@ router.get('/period', async (req, res) => {
         const name = item.product_name || 'Sin nombre';
         if (!productMap[key]) productMap[key] = { name, qty: 0, revenue: 0 };
         productMap[key].qty     += Number(item.quantity) || 0;
-        productMap[key].revenue += Number(item.total_price) || 0;
+        productMap[key].revenue += Number(item.subtotal) || 0;
       }
     }
 
