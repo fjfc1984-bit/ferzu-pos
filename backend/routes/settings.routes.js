@@ -333,7 +333,7 @@ router.patch('/org', requireOrg, [
   try {
     const { name, nit, nit_dv, address, phone, tax_regime } = req.body;
     const updates = {};
-    if (name       !== undefined) updates.name       = name       || null;
+    if (name       !== undefined) updates.legal_name  = name       || null;  // 'name' column has RLS restrictions, use legal_name
     if (nit        !== undefined) updates.nit        = nit        || null;
     if (nit_dv     !== undefined) updates.nit_dv     = nit_dv     || null;
     if (address    !== undefined) updates.address    = address    || null;
