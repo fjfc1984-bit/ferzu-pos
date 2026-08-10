@@ -84,7 +84,7 @@ function buildDailyReport(orders, date) {
     hourMap[hour].revenue += rev;
 
     // Agrupar por método de pago (desde payments[] join o metadata)
-    const pm = order.payments?.[0]?.method || order.metadata?.payment_method || 'other';
+    const pm = order.payments?.[0]?.payment_method || order.metadata?.payment_method || 'other';
     if (!paymentMap[pm]) paymentMap[pm] = { method: pm, label: PAYMENT_LABELS[pm] || pm, orders: 0, revenue: 0 };
     paymentMap[pm].orders  += 1;
     paymentMap[pm].revenue += rev;
@@ -197,7 +197,7 @@ router.get('/daily', async (req, res) => {
       .select(`
         id, total, subtotal, tax_total, discount_amount, tip_amount,
         courtesy_amount, is_courtesy, metadata, status, created_at,
-        payments(method, amount),
+        payments(payment_method, amount),
         order_items(product_id, product_name, quantity, unit_price, total_price)
       `)
       .eq('branch_id', branch_id)
@@ -274,7 +274,7 @@ router.get('/weekly', async (req, res) => {
       .select(`
         id, total, subtotal, tax_total, discount_amount, tip_amount,
         courtesy_amount, is_courtesy, metadata, status, created_at,
-        payments(method, amount),
+        payments(payment_method, amount),
         order_items(product_id, product_name, quantity, unit_price, total_price)
       `)
       .eq('branch_id', branch_id)
@@ -372,7 +372,7 @@ router.post('/daily/send-email', async (req, res) => {
 
     let query = supabaseAdmin
       .from('orders')
-      .select('id, total, tax_total, discount_amount, metadata, created_at, payments(method, amount), order_items(product_name, quantity, total_price)')
+      .select('id, total, tax_total, discount_amount, metadata, created_at, payments(payment_method, amount), order_items(product_name, quantity, total_price)')
       .eq('status', 'completed')
       .gte('created_at', dayStart)
       .lt('created_at', dayEnd);
@@ -538,7 +538,7 @@ router.get('/period', async (req, res) => {
       .select(`
         id, total, subtotal, tax_total, discount_amount, tip_amount,
         metadata, status, created_at,
-        payments(method, amount),
+        payments(payment_method, amount),
         order_items(product_id, product_name, quantity, unit_price, total_price)
       `)
       .eq('branch_id', branch_id)
@@ -579,7 +579,7 @@ router.get('/period', async (req, res) => {
       dayMap[dayKey].revenue += rev;
 
       // Por método de pago
-      const pm = o.payments?.[0]?.method || o.metadata?.payment_method || 'other';
+      const pm = o.payments?.[0]?.payment_method || o.metadata?.payment_method || 'other';
       if (!paymentMap[pm]) paymentMap[pm] = { method: pm, label: PAYMENT_LABELS[pm] || pm, orders: 0, revenue: 0 };
       paymentMap[pm].orders++;
       paymentMap[pm].revenue += rev;
