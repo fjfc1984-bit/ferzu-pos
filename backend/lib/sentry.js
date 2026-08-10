@@ -40,8 +40,9 @@ export function initSentry(app) {
  * Middleware de request tracking — montar ANTES de las rutas
  */
 export const sentryRequestHandler = () => {
-  if (!DSN) return (req, res, next) => next()
-  return Sentry.expressRequestHandler()
+  // @sentry/node v8: el request tracking es automático via expressIntegration
+  // expressRequestHandler() fue eliminado en v8
+  return (req, res, next) => next()
 }
 
 /**
