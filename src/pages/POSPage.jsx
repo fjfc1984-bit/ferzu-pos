@@ -431,9 +431,9 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
 
   const stockStatus = (product) => {
     if (!product.track_inventory) return null;
-    const qty = product.current_stock ?? 0;
-    if (qty === 0)  return 'out';
-    if (qty <= (product.min_stock || 0)) return 'low';
+    if (product.current_stock === null) return null; // sin dato → no bloquear
+    if (product.current_stock === 0)    return 'out';
+    if (product.current_stock <= (product.min_stock || 0)) return 'low';
     return 'ok';
   };
 
@@ -507,13 +507,13 @@ function ProductGrid({ activeCategory, onCategoryChange, organizationId, branchI
               <button
                 key={`fav-${p.id}`}
                 onClick={() => {
-                  if (p.track_inventory && (p.current_stock ?? 0) === 0) {
+                  if (p.track_inventory && p.current_stock === 0) {
                     toast.error(`${p.name || 'Producto'} está agotado`, { icon: '🚫' });
                     return;
                   }
                   handleProductClick(p);
                 }}
-                disabled={p.track_inventory && (p.current_stock ?? 0) === 0}
+                disabled={p.track_inventory && p.current_stock === 0}
                 className="shrink-0 flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl bg-white border border-gray-200 hover:border-brand-400 hover:bg-brand-50 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
                 style={{ minWidth:'72px', maxWidth:'80px' }}>
                 <span className="text-xl leading-none">
@@ -684,7 +684,7 @@ function VariantPickerModal({ product, branchId, onSelect, onClose }) {
           ) : (
             variants.map(v => {
               const price        = v.price ?? product.price_with_vat ?? product.price;
-              const outOfStock   = product.track_inventory && (v.current_stock ?? 0) === 0;
+              const outOfStock   = product.track_inventory && v.current_stock === 0;
               const lowStock     = product.track_inventory && v.current_stock != null && v.current_stock > 0 && v.current_stock <= (product.min_stock || 0);
               return (
                 <button
