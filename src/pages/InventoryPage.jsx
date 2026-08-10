@@ -26,6 +26,7 @@ import { supabase }      from '../lib/supabase.js';
 import { api }           from '../lib/api.js';
 import { useAuth }       from '../context/AuthContext.jsx';
 import { usePOS }        from '../context/POSContext.jsx';
+import { useBranchNiche } from '../hooks/useBranchNiche.js';
 import { formatCOP }     from '../lib/math.js';
 import toast             from 'react-hot-toast';
 import VATClassifier, { RATE_LABELS } from '../components/dian/VATClassifier.jsx';
@@ -135,6 +136,7 @@ export default function InventoryPage() {
 // =============================================================================
 
 function ProductList({ organizationId, branchId }) {
+  const { branchNiche } = useBranchNiche();
   const [products,  setProducts]  = useState([]);
   const [inventory, setInventory] = useState({});  // { product_id: { quantity, min_stock } }
   const [categories, setCategories] = useState([]);
@@ -398,6 +400,8 @@ function ProductList({ organizationId, branchId }) {
           organizationId={organizationId}
           branchId={branchId}
           categories={categories}
+          niche={branchNiche}
+          onCategoryCreated={cat => setCategories(prev => [...prev, cat])}
           onClose={() => { setShowForm(false); setEditProd(null); }}
           onSaved={loadAll}
         />
@@ -429,8 +433,58 @@ function ProductList({ organizationId, branchId }) {
 // SECCIÓN 3: ProductForm — Formulario crear / editar producto
 // =============================================================================
 
-function ProductForm({ product, organizationId, branchId, categories, onClose, onSaved }) {
+// Sugerencias de categorías por nicho (emoji + nombre)
+const NICHE_PRESETS = {
+  barbershop: ['✂️ Cortes', '🧔 Barba', '🎨 Coloración', '💆 Tratamientos', '💅 Manicura', '🧴 Productos'],
+  workshop:   ['🔧 Mecánica', '⚡ Eléctrico', '🛞 Llantas y frenos', '🎨 Pintura', '🔩 Repuestos', '🧰 Mano de obra'],
+  restaurant: ['🍽️ Platos principales', '🥗 Entradas', '🍰 Postres', '🥤 Bebidas', '🔥 Especiales', '🍱 Combos'],
+  minimarket: ['🥤 Bebidas', '🍫 Dulces y snacks', '🧹 Aseo', '🥫 Enlatados', '🧴 Cuidado personal', '🥩 Frescos'],
+  general:    ['🏷️ General', '⭐ Destacados', '🆕 Novedades', '💰 Ofertas', '📦 Sin clasificar'],
+};
+const CAT_COLORS = ['#6b7280','#dc2626','#ea580c','#d97706','#65a30d','#0d9488','#0891b2','#7c3aed','#db2777'];
+
+function ProductForm({ product, organizationId, branchId, categories, niche = 'general', onCategoryCreated, onClose, onSaved }) {
   const isEdit = !!product;
+  // Estado local de categorías — se actualiza al crear una nueva sin recargar todo
+  const [localCats, setLocalCats] = useState(categories);
+  const [showCatPicker, setShowCatPicker] = useState(false);
+  const [newCatName,   setNewCatName]   = useState('');
+  const [newCatColor,  setNewCatColor]  = useState('#0d9488');
+  const [savingCat,    setSavingCat]    = useState(false);
+  const catPickerRef = useRef(null);
+
+  // Sincronizar si el padre actualiza categories (ej. navegación)
+  useEffect(() => { setLocalCats(categories); }, [categories]);
+
+  // Cerrar picker al click fuera
+  useEffect(() => {
+    function handleClick(e) {
+      if (catPickerRef.current && !catPickerRef.current.contains(e.target)) setShowCatPicker(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  async function handleCreateCat(name, color) {
+    const trimmed = name.trim().replace(/^[^\w]+/, '').trim() || name.trim();
+    if (!trimmed) return;
+    setSavingCat(true);
+    try {
+      const { data } = await api.post('/products/categories', {
+        name: name.trim(),
+        color: color || newCatColor,
+        niche: niche === 'general' ? ['general'] : [niche, 'general'],
+      });
+      setLocalCats(prev => [...prev, data]);
+      onCategoryCreated?.(data);
+      update('category_id', data.id);
+      setNewCatName('');
+      setShowCatPicker(false);
+      toast.success(`Categoría "${data.name}" creada`);
+    } catch { toast.error('Error al crear categoría'); }
+    finally { setSavingCat(false); }
+  }
+
   const [form, setForm] = useState({
     name:         product?.name         || '',
     sku:          product?.sku          || '',
@@ -687,14 +741,104 @@ function ProductForm({ product, organizationId, branchId, categories, onClose, o
             </span>
           </label>
 
-          {/* Categoría */}
-          <div>
+          {/* Categoría — picker enriquecido */}
+          <div className="relative" ref={catPickerRef}>
             <label className="text-xs font-medium text-gray-500 mb-1.5 block">Categoría</label>
-            <select value={form.category_id} onChange={e => update('category_id', e.target.value)}
-              className="w-full h-10 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-brand-400">
-              <option value="">Sin categoría</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+
+            {/* Botón selector */}
+            <button type="button" onClick={() => setShowCatPicker(v => !v)}
+              className="w-full h-10 border border-gray-200 rounded-xl px-3 text-sm flex items-center justify-between bg-white hover:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-400 transition-colors">
+              {form.category_id
+                ? (() => { const c = localCats.find(x => x.id === form.category_id);
+                    return c
+                      ? <span className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: c.color || '#6b7280' }} />
+                          <span className="font-medium text-gray-800">{c.name}</span>
+                        </span>
+                      : <span className="text-gray-400">Sin categoría</span>; })()
+                : <span className="text-gray-400">Sin categoría</span>
+              }
+              <ChevronDown size={14} className="text-gray-400 flex-shrink-0" />
+            </button>
+
+            {/* Dropdown */}
+            {showCatPicker && (
+              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden">
+
+                {/* Lista de categorías existentes */}
+                <div className="max-h-44 overflow-y-auto p-2 space-y-0.5">
+                  <button type="button" onClick={() => { update('category_id', ''); setShowCatPicker(false); }}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-sm flex items-center gap-2 transition-colors ${!form.category_id ? 'bg-brand-50 text-brand-700 font-medium' : 'hover:bg-gray-50 text-gray-500'}`}>
+                    <span className="w-2.5 h-2.5 rounded-full bg-gray-300 flex-shrink-0" />
+                    Sin categoría
+                  </button>
+                  {localCats.map(c => (
+                    <button key={c.id} type="button"
+                      onClick={() => { update('category_id', c.id); setShowCatPicker(false); }}
+                      className={`w-full text-left px-3 py-2 rounded-xl text-sm flex items-center gap-2 transition-colors ${form.category_id === c.id ? 'bg-brand-50 text-brand-700 font-medium' : 'hover:bg-gray-50 text-gray-700'}`}>
+                      <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: c.color || '#6b7280' }} />
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Sugerencias rápidas por nicho (solo si hay presets no creados aún) */}
+                {(() => {
+                  const presets = NICHE_PRESETS[niche] || NICHE_PRESETS.general;
+                  const existing = new Set(localCats.map(c => c.name.toLowerCase()));
+                  const suggestions = presets.filter(p => !existing.has(p.toLowerCase()) && !existing.has(p.replace(/^.+? /, '').toLowerCase()));
+                  if (!suggestions.length) return null;
+                  return (
+                    <div className="border-t border-gray-100 p-2">
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-2 pb-1.5">
+                        ✨ Sugerencias para tu negocio
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 px-1">
+                        {suggestions.map(s => (
+                          <button key={s} type="button"
+                            onClick={() => handleCreateCat(s, newCatColor)}
+                            disabled={savingCat}
+                            className="text-xs px-2.5 py-1 rounded-full border border-dashed border-brand-300 text-brand-600 bg-brand-50/50 hover:bg-brand-100 transition-colors disabled:opacity-50">
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Crear categoría nueva */}
+                <div className="border-t border-gray-100 p-2 space-y-2">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-1">
+                    + Nueva categoría
+                  </p>
+                  {/* Paleta de colores */}
+                  <div className="flex gap-1.5 px-1">
+                    {CAT_COLORS.map(col => (
+                      <button key={col} type="button" onClick={() => setNewCatColor(col)}
+                        className={`w-5 h-5 rounded-full flex-shrink-0 transition-transform ${newCatColor === col ? 'scale-125 ring-2 ring-offset-1 ring-gray-400' : 'hover:scale-110'}`}
+                        style={{ background: col }} />
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      value={newCatName}
+                      onChange={e => setNewCatName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateCat(newCatName, newCatColor); } }}
+                      placeholder="Ej: Bebidas, Cortes, Repuestos…"
+                      className="flex-1 h-8 border border-gray-200 rounded-lg px-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-400"
+                    />
+                    <button type="button"
+                      onClick={() => handleCreateCat(newCatName, newCatColor)}
+                      disabled={!newCatName.trim() || savingCat}
+                      className="h-8 px-3 bg-brand-600 text-white text-xs font-medium rounded-lg hover:bg-brand-700 disabled:opacity-40 transition-colors flex items-center gap-1">
+                      {savingCat ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                      Crear
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Stock inicial (solo al crear) */}
