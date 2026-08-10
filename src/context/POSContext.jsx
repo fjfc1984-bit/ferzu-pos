@@ -66,14 +66,28 @@ function computeTotals(items, discount, courtesy) {
   const isOrderCourtesy = courtesy?.scope === 'order'
 
   for (const item of items) {
-    const sub     = itemSubtotal(item.unit_price, item.quantity)
-    const itemVat = item.vat_rate > 0 ? Math.round(sub * (item.vat_rate / 100)) : 0
+    const full = itemSubtotal(item.unit_price, item.quantity)
+    // Si vat_included===true (defecto), el precio YA contiene IVA → extrae la base
+    // Si vat_included===false, el precio es base → IVA se suma encima
+    let itemBase, itemVat
+    if (item.vat_rate > 0) {
+      if (item.vat_included !== false) {
+        itemBase = Math.round(full / (1 + item.vat_rate / 100))
+        itemVat  = full - itemBase
+      } else {
+        itemBase = full
+        itemVat  = Math.round(full * (item.vat_rate / 100))
+      }
+    } else {
+      itemBase = full
+      itemVat  = 0
+    }
     const isItemCourtesy = isOrderCourtesy || item.is_courtesy
 
     if (isItemCourtesy) {
-      courtesy_amount += sub + itemVat
+      courtesy_amount += itemBase + itemVat
     } else {
-      subtotal  += sub
+      subtotal  += itemBase
       tax_total += itemVat
     }
   }
@@ -127,6 +141,7 @@ function posReducer(state, { type, payload }) {
           product_sku:  variant?.sku  || payload.sku || '',
           unit_price:   price,
           vat_rate:     payload.vat_rate ?? 0,
+          vat_included: payload.vat_included ?? true,  // precio ya incluye IVA
           quantity:     1,
         }],
       }
