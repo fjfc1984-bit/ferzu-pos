@@ -37,7 +37,7 @@ router.get('/', requireOrg, async (req, res) => {
   try {
     const { data: org } = await supabaseAdmin
       .from('organizations')
-      .select('name, legal_name, nit, nit_dv, email, address, phone, tax_regime, settings')
+      .select('legal_name, nit, nit_dv, email, address, phone, tax_regime, settings')
       .eq('id', req.organizationId)
       .single();
 
@@ -45,7 +45,6 @@ router.get('/', requireOrg, async (req, res) => {
 
     res.json({
       org: {
-        name:       org?.name,
         legal_name: org?.legal_name,
         nit:        org?.nit,
         nit_dv:     org?.nit_dv,
