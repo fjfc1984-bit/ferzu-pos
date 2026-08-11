@@ -3081,7 +3081,7 @@ async function closeDayReport({ send_email = false, date }, context) {
     try {
       const { data: org } = await supabase
         .from('organizations')
-        .select('owner_email, name')
+        .select('owner_email, business_name')
         .eq('id', orgId)
         .single();
 

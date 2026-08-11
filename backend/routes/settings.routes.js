@@ -133,11 +133,11 @@ router.post('/whatsapp/test', requireOrg, [
 
     const { data: org } = await supabaseAdmin
       .from('organizations')
-      .select('name')
+      .select('business_name')
       .eq('id', req.organizationId)
       .single();
 
-    const result = await sendTestWhatsApp(req.body.phone, org?.name);
+    const result = await sendTestWhatsApp(req.body.phone, org?.business_name);
 
     if (result.success) {
       res.json({ success: true, messageId: result.messageId, message: 'Mensaje de prueba enviado exitosamente' });

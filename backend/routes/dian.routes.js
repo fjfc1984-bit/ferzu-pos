@@ -303,7 +303,7 @@ router.get('/config', requireOrg, async (req, res) => {
 
     const { data: org } = await supabaseAdmin
       .from('organizations')
-      .select('nit, nit_dv, legal_name, name')
+      .select('nit, nit_dv, legal_name')
       .eq('id', req.organizationId)
       .single();
 

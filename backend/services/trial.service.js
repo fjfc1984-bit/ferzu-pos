@@ -162,7 +162,7 @@ export function registerTrialCron() {
 
       const { data: orgs, error: orgError } = await supabaseAdmin
         .from('organizations')
-        .select('id, name, owner_id, created_at')
+        .select('id, business_name, owner_id, created_at')
         .gte('created_at', dayStart.toISOString())
         .lte('created_at', dayEnd.toISOString());
 
@@ -203,7 +203,7 @@ export function registerTrialCron() {
           const diasRestantes = Math.max(1, Math.round((trialEnd - now) / (1000 * 60 * 60 * 24)));
 
           const emailPayload = buildTrialReminderEmail({
-            orgName: org.name,
+            orgName: org.business_name,
             ownerEmail: user.email,
             totalVentas,
             numTransacciones,
