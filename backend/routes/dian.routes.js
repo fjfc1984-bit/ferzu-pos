@@ -326,8 +326,16 @@ router.post('/setup', requireOrg, [
   body('from_number').isInt({ min: 1 }),
   body('to_number').isInt({ min: 1 }),
   body('resolution_end_date').isISO8601(),
+  body('resolution_date').optional().isISO8601(),
+  body('environment').optional().isIn(['test', 'production']).withMessage('environment debe ser test o production'),
+  body('pta_provider').optional().isIn(['alegra', 'siigo', 'custom']).withMessage('pta_provider debe ser alegra, siigo o custom'),
   validate,
 ], async (req, res) => {
+  // Validar que to_number > from_number
+  const { from_number, to_number } = req.body;
+  if (Number(to_number) <= Number(from_number)) {
+    return res.status(400).json({ error: 'to_number debe ser mayor que from_number' });
+  }
   try {
     const {
       nit, nit_dv,

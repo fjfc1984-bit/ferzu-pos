@@ -586,7 +586,7 @@ export async function triggerElectronicInvoice(orderId, organizationId, override
       issuer: {
         nit:        org.nit,
         dv:         org.nit_dv,
-        name:       org.legal_name || org.name,
+        name:       org.legal_name || org.business_name,
         regimeType: org.tax_regime,
       },
       buyer,
@@ -628,8 +628,8 @@ export async function triggerElectronicInvoice(orderId, organizationId, override
       issuer: {
         nit:         org.nit,
         dv:          org.nit_dv,
-        name:        org.legal_name || org.name,
-        tradeName:   org.name,
+        name:        org.legal_name || org.business_name,
+        tradeName:   org.business_name,
         regimeType:  org.tax_regime,
         address:     branch.address,
         city:        branch.city,
@@ -650,7 +650,7 @@ export async function triggerElectronicInvoice(orderId, organizationId, override
         number:    invoiceNumber,
         issueDate, issueTime,
         dueDate:   issueDate,
-        notes:     `Gracias por su compra en ${org.name}`,
+        notes:     `Gracias por su compra en ${org.business_name || org.legal_name}`,
         currency:  'COP',
       },
       items, totals,
@@ -707,7 +707,7 @@ export async function triggerElectronicInvoice(orderId, organizationId, override
 
       // Enviar PDF al cliente si tiene email
       if (buyer.email) {
-        await sendInvoiceByEmail(buyer.email, buyer.name, ptaResponse.pdf_url, fullInvoiceNumber, org.name);
+        await sendInvoiceByEmail(buyer.email, buyer.name, ptaResponse.pdf_url, fullInvoiceNumber, org.business_name || org.legal_name);
       }
 
       return { success: true, invoiceNumber: fullInvoiceNumber, cufe };
