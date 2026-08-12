@@ -131,6 +131,137 @@ function buildDailyReport(orders, date) {
 }
 
 // =============================================================================
+// GET /api/reports/owner-summary
+// Resumen ejecutivo MULTI-SUCURSAL para el dueño — optimizado para móvil.
+// No requiere branch_id: agrega datos de TODAS las sucursales de la org.
+// Solo accesible para role owner o admin.
+// =============================================================================
+router.get('/owner-summary', async (req, res) => {
+  try {
+    const { requireRole } = await import('../middleware/auth.js');
+
+    // Solo owners y admins
+    if (!['owner', 'admin'].includes(req.user?.role)) {
+      return res.status(403).json({ error: 'Solo el dueño o administrador puede ver este resumen' });
+    }
+
+    const orgId = req.organizationId;
+    const today = new Date();
+    // Ventana UTC para Colombia (UTC-5): día actual desde las 05:00Z
+    const todayStr  = today.toISOString().split('T')[0];
+    const dayStart  = `${todayStr}T05:00:00.000Z`;
+    const tomorrow  = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dayEnd    = `${tomorrow.toISOString().split('T')[0]}T05:00:00.000Z`;
+
+    // Traer todas las sucursales de la org
+    const { data: branches, error: branchErr } = await supabaseAdmin
+      .from('branches')
+      .select('id, name, niche')
+      .eq('organization_id', orgId)
+      .eq('is_active', true);
+
+    if (branchErr) throw branchErr;
+    const branchIds = (branches || []).map(b => b.id);
+    const branchMap = Object.fromEntries((branches || []).map(b => [b.id, b]));
+
+    if (branchIds.length === 0) {
+      return res.json({ today: { revenue: 0, orders: 0, avg_ticket: 0 }, branches: [], alerts: [], stock_alerts: [], cash_sessions: [] });
+    }
+
+    // Ejecutar todas las queries en paralelo
+    const [ordersRes, alertsRes, stockRes, cashRes] = await Promise.all([
+      // Órdenes completadas del día (todas las sucursales)
+      supabaseAdmin
+        .from('orders')
+        .select('id, total, branch_id, created_at')
+        .in('branch_id', branchIds)
+        .eq('status', 'completed')
+        .gte('created_at', dayStart)
+        .lt('created_at', dayEnd),
+
+      // Alertas activas no resueltas
+      supabaseAdmin
+        .from('system_alerts')
+        .select('id, alert_type, severity, description, branch_id, created_at, metadata')
+        .eq('organization_id', orgId)
+        .eq('is_resolved', false)
+        .order('created_at', { ascending: false })
+        .limit(10),
+
+      // Productos bajo stock mínimo
+      supabaseAdmin
+        .from('inventory')
+        .select('quantity, branch_id, products!inner(name, min_stock, track_inventory)')
+        .in('branch_id', branchIds)
+        .eq('products.track_inventory', true)
+        .gt('products.min_stock', 0),
+
+      // Sesiones de caja abiertas hoy
+      supabaseAdmin
+        .from('cash_sessions')
+        .select('id, branch_id, opening_amount, status, opened_at, closed_at')
+        .in('branch_id', branchIds)
+        .eq('status', 'open'),
+    ]);
+
+    const orders = ordersRes.data || [];
+
+    // Agregar métricas del día por sucursal
+    const byBranch = {};
+    for (const o of orders) {
+      if (!byBranch[o.branch_id]) byBranch[o.branch_id] = { revenue: 0, orders: 0 };
+      byBranch[o.branch_id].revenue += Number(o.total) || 0;
+      byBranch[o.branch_id].orders  += 1;
+    }
+
+    const totalRevenue = orders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    const totalOrders  = orders.length;
+
+    // Productos bajo stock mínimo
+    const lowStock = (stockRes.data || [])
+      .filter(r => (r.quantity ?? 0) <= (r.products?.min_stock ?? 0))
+      .slice(0, 8)
+      .map(r => ({
+        name:      r.products?.name,
+        quantity:  r.quantity ?? 0,
+        min_stock: r.products?.min_stock,
+        branch:    branchMap[r.branch_id]?.name || r.branch_id,
+        critical:  (r.quantity ?? 0) <= 0,
+      }));
+
+    // Resumen por sucursal
+    const branchSummary = (branches || []).map(b => ({
+      id:      b.id,
+      name:    b.name,
+      revenue: byBranch[b.id]?.revenue || 0,
+      orders:  byBranch[b.id]?.orders  || 0,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    res.json({
+      today: {
+        revenue:    totalRevenue,
+        orders:     totalOrders,
+        avg_ticket: totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0,
+        date:       todayStr,
+      },
+      branches:      branchSummary,
+      alerts:        alertsRes.data || [],
+      stock_alerts:  lowStock,
+      cash_sessions: (cashRes.data || []).map(s => ({
+        id:       s.id,
+        branch:   branchMap[s.branch_id]?.name || s.branch_id,
+        status:   s.status,
+        opened_at: s.opened_at,
+      })),
+    });
+  } catch (err) {
+    logger.error('[REPORTS] owner-summary error', { err: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =============================================================================
 // GET /api/reports/dashboard?branch_id=&date=YYYY-MM-DD
 // =============================================================================
 router.get('/dashboard', async (req, res) => {

@@ -48,6 +48,7 @@ const IntegrationsPage   = lazy(() => import('./pages/IntegrationsPage'))
 const AlertsPage         = lazy(() => import('./pages/AlertsPage'))
 const RetentionPage      = lazy(() => import('./pages/RetentionPage'))
 const AnalyticsPage      = lazy(() => import('./pages/AnalyticsPage'))
+const OwnerDashboardPage = lazy(() => import('./pages/OwnerDashboardPage'))
 
 // ---------------------------------------------------------------------------
 // ErrorBoundary global — evita pantalla blanca en errores no capturados
@@ -190,6 +191,15 @@ export default function App() {
             <Routes>
               {/* ====== Landing page pública ====== */}
               <Route path="/"                 element={<LandingPage />} />
+
+              {/* Dashboard remoto del dueño — standalone, sin sidebar */}
+              <Route element={<ProtectedRoute />}>
+                <Route path="/owner" element={
+                  <Suspense fallback={<PageSpinner />}>
+                    <OwnerDashboardPage />
+                  </Suspense>
+                } />
+              </Route>
 
               {/* ====== Rutas públicas ====== */}
               <Route path="/login"            element={<LoginPage />} />
