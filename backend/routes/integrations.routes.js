@@ -202,8 +202,8 @@ export async function handleRappiWebhook(req, res) {
   const signature = req.headers['x-rappi-signature'] || '';
   const rawBody   = req.rawBody || JSON.stringify(req.body);
 
-  if (secret && !verifyHmac(secret, rawBody, signature.replace('sha256=', ''))) {
-    logger.warn('[WEBHOOK:rappi] Firma inválida');
+  if (!secret || !verifyHmac(secret, rawBody, signature.replace('sha256=', ''))) {
+    logger.warn('[WEBHOOK:rappi] Firma inválida o secret no configurado');
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
@@ -221,8 +221,8 @@ export async function handleUberEatsWebhook(req, res) {
   const signature = req.headers['x-uber-signature'] || '';
   const rawBody   = req.rawBody || JSON.stringify(req.body);
 
-  if (secret && !verifyHmac(secret, rawBody, signature)) {
-    logger.warn('[WEBHOOK:ubereats] Firma inválida');
+  if (!secret || !verifyHmac(secret, rawBody, signature)) {
+    logger.warn('[WEBHOOK:ubereats] Firma inválida o secret no configurado');
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
@@ -239,8 +239,8 @@ export async function handleDidiWebhook(req, res) {
   const signature = req.headers['x-didi-signature'] || '';
   const rawBody   = req.rawBody || JSON.stringify(req.body);
 
-  if (secret && !verifyHmac(secret, rawBody, signature)) {
-    logger.warn('[WEBHOOK:didi] Firma inválida');
+  if (!secret || !verifyHmac(secret, rawBody, signature)) {
+    logger.warn('[WEBHOOK:didi] Firma inválida o secret no configurado');
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
