@@ -1117,8 +1117,12 @@ export function AuthProvider({ children }) {
   const [showPINLock,    setShowPINLock]    = useState(false);
 
   // Temporizador de inactividad: 5 minutos → mostrar PIN
-  const inactivityTimer = useRef(null);
-  const INACTIVITY_MS   = 5 * 60 * 1000;
+  const inactivityTimer  = useRef(null);
+  // Timer proactivo de refresh: se programa antes de que expire el access_token
+  const refreshTimer     = useRef(null);
+  const INACTIVITY_MS    = 5 * 60 * 1000;
+  // Refrescar 3 minutos ANTES del expires_at (margen de seguridad)
+  const REFRESH_MARGIN_MS = 3 * 60 * 1000;
 
   function resetInactivityTimer() {
     clearTimeout(inactivityTimer.current);
@@ -1127,12 +1131,38 @@ export function AuthProvider({ children }) {
     }, INACTIVITY_MS);
   }
 
+  // Programa un refresh proactivo basado en el expires_at del token
+  const scheduleProactiveRefresh = useCallback((session) => {
+    clearTimeout(refreshTimer.current);
+    if (!session?.expires_at) return;
+
+    const expiresAt = session.expires_at * 1000; // expires_at es Unix en segundos
+    const refreshAt = expiresAt - REFRESH_MARGIN_MS;
+    const delay     = refreshAt - Date.now();
+
+    if (delay <= 0) {
+      // Ya está por expirar — refrescar de inmediato
+      supabase.auth.refreshSession().catch(() => {});
+      return;
+    }
+
+    refreshTimer.current = setTimeout(async () => {
+      try {
+        await supabase.auth.refreshSession();
+        // El TOKEN_REFRESHED event reprogramará el siguiente timer
+      } catch {
+        // Si falla, el interceptor de api.js se encargará en el próximo request
+      }
+    }, delay);
+  }, []);
+
   useEffect(() => {
     // Cargar sesión inicial
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
         await loadUserProfile(session.user.id);
         resetInactivityTimer();
+        scheduleProactiveRefresh(session);
       }
       setLoading(false);
     });
@@ -1144,9 +1174,15 @@ export function AuthProvider({ children }) {
         setOrganizationId(null);
         setBranchId(null);
         clearTimeout(inactivityTimer.current);
+        clearTimeout(refreshTimer.current);
+      } else if (event === 'TOKEN_REFRESHED') {
+        // Token renovado automáticamente — reprogramar el siguiente refresh
+        // No hace falta recargar el perfil: el usuario no cambió
+        scheduleProactiveRefresh(session);
       } else if (session?.user) {
         await loadUserProfile(session.user.id);
         resetInactivityTimer();
+        scheduleProactiveRefresh(session);
         // Registrar último login solo en eventos de sign-in real (no en token refresh)
         if (event === 'SIGNED_IN') {
           supabase
@@ -1165,9 +1201,10 @@ export function AuthProvider({ children }) {
     return () => {
       subscription.unsubscribe();
       clearTimeout(inactivityTimer.current);
+      clearTimeout(refreshTimer.current);
       events.forEach(e => window.removeEventListener(e, resetInactivityTimer));
     };
-  }, []);
+  }, [scheduleProactiveRefresh]);
 
   async function loadUserProfile(userId) {
     const { data } = await supabase
