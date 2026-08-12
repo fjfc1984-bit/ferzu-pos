@@ -59,8 +59,9 @@ import integrationsRouter, {
 import { registerProcessHandlers } from './routes/errors.routes.js';
 
 // ── CRON ───────────────────────────────────────────────────────────────────────
-import { registerTrialCron }  from './services/trial.service.js';
-import { registerAlertsCron } from './services/alerts.service.js';
+import { registerTrialCron }           from './services/trial.service.js';
+import { registerAlertsCron }          from './services/alerts.service.js';
+import { registerInventoryAlertsCron } from './services/inventoryAlerts.service.js';
 
 // =============================================================================
 // MIDDLEWARES GLOBALES
@@ -182,6 +183,7 @@ if (isMain) {
   registerProcessHandlers();
   registerTrialCron();
   registerAlertsCron();
+  registerInventoryAlertsCron();
 
   app.listen(PORT, () => {
     logger.info(`FERZU Backend v2.0.0 corriendo en puerto ${PORT} (modular)`);
