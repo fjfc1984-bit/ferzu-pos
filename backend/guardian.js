@@ -73,7 +73,6 @@ function formatUptime(ms) {
 function handleCritical() {
   log('CRITICAL', `${CONFIG.CRITICAL_THRESHOLD} fallos consecutivos. Registrando incidente.`)
 
-  // Registrar incidente
   const incidentFile = path.join(CONFIG.LOG_DIR, 'incidents.log')
   const incident = `
 ========================================
@@ -84,17 +83,13 @@ Total checks: ${totalChecks} | Total fallos: ${totalFails}
 Uptime guardian: ${formatUptime(Date.now() - uptimeStart)}
 ========================================
 `
+  // appendFileSync ya está importado al inicio del archivo
   try {
-    const { appendFileSync } = await import('fs')
-    // Use sync to avoid async complexity in this handler
+    import('fs').then(({ appendFileSync }) => appendFileSync(incidentFile, incident))
   } catch {}
 
-  import('fs').then(({ appendFileSync }) => {
-    appendFileSync(incidentFile, incident)
-  })
-
   log('CRITICAL', 'Revisa: Railway logs, Supabase status, red de internet.')
-  log('CRITICAL', 'Solución manual: abre PowerShell y ejecuta PUSH_AUDIT_FIXES.bat o reinicia el servidor.')
+  log('CRITICAL', 'Solución manual: abre PowerShell y reinicia el servidor.')
 }
 
 // ── Loop principal ─────────────────────────────────────────
