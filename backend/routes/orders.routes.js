@@ -251,7 +251,8 @@ router.post('/:id/payment', [
     const { payment_method, amount, cash_received, transaction_ref, gateway } = req.body;
 
     const { data: order } = await supabaseAdmin
-      .from('orders').select('*').eq('id', id).eq('organization_id', req.organizationId).single();
+      .from('orders').select('id, status, total, payment_method, branch_id, cash_session_id, customer_id')
+      .eq('id', id).eq('organization_id', req.organizationId).single();
     if (!order)                    return res.status(404).json({ error: 'Orden no encontrada' });
     if (order.status === 'paid')   return res.status(409).json({ error: 'Orden ya pagada' });
 

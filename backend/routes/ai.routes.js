@@ -5,7 +5,7 @@ import express  from 'express';
 import { body } from 'express-validator';
 import { supabaseAdmin }      from '../config/supabase.js';
 import logger                 from '../config/logger.js';
-import { aiRateLimit }        from '../config/rateLimits.js';
+import { aiRateLimit, aiUserRateLimit } from '../config/rateLimits.js';
 import { requireAuth, requireRole, requirePlanFeature } from '../middleware/auth.js';
 import { validate }           from '../middleware/validate.js';
 import { logAudit }           from '../middleware/audit.js';
@@ -16,7 +16,8 @@ import Anthropic from '@anthropic-ai/sdk';
 const router = express.Router();
 router.use(requireAuth);
 router.use(requirePlanFeature('ai'));  // Bloquea si trial expiró o plan no incluye IA
-router.use(aiRateLimit);
+router.use(aiRateLimit);              // Límite por IP
+router.use(aiUserRateLimit);          // Límite por user_id (evita evasión por VPN/proxy)
 
 // POST /ai/chat — Conversación con el agente
 router.post('/chat', [

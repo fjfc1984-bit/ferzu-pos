@@ -148,4 +148,28 @@ router.post('/verify-pin', pinRateLimit, requireAuth, [
   }
 });
 
+// POST /auth/refresh — Renovar access token con refresh token
+// Supabase expira el access_token cada 1 hora por defecto.
+// Sin este endpoint el usuario queda bloqueado al vencer el token.
+router.post('/refresh', [
+  body('refresh_token').notEmpty(),
+  validate,
+], async (req, res) => {
+  try {
+    const { refresh_token } = req.body;
+    const { data, error } = await supabaseAdmin.auth.refreshSession({ refresh_token });
+    if (error || !data?.session) {
+      return res.status(401).json({ error: 'Refresh token inválido o expirado' });
+    }
+    res.json({
+      access_token:  data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      expires_at:    data.session.expires_at,
+    });
+  } catch (err) {
+    logger.error('Refresh token error', { err });
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
 export default router;

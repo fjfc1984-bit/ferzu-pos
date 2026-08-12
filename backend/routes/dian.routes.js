@@ -245,7 +245,7 @@ router.post('/retry-contingency', requireOrg, async (req, res) => {
     // Buscar facturas en contingencia
     let query = supabaseAdmin
       .from('electronic_invoices')
-      .select('*')
+      .select('id, order_id, invoice_number, dian_status, issued_at')
       .eq('organization_id', req.organizationId)
       .eq('dian_status', 'contingency')
       .order('issued_at', { ascending: true })
@@ -296,7 +296,7 @@ router.get('/config', requireOrg, async (req, res) => {
   try {
     const { data: config } = await supabaseAdmin
       .from('dian_configs')
-      .select('*')
+      .select('id, resolution_number, resolution_date, resolution_end_date, from_number, to_number, current_number, prefix, environment, pta_provider, is_active')
       .eq('organization_id', req.organizationId)
       .eq('is_active', true)
       .maybeSingle();

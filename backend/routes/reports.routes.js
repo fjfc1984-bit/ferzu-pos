@@ -522,6 +522,12 @@ router.get('/period', async (req, res) => {
       return res.status(400).json({ error: 'Formato de fecha inválido. Usar YYYY-MM-DD' });
     }
 
+    // Limitar rango máximo a 90 días para evitar queries masivas
+    const diffMs   = new Date(to) - new Date(from);
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    if (diffDays < 0)   return res.status(400).json({ error: 'from debe ser anterior a to' });
+    if (diffDays > 90)  return res.status(400).json({ error: 'El rango máximo es 90 días' });
+
     if (branch_id) await assertBranchOwnership(branch_id, req.organizationId);
 
     // Ventana UTC ajustada a Colombia (UTC-5): from T05:00Z → (to+1) T05:00Z

@@ -21,7 +21,7 @@ router.use(requireAuth);
 async function getLoyaltySettings(organizationId) {
   const { data } = await supabaseAdmin
     .from('loyalty_settings')
-    .select('*')
+    .select('enabled, points_per_100cop, point_value_cop, min_redeem_points')
     .eq('organization_id', organizationId)
     .single();
 
