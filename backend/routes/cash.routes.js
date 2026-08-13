@@ -229,7 +229,7 @@ router.post('/:id/close', [
         severity:        Math.abs(cash_difference) > 50000 ? 'high' : 'medium',
         title:           `Descuadre de caja: ${cash_difference > 0 ? '+' : ''}$${cash_difference.toLocaleString('es-CO')} COP`,
         description:     `Sesión ${id}. Cajero: ${req.user.full_name}`,
-        data:            { session_id: id, difference: cash_difference },
+        metadata:        { session_id: id, difference: cash_difference },
       });
     }
 

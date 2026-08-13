@@ -359,22 +359,37 @@ export function generateInvoiceXML(invoiceData) {
   </cac:PaymentMeans>
 
   <!-- ─── IMPUESTOS TOTALES ────────────────────────────────────────────────── -->
-${totals.vatTotal > 0 ? `  <cac:TaxTotal>
-    <cbc:TaxAmount currencyID="COP">${Number(totals.vatTotal).toFixed(2)}</cbc:TaxAmount>
-    <cac:TaxSubtotal>
-      <cbc:TaxableAmount currencyID="COP">${Number(totals.subtotal).toFixed(2)}</cbc:TaxableAmount>
-      <cbc:TaxAmount currencyID="COP">${Number(totals.vatTotal).toFixed(2)}</cbc:TaxAmount>
+  <!-- Un TaxSubtotal por cada tarifa de IVA distinta (ej: 19% y 5%) según UBL 2.1 DIAN -->
+${(() => {
+  if (totals.vatTotal <= 0) return `  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="COP">0.00</cbc:TaxAmount>
+  </cac:TaxTotal>`;
+  // Agrupar ítems por tarifa de IVA para generar un TaxSubtotal por tarifa
+  const vatGroups = {};
+  for (const item of items) {
+    const rate = Number(item.vatRate || 0).toFixed(2);
+    if (!vatGroups[rate]) vatGroups[rate] = { taxable: 0, taxAmount: 0 };
+    vatGroups[rate].taxable   += Number(item.subtotal  || 0);
+    vatGroups[rate].taxAmount += Number(item.vatAmount || 0);
+  }
+  const subtotals = Object.entries(vatGroups)
+    .filter(([rate]) => parseFloat(rate) > 0)
+    .map(([rate, group]) => `    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="COP">${Number(group.taxable).toFixed(2)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="COP">${Number(group.taxAmount).toFixed(2)}</cbc:TaxAmount>
       <cac:TaxCategory>
-        <cbc:Percent>19.00</cbc:Percent>
+        <cbc:Percent>${rate}</cbc:Percent>
         <cac:TaxScheme>
           <cbc:ID>01</cbc:ID>
           <cbc:Name>IVA</cbc:Name>
         </cac:TaxScheme>
       </cac:TaxCategory>
-    </cac:TaxSubtotal>
-  </cac:TaxTotal>` : `  <cac:TaxTotal>
-    <cbc:TaxAmount currencyID="COP">0.00</cbc:TaxAmount>
-  </cac:TaxTotal>`}
+    </cac:TaxSubtotal>`).join('\n');
+  return `  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="COP">${Number(totals.vatTotal).toFixed(2)}</cbc:TaxAmount>
+${subtotals}
+  </cac:TaxTotal>`;
+})()}
 
   <!-- ─── TOTALES MONETARIOS ───────────────────────────────────────────────── -->
   <cac:LegalMonetaryTotal>
@@ -832,8 +847,9 @@ async function sendToPTA(xmlString, invoiceNumber, dianConfig) {
 // Referencia: https://developer.siigo.com/docs/invoices
 function parseXMLToSiigoFormat(xmlString) {
   // Extractor liviano via regex — suficiente para los campos que Siigo necesita
-  const extract = (tag) => {
-    const m = xmlString.match(new RegExp(`<(?:cbc:)?${tag}[^>]*>([^<]+)<\/(?:cbc:)?${tag}>`));
+  const extract = (tag, source) => {
+    const src = source || xmlString;
+    const m   = src.match(new RegExp(`<(?:cbc:)?${tag}[^>]*>([^<]+)<\/(?:cbc:)?${tag}>`));
     return m ? m[1].trim() : '';
   };
 
@@ -841,29 +857,48 @@ function parseXMLToSiigoFormat(xmlString) {
   const issueDate     = extract('IssueDate');
   const totalAmount   = parseFloat(extract('PayableAmount') || '0');
 
-  // Siigo requiere formato YYYY-MM-DD
+  // Extraer cada <cac:InvoiceLine> del XML para enviar los ítems reales a Siigo
+  // (antes se enviaba un único ítem genérico FERZU-ITEM con el total — BUG #3 corregido)
+  const lineBlocks = [...xmlString.matchAll(/<cac:InvoiceLine>([\s\S]*?)<\/cac:InvoiceLine>/g)];
+
+  const items = lineBlocks.length > 0
+    ? lineBlocks.map(m => {
+        const block       = m[1];
+        const description = extract('Description', block) || 'Ítem';
+        // SKU: extraer desde <cac:SellersItemIdentification> para evitar capturar el ID de línea
+        const skuMatch    = block.match(/<cac:SellersItemIdentification>[\s\S]*?<cbc:ID[^>]*>([^<]+)<\/cbc:ID>/);
+        const sku         = skuMatch ? skuMatch[1].trim() : 'FERZU-ITEM';
+        const quantity    = parseFloat(extract('InvoicedQuantity', block) || '1');
+        const price       = parseFloat(extract('PriceAmount',      block) || '0');
+        const vatPercent  = parseFloat(extract('Percent',          block) || '0');
+        // Siigo espera taxes: [] cuando IVA = 0; [{ id: 1, name: 'IVA', percentage: N }] cuando > 0
+        return {
+          code:        sku,
+          description,
+          quantity,
+          price,
+          discount:    0,
+          taxes:       vatPercent > 0 ? [{ id: 1, name: 'IVA', percentage: vatPercent }] : [],
+        };
+      })
+    : [{
+        // Fallback si el XML no contiene InvoiceLines parseables
+        code:        'FERZU-ITEM',
+        description: `Venta ${invoiceNumber}`,
+        quantity:    1,
+        price:       totalAmount,
+        discount:    0,
+        taxes:       [],
+      }];
+
   return {
-    document: {
-      id: 1, // FV = Factura de Venta (1 en Siigo)
-    },
-    date: issueDate,
-    customer: {
-      identification: extract('CompanyID') || '222222222',
-    },
-    seller: 0, // Vendedor predeterminado
+    document:     { id: 1 }, // FV = Factura de Venta en Siigo
+    date:         issueDate,
+    customer:     { identification: extract('CompanyID') || '222222222' },
+    seller:       0,
     observations: `Factura ${invoiceNumber}`,
-    items: [{
-      code: 'FERZU-ITEM',
-      description: `Venta ${invoiceNumber}`,
-      quantity: 1,
-      price: totalAmount,
-      discount: 0,
-      taxes: [],
-    }],
-    payments: [{
-      id: 1, // Efectivo en Siigo
-      value: totalAmount,
-    }],
+    items,
+    payments:     [{ id: 1, value: totalAmount }],
   };
 }
 

@@ -85,11 +85,20 @@ app.use(cors({
   credentials: true,
 }));
 
-// Los webhooks necesitan body RAW → se montan ANTES de express.json()
-// Middleware para capturar rawBody en webhooks de delivery
-app.use('/webhooks/rappi',    express.json(), (req, res, next) => { req.rawBody = JSON.stringify(req.body); next(); }, (req, res) => handleRappiWebhook(req, res));
-app.use('/webhooks/ubereats', express.json(), (req, res, next) => { req.rawBody = JSON.stringify(req.body); next(); }, (req, res) => handleUberEatsWebhook(req, res));
-app.use('/webhooks/didi',     express.json(), (req, res, next) => { req.rawBody = JSON.stringify(req.body); next(); }, (req, res) => handleDidiWebhook(req, res));
+// Los webhooks necesitan body RAW para validar firma HMAC.
+// Se captura el buffer original ANTES de parsear JSON — si se re-serializa con
+// JSON.stringify(req.body) el orden/espacios cambian y la firma nunca coincide.
+const rawBodyCapture = (req, res, next) => {
+  express.raw({ type: 'application/json', limit: '2mb' })(req, res, (err) => {
+    if (err) return next(err);
+    req.rawBody = req.body; // Buffer original
+    try { req.body = JSON.parse(req.body.toString('utf8')); } catch { req.body = {}; }
+    next();
+  });
+};
+app.use('/webhooks/rappi',    rawBodyCapture, (req, res) => handleRappiWebhook(req, res));
+app.use('/webhooks/ubereats', rawBodyCapture, (req, res) => handleUberEatsWebhook(req, res));
+app.use('/webhooks/didi',     rawBodyCapture, (req, res) => handleDidiWebhook(req, res));
 app.use('/webhooks', paymentsRouter);
 
 app.use(express.json({ limit: '2mb' }));

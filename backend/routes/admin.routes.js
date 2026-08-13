@@ -55,11 +55,14 @@ router.get('/users', requireAuth, requireSuperAdmin, async (req, res) => {
     const allBranchIds = (allBranches || []).map(b => b.id);
 
     // Traer métricas globales en 4 queries paralelas (en vez de 4 × N_orgs)
+    // Guard: .in('id', []) en Supabase retorna TODOS los registros sin filtro.
+    // Si no hay sucursales ni orgs, devolver conteos vacíos directamente.
+    const emptyMetrics = { data: [] };
     const [ordersAll, productsAll, cashAll, eventsAll] = await Promise.all([
-      supabaseAdmin.from('orders').select('branch_id', { count: 'exact' }).in('branch_id', allBranchIds),
-      supabaseAdmin.from('products').select('organization_id', { count: 'exact' }).in('organization_id', orgIds),
-      supabaseAdmin.from('cash_sessions').select('branch_id', { count: 'exact' }).in('branch_id', allBranchIds),
-      supabaseAdmin.from('usage_events').select('organization_id', { count: 'exact' }).in('organization_id', orgIds),
+      allBranchIds.length ? supabaseAdmin.from('orders').select('branch_id', { count: 'exact' }).in('branch_id', allBranchIds) : emptyMetrics,
+      orgIds.length       ? supabaseAdmin.from('products').select('organization_id', { count: 'exact' }).in('organization_id', orgIds) : emptyMetrics,
+      allBranchIds.length ? supabaseAdmin.from('cash_sessions').select('branch_id', { count: 'exact' }).in('branch_id', allBranchIds) : emptyMetrics,
+      orgIds.length       ? supabaseAdmin.from('usage_events').select('organization_id', { count: 'exact' }).in('organization_id', orgIds) : emptyMetrics,
     ]);
 
     // Agrupar conteos por org

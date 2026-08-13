@@ -6,7 +6,7 @@ import express  from 'express';
 import { body } from 'express-validator';
 import { supabaseAdmin }                          from '../config/supabase.js';
 import logger                                     from '../config/logger.js';
-import { requireAuth, requireRole, requireBranchAccess } from '../middleware/auth.js';
+import { requireAuth, requireRole, requireBranchAccess, assertBranchOwnership } from '../middleware/auth.js';
 import { validate }                               from '../middleware/validate.js';
 import { logAudit }                               from '../middleware/audit.js';
 import { processPaymentInternal, markOrderPaid }  from '../services/orders.service.js';
@@ -252,8 +252,10 @@ router.post('/:id/payment', [
 
     const { data: order } = await supabaseAdmin
       .from('orders').select('id, status, total, payment_method, branch_id, cash_session_id, customer_id')
-      .eq('id', id).eq('organization_id', req.organizationId).single();
-    if (!order)                    return res.status(404).json({ error: 'Orden no encontrada' });
+      .eq('id', id).single();
+    if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
+    // Verificar que la orden pertenece a la organización del usuario (orders no tiene organization_id directo)
+    await assertBranchOwnership(order.branch_id, req.organizationId);
     if (order.status === 'paid')   return res.status(409).json({ error: 'Orden ya pagada' });
 
     let cash_change = 0;
@@ -318,8 +320,9 @@ router.post('/:id/refund', requireRole('owner', 'admin'), [
     const { amount, reason, refund_method } = req.body;
 
     const { data: order } = await supabaseAdmin
-      .from('orders').select('total').eq('id', id).eq('organization_id', req.organizationId).single();
-    if (!order)               return res.status(404).json({ error: 'Orden no encontrada' });
+      .from('orders').select('total, branch_id').eq('id', id).single();
+    if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
+    await assertBranchOwnership(order.branch_id, req.organizationId);
     if (amount > order.total) return res.status(400).json({ error: 'Monto de devolución supera el total' });
 
     const { data: refund, error } = await supabaseAdmin.from('refunds').insert({

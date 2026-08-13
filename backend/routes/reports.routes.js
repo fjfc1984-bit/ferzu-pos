@@ -176,7 +176,7 @@ router.get('/owner-summary', async (req, res) => {
         .from('orders')
         .select('id, total, branch_id, created_at')
         .in('branch_id', branchIds)
-        .eq('status', 'completed')
+        .eq('status', 'paid')
         .gte('created_at', dayStart)
         .lt('created_at', dayEnd),
 
@@ -200,7 +200,7 @@ router.get('/owner-summary', async (req, res) => {
       // Sesiones de caja abiertas hoy
       supabaseAdmin
         .from('cash_sessions')
-        .select('id, branch_id, opening_amount, status, opened_at, closed_at')
+        .select('id, branch_id, opening_cash, status, opened_at, closed_at')
         .in('branch_id', branchIds)
         .eq('status', 'open'),
     ]);
@@ -911,7 +911,7 @@ router.get('/branch-comparison', async (req, res) => {
       supabaseAdmin
         .from('orders')
         .select('branch_id, total, created_at')
-        .eq('status', 'completed')
+        .eq('status', 'paid')
         .gte('created_at', rangeStart)
         .lt('created_at', rangeEnd),
       supabaseAdmin

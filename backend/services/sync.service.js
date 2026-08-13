@@ -112,6 +112,7 @@ export async function createOrderFromSync(payload, organizationId, userId) {
   if (itemsErr) throw itemsErr;
 
   // 7. Procesar pago si viene en el payload
+  let orderWasPaid = false;
   if (payment_method === 'mixed') {
     // Pago mixto offline: registrar cash + card por separado
     const cashAmt = payload.cash_amount || 0;
@@ -123,9 +124,24 @@ export async function createOrderFromSync(payload, organizationId, userId) {
       await processPaymentInternal(order.id, 'card_debit', cardAmt, null, userId);
     }
     await markOrderPaid(order.id, organizationId, userId);
+    orderWasPaid = true;
   } else if (payment_method) {
     await processPaymentInternal(order.id, payment_method, total, cash_received, userId);
     await markOrderPaid(order.id, organizationId, userId);
+    orderWasPaid = true;
+  }
+
+  // ── DIAN: Factura electrónica para ventas offline (fire-and-forget) ──────────
+  // markOrderPaid ya no dispara DIAN internamente. Se llama explícitamente aquí
+  // para que las ventas sincronizadas desde modo offline también facturen.
+  if (orderWasPaid) {
+    import('../lib/dian.js').then(({ triggerElectronicInvoice }) => {
+      triggerElectronicInvoice(order.id, organizationId).catch(err => {
+        import('../config/logger.js').then(({ default: logger }) => {
+          logger.error('[DIAN][sync] Error generando factura offline (no crítico):', { err: err.message, orderId: order.id });
+        });
+      });
+    });
   }
 
   return order;
@@ -144,6 +160,9 @@ export async function processSyncOperation(op, organizationId, userId) {
       break;
     case 'inventory_movements':
       if (op.operation === 'INSERT') {
+        // Validar que el branch_id del payload pertenece a la org del usuario (cross-tenant guard)
+        if (!op.payload?.branch_id) throw new Error('branch_id requerido en inventory_movement offline');
+        await assertBranchOwnership(op.payload.branch_id, organizationId);
         const { data } = await supabaseAdmin
           .from('inventory_movements')
           .insert({ ...op.payload, created_by: userId })

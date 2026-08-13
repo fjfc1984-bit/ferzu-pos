@@ -78,17 +78,38 @@ export async function markOrderPaid(orderId, organizationId, userId) {
     });
 
     if (rpcErr) {
-      // Si la función RPC no existe aún (entorno legacy), fallback a UPDATE directo
-      logger.warn('[markOrderPaid] decrement_inventory RPC no disponible, usando fallback', {
-        rpcErr: rpcErr.message,
+      // Si la función RPC no existe, fallback: leer cantidad actual y decrementar.
+      // NO es atómico (posible race condition bajo alta concurrencia), pero es
+      // preferible a no descontar nada. Activar el RPC ejecutando views_v1.sql.
+      logger.warn('[markOrderPaid] decrement_inventory RPC no disponible, usando fallback read-then-write', {
+        rpcErr: rpcErr.message, product_id: item.product_id,
       });
+
+      const { data: inv } = await supabaseAdmin
+        .from('inventory')
+        .select('quantity')
+        .eq('branch_id', order.branch_id)
+        .eq('product_id', item.product_id)
+        .single();
+
+      const currentQty = inv?.quantity ?? 0;
+      const newQty     = Math.max(0, currentQty - item.quantity);
+
       await supabaseAdmin
         .from('inventory')
-        .update({ updated_at: new Date().toISOString() })
+        .update({ quantity: newQty, updated_at: new Date().toISOString() })
         .eq('branch_id', order.branch_id)
         .eq('product_id', item.product_id);
-      // Nota: sin RPC, este UPDATE no puede hacer aritmética atómica.
-      // Ejecutar views_v1.sql en Supabase para activar decrement_inventory.
+
+      // Alertar al dueño: el RPC no está configurado en Supabase
+      await supabaseAdmin.from('system_alerts').insert({
+        organization_id: organizationId,
+        branch_id:       order.branch_id,
+        alert_type:      'inventory_rpc_missing',
+        severity:        'high',
+        description:     'La función SQL decrement_inventory no existe. Ejecutar views_v1.sql en Supabase para descuento atómico de inventario.',
+        metadata:        { product_id: item.product_id, order_id: orderId },
+      }).catch(() => {});
     }
   }
 
@@ -134,19 +155,10 @@ export async function markOrderPaid(orderId, organizationId, userId) {
     }
   })();
 
-  // ── Facturación electrónica DIAN (fire-and-forget, no bloquea el pago) ──────
-  (async () => {
-    try {
-      const { triggerElectronicInvoice } = await import('../lib/dian.js');
-      const result = await triggerElectronicInvoice(orderId, organizationId);
-      if (result?.invoiceNumber) {
-        logger.info(`[DIAN] ✅ Factura ${result.invoiceNumber} emitida para orden ${orderId}`);
-      }
-    } catch (dianErr) {
-      // Error no crítico — la venta ya fue registrada, DIAN se reintentará por contingencia
-      logger.error('[DIAN] ⚠️ Error generando factura electrónica (no crítico):', { err: dianErr.message, orderId });
-    }
-  })();
+  // ── Facturación electrónica DIAN ────────────────────────────────────────────
+  // triggerElectronicInvoice se llama desde orders.routes.js (POST /orders y
+  // POST /orders/:id/payment) con los invoiceOverrides correctos del cliente.
+  // NO se llama aquí para evitar doble emisión de factura.
 
   // ── WhatsApp: enviar recibo al cliente si está configurado ──────────────────
   if (isWhatsAppConfigured()) {
