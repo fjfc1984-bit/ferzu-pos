@@ -64,7 +64,7 @@ router.get('/segments', async (req, res) => {
       .from('orders')
       .select('customer_id, total, created_at')
       .eq('organization_id', orgId)
-      .eq('status', 'completed')
+      .eq('status', 'paid')
       .in('customer_id', customerIds);
 
     if (branchId) ordersQuery = ordersQuery.eq('branch_id', branchId);
@@ -223,7 +223,7 @@ router.post('/generate-message', [
       .select('total, created_at')
       .eq('customer_id', customer_id)
       .eq('organization_id', orgId)
-      .eq('status', 'completed')
+      .eq('status', 'paid')
       .order('created_at', { ascending: false })
       .limit(10);
 

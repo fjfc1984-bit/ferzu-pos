@@ -6,7 +6,7 @@
 
 import { Router }      from 'express';
 import { supabaseAdmin } from '../config/supabase.js';
-import { requireAuth }   from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import logger            from '../config/logger.js';
 
 const router = Router();
@@ -47,9 +47,9 @@ router.get('/settings', async (req, res) => {
 });
 
 // =============================================================================
-// PUT /api/loyalty/settings — actualizar config
+// PUT /api/loyalty/settings — actualizar config (solo owner/admin)
 // =============================================================================
-router.put('/settings', async (req, res) => {
+router.put('/settings', requireRole('owner', 'admin'), async (req, res) => {
   try {
     const { enabled, points_per_100cop, point_value_cop, min_redeem_points } = req.body;
 
@@ -176,10 +176,10 @@ router.post('/redeem', async (req, res) => {
 });
 
 // =============================================================================
-// POST /api/loyalty/adjust — ajuste manual de puntos (admin)
+// POST /api/loyalty/adjust — ajuste manual de puntos (solo owner/admin)
 // Body: { customer_id, points, notes }
 // =============================================================================
-router.post('/adjust', async (req, res) => {
+router.post('/adjust', requireRole('owner', 'admin'), async (req, res) => {
   try {
     const { customer_id, points, notes } = req.body;
     const orgId = req.organizationId;

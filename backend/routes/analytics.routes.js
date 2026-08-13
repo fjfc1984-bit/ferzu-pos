@@ -61,7 +61,7 @@ router.post('/track', requireOrg, [
     const { event_type, module: mod, metadata } = req.body;
     await supabaseAdmin.from('usage_events').insert({
       organization_id: req.organizationId,
-      user_id:         req.userId || null,
+      user_id:         req.user?.id || null,
       event_type,
       module:          mod     || null,
       metadata:        metadata || null,

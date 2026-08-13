@@ -196,6 +196,30 @@ async function createDeliveryOrder(organizationId, platform, normalized) {
   return order;
 }
 
+/**
+ * resolveWebhookOrgId(req, platform)
+ * Los webhooks de delivery NO pasan por requireAuth, por lo que req.organizationId
+ * es undefined. El org_id se obtiene del query param '?org=<uuid>' que el negocio
+ * configura en la URL del webhook dentro del dashboard de cada plataforma.
+ *
+ * Formato de URL recomendado al registrar el webhook en Rappi/UberEats/DiDi:
+ *   https://tu-backend.railway.app/webhooks/rappi?org=<organizationId>
+ *
+ * Esto permite soporte multi-tenant real sin depender del JWT.
+ */
+async function resolveWebhookOrgId(req, platform) {
+  // Prioridad 1: query param ?org=<uuid>
+  const orgId = req.query.org || req.query.organization_id;
+  if (orgId) return orgId;
+
+  // Prioridad 2: variable de entorno legacy (modo single-tenant, backward compat)
+  const legacyEnvKey = `${platform.toUpperCase()}_ORG_ID`;
+  if (process.env[legacyEnvKey]) return process.env[legacyEnvKey];
+
+  logger.warn(`[WEBHOOK:${platform}] No se pudo determinar org_id — configura la URL con ?org=<organizationId>`);
+  return null;
+}
+
 // ── Webhook Rappi ──────────────────────────────────────────────────────────────
 export async function handleRappiWebhook(req, res) {
   const secret    = process.env.RAPPI_WEBHOOK_SECRET;
@@ -207,7 +231,9 @@ export async function handleRappiWebhook(req, res) {
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
-  const { organizationId } = req;
+  const organizationId = await resolveWebhookOrgId(req, 'rappi');
+  if (!organizationId) return res.status(400).json({ error: 'org param requerido en la URL del webhook' });
+
   const normalized = normalizePlatformOrder('rappi', req.body);
   if (!normalized) return res.status(400).json({ error: 'Orden no reconocida' });
 
@@ -226,10 +252,13 @@ export async function handleUberEatsWebhook(req, res) {
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
+  const organizationId = await resolveWebhookOrgId(req, 'ubereats');
+  if (!organizationId) return res.status(400).json({ error: 'org param requerido en la URL del webhook' });
+
   const normalized = normalizePlatformOrder('ubereats', req.body);
   if (!normalized) return res.status(400).json({ error: 'Orden no reconocida' });
 
-  const order = await createDeliveryOrder(req.organizationId, 'ubereats', normalized);
+  const order = await createDeliveryOrder(organizationId, 'ubereats', normalized);
   res.json({ received: true, order_id: order?.id || null });
 }
 
@@ -244,10 +273,13 @@ export async function handleDidiWebhook(req, res) {
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
+  const organizationId = await resolveWebhookOrgId(req, 'didi');
+  if (!organizationId) return res.status(400).json({ error: 'org param requerido en la URL del webhook' });
+
   const normalized = normalizePlatformOrder('didi', req.body);
   if (!normalized) return res.status(400).json({ error: 'Orden no reconocida' });
 
-  const order = await createDeliveryOrder(req.organizationId, 'didi', normalized);
+  const order = await createDeliveryOrder(organizationId, 'didi', normalized);
   res.json({ received: true, order_id: order?.id || null });
 }
 
@@ -374,7 +406,7 @@ router.get('/export/siigo', [
         order_items(product_name, quantity, unit_price, vat_rate, subtotal)
       `)
       .eq('organization_id', req.organizationId)
-      .eq('status', 'completed')
+      .eq('status', 'paid')
       .gte('created_at', dayStart)
       .lt('created_at', dayEnd)
       .order('created_at');
@@ -459,7 +491,7 @@ router.get('/export/generic', [
         order_items(product_name, quantity, unit_price, vat_rate, subtotal)
       `)
       .eq('organization_id', req.organizationId)
-      .eq('status', 'completed')
+      .eq('status', 'paid')
       .gte('created_at', dayStart)
       .lt('created_at', dayEnd)
       .order('created_at');
