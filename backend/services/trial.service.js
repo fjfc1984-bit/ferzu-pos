@@ -190,7 +190,7 @@ export function registerTrialCron() {
             .from('orders')
             .select('total_amount')
             .eq('organization_id', org.id)
-            .eq('status', 'completed')
+            .eq('status', 'paid')
             .gte('created_at', org.created_at)
             .lte('created_at', now.toISOString());
 
