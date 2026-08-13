@@ -270,23 +270,23 @@ const MODULOS = [
 
 const PLANES = [
   {
-    nombre:'Básico', precio:'$49.000', desc:'Para negocios pequeños que arrancan.',
-    items:['POS básico','Hasta 2 usuarios','Inventario simple','Soporte por email'],
-    cta:'Empezar gratis', hot:false,
+    nombre:'Básico', precio:'$49.000', desc:'Para negocios pequeños que arrancan a vender hoy.',
+    items:['POS completo · cobro en efectivo y tarjeta','Funciona sin internet (offline-first)','Hasta 2 usuarios con PIN','Inventario con alertas de stock','Soporte por email'],
+    cta:'Empezar 30 días gratis', hot:false,
   },
   {
     nombre:'Profesional', precio:'$79.000', desc:'Ideal para barberías, talleres y minimarkets.',
-    items:['Todo lo del Básico','Hasta 5 usuarios','Módulo especializado (barbería, taller o minimarket)','Dashboard IA','Soporte prioritario'],
-    cta:'Empezar con Profesional', hot:false,
+    items:['Todo lo del Básico','Hasta 5 usuarios','Módulo especializado (barbería, taller o minimarket)','Alertas automáticas de stock mínimo','Recibo por WhatsApp al cliente','Dashboard IA · reportes Excel y PDF','Soporte prioritario'],
+    cta:'Empezar 30 días gratis', hot:false,
   },
   {
     nombre:'Restaurante', precio:'$89.000', desc:'El favorito de restaurantes y fondas.',
-    items:['Todo lo del Básico','Kitchen Display (KDS)','Gestión de mesas','Dashboard IA','Soporte prioritario'],
-    cta:'Empezar con Restaurante', hot:true,
+    items:['Todo lo del Básico','Kitchen Display (KDS) en tiempo real','Gestión de mesas','Recibo por WhatsApp al cliente','Dashboard IA · reportes Excel y PDF','Soporte prioritario'],
+    cta:'Empezar 30 días gratis', hot:true,
   },
   {
     nombre:'Pro', precio:'$149.000', desc:'Para negocios con múltiples sucursales.',
-    items:['Todo lo anterior','Usuarios ilimitados','Múltiples sucursales','Facturación DIAN','Soporte 24/7'],
+    items:['Todo lo anterior','Usuarios y sucursales ilimitadas','Dashboard remoto para el dueño (móvil)','Facturación electrónica DIAN','Integración Rappi · UberEats · DiDi','Soporte 24/7 con el fundador'],
     cta:'Contactar ventas', hot:false,
   },
 ];
@@ -473,10 +473,10 @@ function Hero() {
             {/* Stats */}
             <div className="a5 mt-10 grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { v:'100%',     l:'Offline-first' },
-                { v:'< 2 min', l:'Registro' },
-                { v:'6+',      l:'Sectores' },
-                { v:'24/7',    l:'Disponible' },
+                { v:'100%',  l:'Offline-first' },
+                { v:'30',    l:'Días gratis' },
+                { v:'6+',    l:'Sectores' },
+                { v:'24/7',  l:'Disponible' },
               ].map(({ v, l }) => (
                 <div key={l} className="glass rounded-2xl py-3 px-4 text-center">
                   <p className="g-text font-black text-xl">{v}</p>
@@ -956,7 +956,7 @@ function HowItWorks() {
 
         <div className="flex flex-col gap-5">
           {[
-            { num:'01', t:'Regístrate gratis', d:'Crea tu cuenta en 2 minutos. Sin tarjeta de crédito, sin compromisos. Solo tu email y el nombre de tu negocio.' },
+            { num:'01', t:'Regístrate gratis — 30 días de prueba', d:'Crea tu cuenta en 2 minutos. Sin tarjeta de crédito, sin compromisos. Solo tu email y el nombre de tu negocio. Tienes 30 días completos para probarlo.' },
             { num:'02', t:'Configura tu negocio', d:'Agrega productos con precios, activa los módulos que necesitas y personaliza el POS para tu tipo de negocio.' },
             { num:'03', t:'Empieza a cobrar', d:'Tu equipo puede usar el POS desde cualquier dispositivo, con o sin internet. La IA ya está analizando tus ventas.' },
           ].map(({ num, t, d }, i) => (
@@ -1032,7 +1032,7 @@ function Pricing() {
         </div>
 
         <p className="text-center mt-8" style={{ color:'rgba(255,255,255,.25)', fontSize:'13px' }}>
-          Todos los planes incluyen <strong style={{ color:'rgba(255,255,255,.4)' }}>14 días de prueba gratis</strong> · Sin tarjeta de crédito
+          Todos los planes incluyen <strong style={{ color:'rgba(255,255,255,.4)' }}>30 días de prueba gratis</strong> · Sin tarjeta de crédito
         </p>
       </div>
     </section>
@@ -1116,7 +1116,7 @@ function CTAFinal() {
           </button>
         </div>
         <p className="a5 mt-5" style={{ color:'rgba(255,255,255,.22)', fontSize:'13px' }}>
-          Sin tarjeta de crédito · 14 días de prueba gratis · Cancela cuando quieras
+          Sin tarjeta de crédito · 30 días de prueba gratis · Cancela cuando quieras
         </p>
       </div>
     </section>
