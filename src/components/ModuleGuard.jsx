@@ -713,7 +713,8 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
     .filter(mod => activeModules?.[mod.key] !== false);
 
   // Módulos que NO tiene el plan → upgrade hint (máx 3); vacío durante trial
-  const lockedModules = isInTrial ? [] : ALL_MAIN
+  const ALL_NICHE = ['pos', 'barbershop', 'kitchen', 'workshop', 'minimarket', 'inventory', 'dashboard'];
+  const lockedModules = isInTrial ? [] : ALL_NICHE
     .filter(key => !modules.includes(key))
     .map(key => MODULE_META[key])
     .filter(Boolean)
