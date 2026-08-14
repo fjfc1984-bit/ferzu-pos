@@ -245,9 +245,9 @@ export default function DashboardPage() {
 
           {/* Selector de rango */}
           <div className="flex bg-gray-100 rounded-xl overflow-hidden">
-            {[['today','Hoy'],['week','Sem'],['month','Mes']].map(([val, label]) => (
+            {[['today','Hoy'],['week','Semana'],['month','Mes']].map(([val, label]) => (
               <button key={val} onClick={() => setRange(val)}
-                className={`px-2.5 md:px-3 py-1.5 text-xs font-medium transition-colors ${
+                className={`px-3 md:px-4 py-2 text-xs md:text-sm font-medium transition-colors min-w-[52px] ${
                   range === val ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
                 }`}>
                 {label}
@@ -264,8 +264,10 @@ export default function DashboardPage() {
           />
 
           <button onClick={() => { refresh(); setLastRefresh(new Date()); }}
-            className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            title="Actualizar datos"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors text-xs font-medium">
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">Actualizar</span>
           </button>
         </div>
       </div>
@@ -750,8 +752,8 @@ function AIReportPanel({ report, loading, onGenerate }) {
         <button
           onClick={onGenerate}
           disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white text-xs font-medium rounded-xl transition-colors">
-          {loading ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+          className="flex items-center gap-2 px-4 py-2 bg-white/15 hover:bg-white/25 active:bg-white/30 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm">
+          {loading ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
           {loading ? 'Analizando...' : 'Generar análisis'}
         </button>
       </div>

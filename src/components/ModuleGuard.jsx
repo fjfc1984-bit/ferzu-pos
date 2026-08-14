@@ -779,148 +779,93 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
             </button>
           </>
         )}
+        {/* ── Sección: Reportes ── */}
+        <div className="mt-3 mb-1 border-t border-white/10 pt-3">
+          <p className="text-[9px] text-white/30 uppercase tracking-widest px-2 mb-1 font-semibold">Reportes</p>
+        </div>
+        {[
+          { to: '/analytics',  Icon: BarChart3, label: 'Analíticas' },
+          { to: '/reporte',    Icon: BarChart2, label: 'Reporte diario' },
+          { to: '/turnos',     Icon: Clock,     label: 'Mis turnos' },
+        ].map(({ to, Icon, label }) => (
+          <Link
+            key={to}
+            to={to}
+            className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${
+              currentPath?.startsWith(to)
+                ? 'bg-white/15 text-white'
+                : 'text-white/50 hover:text-white hover:bg-white/10'
+            }`}>
+            <Icon size={15} />
+            <span className="font-medium">{label}</span>
+          </Link>
+        ))}
+
+        {/* ── Panel super-admin — solo Fernando ── */}
+        {user?.email === 'fjfc1984@gmail.com' && (
+          <>
+            <div className="mt-3 mb-1 border-t border-white/10 pt-3">
+              <p className="text-[9px] text-white/30 uppercase tracking-widest px-2 mb-1 font-semibold">Super Admin</p>
+            </div>
+            <Link
+              to="/admin"
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${
+                currentPath === '/admin'
+                  ? 'bg-brand-600 text-white'
+                  : 'text-brand-300/70 hover:text-brand-200 hover:bg-brand-600/20'
+              }`}>
+              <Users size={15} />
+              <span className="font-medium">Panel Admin</span>
+            </Link>
+          </>
+        )}
+
+        {/* ── Configuración — solo admins ── */}
+        {isAdmin && (
+          <>
+            <div className="mt-3 mb-1 border-t border-white/10 pt-3">
+              <p className="text-[9px] text-white/30 uppercase tracking-widest px-2 mb-1 font-semibold">Configuración</p>
+            </div>
+            {[
+              { to: '/sucursales',        icon: <Building2 size={15} />, label: 'Sucursales' },
+              { to: '/modules',           icon: <Settings2 size={15} />, label: 'Módulos' },
+              { to: '/settings',          icon: <Settings2 size={15} />, label: 'Configuración' },
+              { to: '/restaurant/tables', icon: <span className="text-base leading-none">🪑</span>, label: 'Mapa de mesas' },
+              { to: '/integraciones',     icon: <span className="text-base leading-none">🔌</span>, label: 'Integraciones' },
+              { to: '/retencion',         icon: <span className="text-base leading-none">💛</span>, label: 'Retención' },
+              { to: '/dian',              icon: <FileText size={15} />, label: 'Facturación DIAN' },
+            ].map(({ to, icon, label }) => (
+              <Link
+                key={to}
+                to={to}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${
+                  currentPath?.startsWith(to)
+                    ? 'bg-white/15 text-white'
+                    : 'text-white/50 hover:text-white hover:bg-white/10'
+                }`}>
+                {icon}
+                <span className="font-medium">{label}</span>
+              </Link>
+            ))}
+            {/* Alertas con badge */}
+            <Link
+              to="/alertas"
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm mb-0.5 transition-all ${
+                currentPath?.startsWith('/alertas')
+                  ? 'bg-white/15 text-white'
+                  : 'text-white/50 hover:text-white hover:bg-white/10'
+              }`}>
+              <Shield size={15} />
+              <span className="flex-1 font-medium">Alertas</span>
+              {alertCount > 0 && (
+                <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full leading-none">
+                  {alertCount > 99 ? '99+' : alertCount}
+                </span>
+              )}
+            </Link>
+          </>
+        )}
       </nav>
-
-      {/* Links visibles para todos los usuarios */}
-      <div className="px-2 pb-1 space-y-0.5">
-        <Link
-          to="/analytics"
-          className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
-            currentPath?.startsWith('/analytics')
-              ? 'bg-white/20 text-white'
-              : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-          }`}>
-          <BarChart3 size={13} />
-          <span>Analíticas</span>
-        </Link>
-        <Link
-          to="/reporte"
-          className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
-            currentPath?.startsWith('/reporte')
-              ? 'bg-white/20 text-white'
-              : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-          }`}>
-          <BarChart2 size={13} />
-          <span>Reporte diario</span>
-        </Link>
-        <Link
-          to="/turnos"
-          className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
-            currentPath?.startsWith('/turnos')
-              ? 'bg-white/20 text-white'
-              : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-          }`}>
-          <Clock size={13} />
-          <span>Mis turnos</span>
-        </Link>
-      </div>
-
-      {/* Panel super-admin — solo Fernando */}
-      {user?.email === 'fjfc1984@gmail.com' && (
-        <div className="px-2 pb-1">
-          <Link
-            to="/admin"
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
-              currentPath === '/admin'
-                ? 'bg-brand-600/80 text-white'
-                : 'text-brand-300/70 hover:text-brand-200 hover:bg-brand-600/20'
-            }`}>
-            <Users size={13} />
-            <span>Panel Admin</span>
-          </Link>
-        </div>
-      )}
-
-      {/* Enlaces de configuración — solo admins */}
-      {isAdmin && (
-        <div className="px-2 pb-2 space-y-0.5">
-          <Link
-            to="/sucursales"
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
-              currentPath === '/sucursales'
-                ? 'bg-white/20 text-white'
-                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-            }`}>
-            <Building2 size={13} />
-            <span>Sucursales</span>
-          </Link>
-          <Link
-            to="/modules"
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
-              currentPath === '/modules'
-                ? 'bg-white/20 text-white'
-                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-            }`}>
-            <Settings2 size={13} />
-            <span>Configurar módulos</span>
-          </Link>
-          <Link
-            to="/settings"
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
-              currentPath === '/settings'
-                ? 'bg-white/20 text-white'
-                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-            }`}>
-            <Settings2 size={13} />
-            <span>Configuración</span>
-          </Link>
-          <Link
-            to="/restaurant/tables"
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
-              currentPath?.startsWith('/restaurant/tables')
-                ? 'bg-white/20 text-white'
-                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-            }`}>
-            <span className="text-sm leading-none">🪑</span>
-            <span>Mapa de mesas</span>
-          </Link>
-          <Link
-            to="/integraciones"
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
-              currentPath?.startsWith('/integraciones')
-                ? 'bg-white/20 text-white'
-                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-            }`}>
-            <span className="text-sm leading-none">🔌</span>
-            <span>Integraciones</span>
-          </Link>
-          <Link
-            to="/alertas"
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
-              currentPath?.startsWith('/alertas')
-                ? 'bg-white/20 text-white'
-                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-            }`}>
-            <Shield size={13} />
-            <span className="flex-1">Alertas</span>
-            {alertCount > 0 && (
-              <span className="flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full leading-none">
-                {alertCount > 99 ? '99+' : alertCount}
-              </span>
-            )}
-          </Link>
-          <Link
-            to="/retencion"
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
-              currentPath?.startsWith('/retencion')
-                ? 'bg-white/20 text-white'
-                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-            }`}>
-            <span className="text-sm leading-none">💛</span>
-            <span>Retención</span>
-          </Link>
-          <Link
-            to="/dian"
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-all ${
-              currentPath?.startsWith('/dian')
-                ? 'bg-white/20 text-white'
-                : 'text-white/40 hover:text-white/70 hover:bg-white/5'
-            }`}>
-            <FileText size={13} />
-            <span>Facturación DIAN</span>
-          </Link>
-        </div>
-      )}
 
       {/* Footer del nav */}
       <div className="p-3 border-t border-white/10">
