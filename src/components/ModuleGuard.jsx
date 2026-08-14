@@ -40,6 +40,7 @@ export function PlanProvider({ children }) {
   const [modules,       setModules]       = useState(['pos']); // Mínimo garantizado
   const [activeModules, setActiveModules] = useState({});      // {} = todos activos
   const [trial,         setTrial]         = useState(null);
+  const [businessType,  setBusinessType]  = useState('generic');
   const [loading,       setLoading]       = useState(true);
 
   useEffect(() => {
@@ -60,6 +61,7 @@ export function PlanProvider({ children }) {
         setModules(org.enabled_modules   || ['pos']);
         setActiveModules(org.active_modules || {});
         if (org.trial_ends_at) setTrial(org.trial_ends_at);
+        if (org.business_type) setBusinessType(org.business_type);
       })
       .subscribe();
 
@@ -70,7 +72,7 @@ export function PlanProvider({ children }) {
     setLoading(true);
     const { data: org } = await supabase
       .from('organizations')
-      .select('plan_id, enabled_modules, active_modules, trial_ends_at')
+      .select('plan_id, enabled_modules, active_modules, trial_ends_at, business_type')
       .eq('id', organizationId)
       .single();
 
@@ -79,12 +81,13 @@ export function PlanProvider({ children }) {
       setModules(org.enabled_modules   || ['pos']);
       setActiveModules(org.active_modules || {});
       if (org.trial_ends_at) setTrial(org.trial_ends_at);
+      if (org.business_type) setBusinessType(org.business_type);
     }
     setLoading(false);
   }
 
   return (
-    <PlanContext.Provider value={{ plan, modules, activeModules, trial, loading, refetch: loadPlan }}>
+    <PlanContext.Provider value={{ plan, modules, activeModules, trial, businessType, loading, refetch: loadPlan }}>
       {children}
     </PlanContext.Provider>
   );
@@ -674,8 +677,8 @@ function BranchSwitcher({ isAdmin }) {
 // =============================================================================
 
 export function AdaptiveNav({ currentPath: currentPathProp }) {
-  const { modules, activeModules, plan, trial } = usePlan();
-  const { user, signOut }                       = useAuth();
+  const { modules, activeModules, plan, trial, businessType } = usePlan();
+  const { user, signOut }                                     = useAuth();
   const navigate  = useNavigate();
   const location  = useLocation();
   const currentPath = currentPathProp ?? location.pathname;
@@ -693,10 +696,17 @@ export function AdaptiveNav({ currentPath: currentPathProp }) {
     });
   }, [user, currentPath]); // refrescar al navegar
 
-  // Durante trial activo → todos los módulos son accesibles en el nav
+  // Durante trial: mostrar módulos según el tipo de negocio registrado (no todos)
   const isInTrial = trial && new Date(trial) > new Date();
-  const ALL_MAIN = ['pos', 'barbershop', 'kitchen', 'workshop', 'minimarket', 'inventory', 'dashboard'];
-  const effectiveModules = isInTrial ? ALL_MAIN : modules;
+  const TRIAL_BASE = ['pos', 'inventory', 'customers', 'dashboard'];
+  const TRIAL_BY_TYPE = {
+    barbershop: [...TRIAL_BASE, 'barbershop'],
+    restaurant: [...TRIAL_BASE, 'kitchen'],
+    workshop:   [...TRIAL_BASE, 'workshop'],
+    minimarket: [...TRIAL_BASE, 'minimarket'],
+  };
+  const trialModules = TRIAL_BY_TYPE[businessType] || TRIAL_BASE;
+  const effectiveModules = isInTrial ? trialModules : modules;
 
   // Módulos habilitados por plan Y no desactivados por el dueño
   const navModules = getNavModules(effectiveModules)
@@ -956,7 +966,7 @@ export function TrialBanner() {
 // =============================================================================
 
 export function MobileBottomNav() {
-  const { modules, activeModules, plan, trial } = usePlan();
+  const { modules, activeModules, plan, trial, businessType } = usePlan();
   const { user }    = useAuth();
   const navigate    = useNavigate();
   const location    = useLocation();
@@ -964,8 +974,14 @@ export function MobileBottomNav() {
 
   const isAdmin   = ['admin', 'owner'].includes(user?.role);
   const isInTrial = trial && new Date(trial) > new Date();
-  const ALL_MAIN  = ['pos','barbershop','kitchen','workshop','minimarket','inventory','dashboard'];
-  const effective = isInTrial ? ALL_MAIN : modules;
+  const TRIAL_BASE = ['pos', 'inventory', 'customers', 'dashboard'];
+  const TRIAL_BY_TYPE = {
+    barbershop: [...TRIAL_BASE, 'barbershop'],
+    restaurant: [...TRIAL_BASE, 'kitchen'],
+    workshop:   [...TRIAL_BASE, 'workshop'],
+    minimarket: [...TRIAL_BASE, 'minimarket'],
+  };
+  const effective = isInTrial ? (TRIAL_BY_TYPE[businessType] || TRIAL_BASE) : modules;
 
   const navModules = getNavModules(effective)
     .filter(mod => activeModules?.[mod.key] !== false)
