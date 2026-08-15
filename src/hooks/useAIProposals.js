@@ -17,7 +17,7 @@ export function useAIProposals(branchId) {
     const load = async () => {
       const { data } = await supabase
         .from('ai_proposals')
-        .select('*')
+        .select('id, branch_id, status, proposal_type, title, description, confidence_score, created_at')
         .eq('branch_id', branchId)
         .eq('status', 'pending')
         .order('created_at', { ascending: false })

@@ -1262,7 +1262,7 @@ function SupplierList({ organizationId }) {
     setLoading(true);
     const { data } = await supabase
       .from('suppliers')
-      .select('*')
+      .select('id, name, contact_name, phone, email, address, notes, organization_id')
       .eq('organization_id', organizationId)
       .order('name');
     setSuppliers(data || []);

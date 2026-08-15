@@ -82,6 +82,7 @@ function useCustomers(branchId, organizationId, search = '') {
           orders:orders(count),
           last_order:orders(created_at, total)
         `)
+        .eq('organization_id', organizationId)
         .order('name', { ascending: true })
 
       if (search.trim()) {
@@ -114,6 +115,7 @@ function useCustomers(branchId, organizationId, search = '') {
             notes: customer.notes,
           })
           .eq('id', customer.id)
+          .eq('organization_id', organizationId)
           .select()
           .single()
         if (error) throw error
@@ -145,6 +147,7 @@ function useCustomers(branchId, organizationId, search = '') {
         .from('customers')
         .delete()
         .eq('id', customerId)
+        .eq('organization_id', organizationId)
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['customers'] }),
@@ -558,7 +561,7 @@ function Modal({ open, title, children, onClose, size = 'md' }) {
 // CustomersPage — página principal del módulo
 // ---------------------------------------------------------------------------
 export function CustomersPage() {
-  const { organizationId } = useAuth()
+  const { organizationId, isAdmin } = useAuth()
   const { branchId } = usePOS()
   const track = useTrack();
   useEffect(() => { track('module_view', 'customers') }, [track]);
@@ -592,14 +595,18 @@ export function CustomersPage() {
 
   // Anonimizar cliente (Cancelación / Rectificación ARCO)
   async function anonymizeCustomer(customerId) {
-    const anon = `ANONIMIZADO-${Date.now()}`
+    if (!isAdmin) {
+      setArcoSuccess('⛔ Sin permiso: solo Owner o Admin pueden ejecutar operaciones ARCO.')
+      setArcoConfirm(false); setArcoAction(null)
+      return
+    }
     const { error } = await supabase.from('customers').update({
       first_name: 'CLIENTE',
       last_name:  'ANONIMIZADO',
       phone:      null,
       email:      null,
       notes:      `Datos anonimizados por solicitud ARCO el ${new Date().toLocaleDateString('es-CO')}`,
-    }).eq('id', customerId)
+    }).eq('id', customerId).eq('organization_id', organizationId)
     if (!error) {
       setArcoSuccess('Datos del cliente anonimizados correctamente.')
       setArcoResult(prev => prev.filter(c => c.id !== customerId))
@@ -609,7 +616,13 @@ export function CustomersPage() {
 
   // Eliminar cliente (Supresión ARCO)
   async function deleteCustomerARCO(customerId) {
-    const { error } = await supabase.from('customers').delete().eq('id', customerId)
+    if (!isAdmin) {
+      setArcoSuccess('⛔ Sin permiso: solo Owner o Admin pueden ejecutar operaciones ARCO.')
+      setArcoConfirm(false); setArcoAction(null)
+      return
+    }
+    const { error } = await supabase.from('customers').delete()
+      .eq('id', customerId).eq('organization_id', organizationId)
     if (!error) {
       setArcoSuccess('Registro del cliente eliminado permanentemente.')
       setArcoResult(prev => prev.filter(c => c.id !== customerId))
