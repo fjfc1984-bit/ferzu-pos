@@ -80,7 +80,9 @@ app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true);
     if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-    cb(new Error(`CORS: origen no permitido → ${origin}`));
+    // Rechazar silenciosamente (sin lanzar Error) para no contaminar Sentry
+    // con bots, health-checks de Railway u orígenes desconocidos
+    cb(null, false);
   },
   credentials: true,
 }));
