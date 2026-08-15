@@ -1160,7 +1160,7 @@ export function AuthProvider({ children }) {
     // Cargar sesión inicial
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
-        await loadUserProfile(session.user.id);
+        await loadUserProfile(session.user.id, session.user.email);
         resetInactivityTimer();
         scheduleProactiveRefresh(session);
       }
@@ -1180,7 +1180,7 @@ export function AuthProvider({ children }) {
         // No hace falta recargar el perfil: el usuario no cambió
         scheduleProactiveRefresh(session);
       } else if (session?.user) {
-        await loadUserProfile(session.user.id);
+        await loadUserProfile(session.user.id, session.user.email);
         resetInactivityTimer();
         scheduleProactiveRefresh(session);
         // Registrar último login solo en eventos de sign-in real (no en token refresh)
@@ -1206,7 +1206,7 @@ export function AuthProvider({ children }) {
     };
   }, [scheduleProactiveRefresh]);
 
-  async function loadUserProfile(userId) {
+  async function loadUserProfile(userId, fallbackEmail = null) {
     const { data } = await supabase
       .from('users')
       .select(`
@@ -1219,6 +1219,8 @@ export function AuthProvider({ children }) {
       .single();
 
     if (data) {
+      // Si users.email está vacío (cuenta antigua) usar el email de la sesión Auth
+      if (!data.email && fallbackEmail) data.email = fallbackEmail;
       setUser(data);
       setOrganizationId(data.organization_id);
       // Restaurar branchId desde localStorage o derivar de user_branches
