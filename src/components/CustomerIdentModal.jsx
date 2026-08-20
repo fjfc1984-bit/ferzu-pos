@@ -11,7 +11,7 @@
 // =============================================================================
 
 import { useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase } from '../lib/supabase.js'
 import { CONSUMIDOR_FINAL } from '../constants/dian'
 
 const FIELD_LABELS = {
@@ -83,7 +83,7 @@ export default function CustomerIdentModal({ organizationId, onSelect, onClose }
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[300] px-4">
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
 
         {/* Header */}
