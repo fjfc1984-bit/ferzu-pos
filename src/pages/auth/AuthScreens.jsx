@@ -71,6 +71,10 @@ export function LoginPage() {
     if (hasOrg && doneSetup) {
       // Organización configurada → selección de sucursal (branch-select redirige a /pos)
       navigate('/branch-select');
+    } else if (!userData) {
+      // Query falló (red lenta / RLS) — el AuthProvider cargará el perfil via onAuthStateChange.
+      // Ir a branch-select como fallback seguro para no bloquear al usuario.
+      navigate('/branch-select');
     } else {
       // Sin org o setup incompleto → completar onboarding
       navigate('/onboarding');

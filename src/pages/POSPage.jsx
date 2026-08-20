@@ -2250,12 +2250,24 @@ function CashSessionModal({ onClose, branchId }) {
     if (!branchId) { toast.error('Selecciona una sucursal primero'); return; }
     setOpenLoading(true);
     try {
-      const session = await cashAPI.open({ branch_id: branchId, opening_cash: Number(openCash) || 0 });
+      const session = await cashAPI.open({ branch_id: branchId, opening_cash: Math.round(Number(openCash) || 0) });
       dispatch({ type: 'SET_CASH_SESSION', payload: session });
       toast.success('Caja abierta correctamente');
       onClose();
     } catch (err) {
-      toast.error(err?.response?.data?.error || 'Error al abrir caja');
+      // 409: ya existe una caja abierta → cargarla en vez de bloquear el modal
+      if (err?.response?.status === 409) {
+        try {
+          const existing = await cashAPI.current();
+          if (existing) {
+            dispatch({ type: 'SET_CASH_SESSION', payload: existing });
+            toast('Retomando sesión de caja abierta');
+            onClose();
+            return;
+          }
+        } catch { /* si current() también falla, mostrar error normal */ }
+      }
+      toast.error(err?.response?.data?.error || err?.response?.data?.errors?.[0]?.msg || 'Error al abrir caja');
     } finally { setOpenLoading(false); }
   }
 
