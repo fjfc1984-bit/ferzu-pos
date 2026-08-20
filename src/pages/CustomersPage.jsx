@@ -108,10 +108,10 @@ function useCustomers(branchId, organizationId, search = '') {
         const { data, error } = await supabase
           .from('customers')
           .update({
-            name: customer.name,
+            full_name: customer.name,
             phone: customer.phone,
             email: customer.email,
-            document_number: customer.document_number,
+            id_number: customer.document_number,
             notes: customer.notes,
           })
           .eq('id', customer.id)
@@ -125,10 +125,10 @@ function useCustomers(branchId, organizationId, search = '') {
         const { data, error } = await supabase
           .from('customers')
           .insert({
-            name:            customer.name,
+            full_name:       customer.name,
             phone:           customer.phone,
             email:           customer.email || null,
-            document_number: customer.document_number || null,
+            id_number:       customer.document_number || null,
             notes:           customer.notes || null,
             organization_id: organizationId,
           })
