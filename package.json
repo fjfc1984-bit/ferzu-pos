@@ -9,6 +9,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:node": "node --test src/__tests__/loginFlow.test.js src/__tests__/arcoGuard.test.js",
+    "test:backend": "node --test backend/tests/*.test.js",
+    "test:all": "node --test src/__tests__/loginFlow.test.js src/__tests__/arcoGuard.test.js backend/tests/*.test.js",
     "coverage": "vitest run --coverage"
   },
   "dependencies": {
