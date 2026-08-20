@@ -11,8 +11,8 @@
 // =============================================================================
 
 import { useState } from 'react'
-import { supabase } from '../lib/supabase.js'
-import { CONSUMIDOR_FINAL } from '../constants/dian'
+import { api } from '../lib/api.js'
+import { CONSUMIDOR_FINAL } from '../constants/dian.js'
 
 const FIELD_LABELS = {
   full_name: 'Nombre completo',
@@ -29,52 +29,53 @@ export default function CustomerIdentModal({ organizationId, onSelect, onClose }
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
 
-  // ── Buscar cliente existente ─────────────────────────────────────────────
+  // ── Buscar cliente existente (vía backend API) ────────────────────────────
   async function handleSearch() {
     const q = query.trim()
     if (!q) { setError('Ingresa cédula, NIT o celular'); return }
     setLoading(true); setError(''); setFound(null)
 
-    const { data, error: dbErr } = await supabase
-      .from('customers')
-      .select('id, full_name, id_number, id_type, email, phone')
-      .eq('organization_id', organizationId)
-      .or(`id_number.eq.${q},phone.eq.${q}`)
-      .maybeSingle()
-
-    setLoading(false)
-
-    if (dbErr) { setError('Error al buscar. Intenta de nuevo.'); return }
-
-    if (data) {
-      setFound(data)
-    } else {
-      setError('No encontrado. Puedes registrarlo ahora.')
-      setMode('new')
-      setForm({ full_name: '', id_number: q, email: '', phone: '' })
+    try {
+      const { data } = await api.get(`/customers/search?q=${encodeURIComponent(q)}`)
+      setLoading(false)
+      if (data.customer) {
+        setFound(data.customer)
+      } else {
+        setError('No encontrado. Puedes registrarlo ahora.')
+        setMode('new')
+        setForm({ full_name: '', id_number: q, email: '', phone: '' })
+      }
+    } catch (err) {
+      setLoading(false)
+      setError(err?.response?.data?.error || 'Error al buscar. Intenta de nuevo.')
     }
   }
 
-  // ── Registrar cliente nuevo ──────────────────────────────────────────────
+  // ── Registrar cliente nuevo (vía backend API) ─────────────────────────────
   async function handleCreate() {
     if (!form.full_name.trim()) { setError('El nombre es obligatorio'); return }
     setLoading(true); setError('')
 
-    const { data, error: dbErr } = await supabase
-      .from('customers')
-      .insert({
-        full_name:       form.full_name.trim(),
-        id_number:       form.id_number.trim()  || null,
-        email:           form.email.trim()       || null,
-        phone:           form.phone.trim()       || null,
-        organization_id: organizationId,
+    try {
+      const { data } = await api.post('/customers', {
+        full_name: form.full_name.trim(),
+        id_number: form.id_number.trim() || null,
+        email:     form.email.trim()     || null,
+        phone:     form.phone.trim()     || null,
       })
-      .select()
-      .single()
-
-    setLoading(false)
-    if (dbErr) { setError(dbErr.message); return }
-    onSelect(data)
+      setLoading(false)
+      onSelect(data.customer)
+    } catch (err) {
+      setLoading(false)
+      // 409 = cédula duplicada → mostrar el cliente existente
+      if (err?.response?.status === 409 && err.response.data.existing) {
+        setFound(err.response.data.existing)
+        setMode('search')
+        setError('Este documento ya está registrado. Selecciónalo.')
+      } else {
+        setError(err?.response?.data?.error || 'Error al registrar. Intenta de nuevo.')
+      }
+    }
   }
 
   function handleKey(e) {
