@@ -38,47 +38,26 @@ export function LoginPage() {
     setError('');
     setLoading(true);
 
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
+    const { error: authError } = await supabase.auth.signInWithPassword({
       email:    form.email.trim().toLowerCase(),
       password: form.password,
     });
 
+    setLoading(false);
+
     if (authError) {
-      setLoading(false);
       setError(
-        authError.message.includes('Invalid login')
+        authError.message.includes('Invalid login') || authError.message.includes('Invalid email')
           ? 'Correo o contraseña incorrectos'
           : authError.message
       );
       return;
     }
 
-    // Verificar si el usuario ya tiene organización asignada Y si el onboarding está completo
-    const { data: userData } = await supabase
-      .from('users')
-      .select(`
-        organization_id, role,
-        organizations(onboarding_completed)
-      `)
-      .eq('id', data.user.id)
-      .single();
-
-    setLoading(false);
-
-    const hasOrg       = !!userData?.organization_id;
-    const doneSetup    = !!userData?.organizations?.onboarding_completed;
-
-    if (hasOrg && doneSetup) {
-      // Organización configurada → selección de sucursal (branch-select redirige a /pos)
-      navigate('/branch-select');
-    } else if (!userData) {
-      // Query falló (red lenta / RLS) — el AuthProvider cargará el perfil via onAuthStateChange.
-      // Ir a branch-select como fallback seguro para no bloquear al usuario.
-      navigate('/branch-select');
-    } else {
-      // Sin org o setup incompleto → completar onboarding
-      navigate('/onboarding');
-    }
+    // El AuthProvider escucha onAuthStateChange y carga el perfil (org, rol, plan).
+    // Navegamos directamente a branch-select — si aún no tiene org configurada,
+    // BranchSelector redirige a /onboarding automáticamente.
+    navigate('/branch-select');
   }
 
   return (
