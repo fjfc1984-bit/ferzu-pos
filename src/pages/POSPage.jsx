@@ -39,6 +39,8 @@ import { formatCOP }               from '../lib/math.js';
 import { cashAPI, api }            from '../lib/api.js';
 import { supabase }                from '../lib/supabase.js';
 import toast                       from 'react-hot-toast';
+import CustomerIdentModal          from '../components/CustomerIdentModal.jsx';
+import { CONSUMIDOR_FINAL }        from '../constants/dian.js';
 
 // Sub-componentes (definidos en secciones siguientes)
 // import ProductGrid        from '../components/pos/ProductGrid.jsx';
@@ -1162,7 +1164,7 @@ function OrderPanel({ onPay, onCustomer, onDiscount, onCourtesy, onOpenCashModal
 
 function PaymentModal({ onClose }) {
   const { totals, items, customerName, customerId, processPayment, processPaymentMixed, isProcessing, clearOrder } = usePOS();
-  const { user }                                           = useAuth();
+  const { user, organizationId }                           = useAuth();
   const { printReceipt, isPrinting: printing, isConnected: printerConnected } = useThermalPrinter();
   const track = useTrack();
   const [method,       setMethod]       = useState('cash');
@@ -1196,6 +1198,9 @@ function PaymentModal({ onClose }) {
   const [invoiceEmail,      setInvoiceEmail]      = useState('');     // Email para envío PDF
   const [invoiceName,       setInvoiceName]       = useState('');     // Razón social o nombre
   const [invoiceDocType,    setInvoiceDocType]    = useState('NIT');  // NIT | CC | CE
+  // Identificación DIAN: cliente seleccionado antes de cobrar
+  const [posCustomer,       setPosCustomer]       = useState(null);   // objeto cliente o CONSUMIDOR_FINAL
+  const [showIdentModal,    setShowIdentModal]    = useState(false);
   const cashInputRef = useRef(null);
   const mixCashRef   = useRef(null);
 
@@ -1260,6 +1265,27 @@ function PaymentModal({ onClose }) {
     gray:   'bg-gray-50 border-gray-200 text-gray-700',
     indigo: 'bg-indigo-50 border-indigo-200 text-indigo-700',
   };
+
+  // ── Selección de cliente (DIAN) ─────────────────────────────────────────
+  function handleSelectCustomer(customer) {
+    setPosCustomer(customer)
+    setShowIdentModal(false)
+    const isCF = customer.id_number === CONSUMIDOR_FINAL.id_number
+    if (!isCF) {
+      // Pre-llenar campos de factura electrónica con los datos del cliente
+      setInvoiceRequired(true)
+      setInvoiceNit(customer.id_number || '')
+      setInvoiceName(customer.full_name || '')
+      setInvoiceEmail(customer.email   || '')
+      setInvoiceDocType('CC') // por defecto cédula; el cajero puede cambiar a NIT
+    } else {
+      // Consumidor Final: limpiar campos de factura
+      setInvoiceRequired(false)
+      setInvoiceNit('')
+      setInvoiceName('')
+      setInvoiceEmail('')
+    }
+  }
 
   async function handleConfirm() {
     const loyaltyOpts = redeemEnabled && loyaltyDiscount > 0
@@ -1631,6 +1657,14 @@ function PaymentModal({ onClose }) {
   }
 
   return (
+    <>
+    {showIdentModal && (
+      <CustomerIdentModal
+        organizationId={organizationId}
+        onSelect={handleSelectCustomer}
+        onClose={() => setShowIdentModal(false)}
+      />
+    )}
     <Modal onClose={onClose} title="Cobrar orden">
       <div className="p-5 space-y-5">
 
@@ -1644,6 +1678,40 @@ function PaymentModal({ onClose }) {
               {loyaltyDiscount > 0 && <span className="text-emerald-600">Puntos −{formatCOP(loyaltyDiscount)}</span>}
             </p>
           )}
+        </div>
+
+        {/* ── Identificación DIAN ── */}
+        <div
+          className={`rounded-2xl border px-4 py-3 flex items-center justify-between cursor-pointer transition-all ${
+            posCustomer
+              ? posCustomer.id_number === CONSUMIDOR_FINAL.id_number
+                ? 'bg-gray-50 border-gray-200'
+                : 'bg-blue-50 border-blue-200'
+              : 'bg-amber-50 border-amber-300 animate-pulse'
+          }`}
+          onClick={() => setShowIdentModal(true)}
+        >
+          <div>
+            {posCustomer ? (
+              <>
+                <p className="text-xs font-semibold text-gray-700 flex items-center gap-1">
+                  👤 {posCustomer.full_name}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  {posCustomer.id_number}
+                  {posCustomer.phone ? ` · ${posCustomer.phone}` : ''}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-xs font-semibold text-amber-700">⚠️ Identificar cliente</p>
+                <p className="text-[10px] text-amber-600 mt-0.5">Toca para buscar o usar Consumidor Final (DIAN)</p>
+              </>
+            )}
+          </div>
+          <span className="text-xs text-blue-500 font-medium shrink-0 ml-3">
+            {posCustomer ? 'Cambiar' : 'Identificar →'}
+          </span>
         </div>
 
         {/* F9-A: Canjear puntos de fidelización */}
@@ -1939,6 +2007,7 @@ function PaymentModal({ onClose }) {
         </button>
       </div>
     </Modal>
+    </>
   );
 }
 
