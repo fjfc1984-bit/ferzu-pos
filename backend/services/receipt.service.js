@@ -39,7 +39,7 @@ function formatCOP(value) {
  * Reemplaza tokens {{variable}} y bloques {{#if}} / {{#each}} básicos.
  * Para producción considera Handlebars o EJS si la plantilla crece.
  */
-function renderTemplate(data) {
+export function renderTemplate(data) {
   const templatePath = path.join(__dirname, '../templates/receipt.html')
   let html = fs.readFileSync(templatePath, 'utf-8')
 
@@ -238,13 +238,20 @@ export async function sendReceiptByEmail(payload, toEmail) {
     subject: `✅ Tu comprobante ${payload.orden.numero} — ${payload.empresa.nombre}`,
     html,
     // Texto plano como fallback
-    text: [
-      `Hola ${payload.cliente.nombre},`,
-      `Gracias por tu compra en ${payload.empresa.nombre}.`,
-      `Orden: ${payload.orden.numero} | Fecha: ${payload.orden.fecha}`,
-      `Total: ${formatCOP(payload.totales.total)}`,
-      `Soporte: ${payload.empresa.telefono}`,
-    ].join('\n'),
+    text: (() => {
+      const backendUrl = process.env.RECEIPT_BASE_URL
+        || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null)
+        || 'https://ferzu-backend-production.up.railway.app'
+      const link = `${backendUrl}/api/receipts/view/${payload.meta.order_id}`
+      return [
+        `Hola ${payload.cliente.nombre},`,
+        `Gracias por tu compra en ${payload.empresa.nombre}.`,
+        `Orden: ${payload.orden.numero} | Fecha: ${payload.orden.fecha}`,
+        `Total: ${formatCOP(payload.totales.total)}`,
+        `Ver factura digital: ${link}`,
+        `Soporte: ${payload.empresa.telefono}`,
+      ].join('\n')
+    })(),
     // Tags para filtrar en el dashboard de Resend
     tags: [
       { name: 'order_id',      value: payload.meta.order_id },
@@ -320,8 +327,11 @@ export async function sendReceiptByWhatsApp(payload, toPhone) {
   const normalizedPhone = toPhone.replace(/[\s+\-()]/g, '').replace(/^0/, '')
   const fullPhone = normalizedPhone.startsWith('57') ? normalizedPhone : `57${normalizedPhone}`
 
-  // URL del comprobante en línea (si tienes una ruta pública para verlo)
-  const receiptUrl = `${process.env.RECEIPT_BASE_URL || 'https://ferzu-pos.vercel.app'}/receipt/${payload.meta.order_id}`
+  // URL pública del comprobante — endpoint GET /api/receipts/view/:orderId
+  const backendUrl = process.env.RECEIPT_BASE_URL
+    || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null)
+    || 'https://ferzu-backend-production.up.railway.app'
+  const receiptUrl = `${backendUrl}/api/receipts/view/${payload.meta.order_id}`
 
   // ─── Cuerpo de la petición: Template Message ────────────────────────────────
   //
@@ -418,6 +428,12 @@ export async function sendReceiptByWhatsAppText(payload, toPhone) {
   const normalizedPhone = toPhone.replace(/[\s+\-()]/g, '').replace(/^0/, '')
   const fullPhone = normalizedPhone.startsWith('57') ? normalizedPhone : `57${normalizedPhone}`
 
+  // Enlace público al comprobante HTML
+  const backendUrl = process.env.RECEIPT_BASE_URL
+    || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null)
+    || 'https://ferzu-backend-production.up.railway.app'
+  const receiptUrl = `${backendUrl}/api/receipts/view/${payload.meta.order_id}`
+
   const textBody = [
     `✅ *Comprobante de Venta*`,
     `*${payload.empresa.nombre}*`,
@@ -432,6 +448,8 @@ export async function sendReceiptByWhatsAppText(payload, toPhone) {
     payload.totales.descuento ? `🏷️ Descuento: -${formatCOP(payload.totales.descuento)}` : null,
     `*💰 TOTAL: ${formatCOP(payload.totales.total)}*`,
     `─────────────────`,
+    `🧾 Ver tu factura digital:`,
+    receiptUrl,
     `📞 Soporte: ${payload.empresa.telefono}`,
     `_Gracias por tu compra_ 🙌`,
   ].filter(Boolean).join('\n')
