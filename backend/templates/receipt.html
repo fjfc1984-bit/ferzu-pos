@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Comprobante de Venta — {{empresa.nombre}}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;-webkit-text-size-adjust:100%;">
+
+  <!-- Wrapper externo -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6f9;padding:20px 0;">
+    <tr>
+      <td align="center">
+
+        <!-- Tarjeta principal -->
+        <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+
+          <!-- ══════════════════════════════════════════
+               CABECERA — Logo + Empresa + Redes
+          ══════════════════════════════════════════ -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#059669 0%,#047857 100%);padding:32px 36px 24px;">
+
+              <!-- Logo + Nombre empresa -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="vertical-align:middle;">
+                    {{#if empresa.logo_url}}
+                    <img src="{{empresa.logo_url}}" alt="{{empresa.nombre}}" height="52" style="display:block;height:52px;max-width:180px;object-fit:contain;" />
+                    {{else}}
+                    <div style="display:inline-block;background:rgba(255,255,255,0.15);border-radius:8px;padding:10px 16px;">
+                      <span style="color:#ffffff;font-size:22px;font-weight:800;letter-spacing:-0.5px;">{{empresa.nombre}}</span>
+                    </div>
+                    {{/if}}
+                  </td>
+                  <td align="right" style="vertical-align:middle;">
+                    <span style="background:rgba(255,255,255,0.2);color:#ffffff;font-size:11px;font-weight:700;padding:5px 12px;border-radius:20px;letter-spacing:0.5px;text-transform:uppercase;">COMPROBANTE INTERNO</span>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Separador -->
+              <div style="margin:16px 0;border-top:1px solid rgba(255,255,255,0.2);"></div>
+
+              <!-- Datos empresa + Ciudad + Redes -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="vertical-align:top;">
+                    <p style="margin:0;color:rgba(255,255,255,0.9);font-size:12px;line-height:20px;">
+                      NIT: <strong style="color:#ffffff;">{{empresa.nit}}</strong><br/>
+                      {{empresa.regimen}}<br/>
+                      📍 {{empresa.direccion}} — {{empresa.ciudad}}<br/>
+                      📞 {{empresa.telefono}}
+                    </p>
+                  </td>
+                  <td align="right" style="vertical-align:top;">
+                    <!-- Redes sociales -->
+                    {{#if empresa.redes.instagram}}
+                    <a href="https://instagram.com/{{empresa.redes.instagram}}" style="display:inline-block;margin-left:8px;text-decoration:none;">
+                      <span style="background:rgba(255,255,255,0.2);color:#ffffff;font-size:11px;padding:4px 10px;border-radius:12px;">📸 @{{empresa.redes.instagram}}</span>
+                    </a>
+                    {{/if}}
+                    {{#if empresa.redes.whatsapp}}
+                    <a href="https://wa.me/57{{empresa.redes.whatsapp}}" style="display:inline-block;margin-left:8px;margin-top:6px;text-decoration:none;">
+                      <span style="background:rgba(255,255,255,0.2);color:#ffffff;font-size:11px;padding:4px 10px;border-radius:12px;">💬 WhatsApp</span>
+                    </a>
+                    {{/if}}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ══════════════════════════════════════════
+               NÚMERO DE ORDEN Y FECHA
+          ══════════════════════════════════════════ -->
+          <tr>
+            <td style="padding:0 36px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fffe;border-left:4px solid #059669;border-radius:0 8px 8px 0;margin:24px 0 0;padding:14px 20px;">
+                <tr>
+                  <td>
+                    <span style="color:#059669;font-size:22px;font-weight:800;letter-spacing:-0.5px;">{{orden.numero}}</span>
+                    <span style="color:#6b7280;font-size:13px;margin-left:8px;">Comprobante de venta</span>
+                  </td>
+                  <td align="right">
+                    <span style="color:#374151;font-size:13px;font-weight:600;">{{orden.fecha}}</span><br/>
+                    <span style="color:#9ca3af;font-size:11px;">Cajero: {{orden.cajero}}</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ══════════════════════════════════════════
+               DATOS DEL CLIENTE
+          ══════════════════════════════════════════ -->
+          <tr>
+            <td style="padding:20px 36px 0;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+                <tr>
+                  <td colspan="2" style="background:#f9fafb;padding:10px 16px;border-bottom:1px solid #e5e7eb;">
+                    <span style="color:#374151;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">👤 Datos del Cliente</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:12px 16px;vertical-align:top;width:50%;border-right:1px solid #e5e7eb;">
+                    <span style="color:#9ca3af;font-size:11px;display:block;">Nombre</span>
+                    <span style="color:#111827;font-size:13px;font-weight:600;">{{cliente.nombre}}</span>
+                  </td>
+                  <td style="padding:12px 16px;vertical-align:top;">
+                    <span style="color:#9ca3af;font-size:11px;display:block;">Identificación</span>
+                    <span style="color:#111827;font-size:13px;font-weight:600;">{{cliente.tipo_id}}: {{cliente.numero_id}}</span>
+                  </td>
+                </tr>
+                <tr style="border-top:1px solid #e5e7eb;">
+                  <td style="padding:12px 16px;vertical-align:top;border-right:1px solid #e5e7eb;">
+                    <span style="color:#9ca3af;font-size:11px;display:block;">Correo electrónico</span>
+                    <span style="color:#111827;font-size:13px;">{{cliente.email}}</span>
+                  </td>
+                  <td style="padding:12px 16px;vertical-align:top;">
+                    <span style="color:#9ca3af;font-size:11px;display:block;">Celular</span>
+                    <span style="color:#111827;font-size:13px;">{{cliente.celular}}</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ══════════════════════════════════════════
+               TABLA DE PRODUCTOS
+          ══════════════════════════════════════════ -->
+          <tr>
+            <td style="padding:20px 36px 0;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;">
+
+                <!-- Encabezado tabla -->
+                <tr style="background:#059669;">
+                  <td style="padding:10px 14px;color:#ffffff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;width:44%;">Descripción</td>
+                  <td align="center" style="padding:10px 8px;color:#ffffff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;width:10%;">Cant.</td>
+                  <td align="right" style="padding:10px 14px;color:#ffffff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;width:23%;">Valor Unit.</td>
+                  <td align="right" style="padding:10px 14px;color:#ffffff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;width:23%;">Total</td>
+                </tr>
+
+                <!-- Filas de productos (se repite con {{#each items}}) -->
+                {{#each items}}
+                <tr style="background:{{#if @even}}#f9fafb{{else}}#ffffff{{/if}};border-top:1px solid #e5e7eb;">
+                  <td style="padding:12px 14px;">
+                    <span style="color:#111827;font-size:13px;font-weight:600;display:block;">{{nombre}}</span>
+                    {{#if descripcion}}
+                    <span style="color:#9ca3af;font-size:11px;">{{descripcion}}</span>
+                    {{/if}}
+                  </td>
+                  <td align="center" style="padding:12px 8px;color:#374151;font-size:13px;">{{cantidad}}</td>
+                  <td align="right" style="padding:12px 14px;color:#374151;font-size:13px;">{{formatCOP valor_unitario}}</td>
+                  <td align="right" style="padding:12px 14px;color:#111827;font-size:13px;font-weight:600;">{{formatCOP total}}</td>
+                </tr>
+                {{/each}}
+
+              </table>
+            </td>
+          </tr>
+
+          <!-- ══════════════════════════════════════════
+               BLOQUE DE TOTALES
+          ══════════════════════════════════════════ -->
+          <tr>
+            <td style="padding:16px 36px 0;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td width="55%"></td>
+                  <td width="45%">
+
+                    <!-- Subtotal -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+                      <tr>
+                        <td style="padding:9px 14px;color:#6b7280;font-size:13px;border-bottom:1px solid #e5e7eb;">Subtotal</td>
+                        <td align="right" style="padding:9px 14px;color:#374151;font-size:13px;font-weight:600;border-bottom:1px solid #e5e7eb;">{{formatCOP totales.subtotal}}</td>
+                      </tr>
+                      {{#if totales.descuento}}
+                      <tr>
+                        <td style="padding:9px 14px;color:#dc2626;font-size:13px;border-bottom:1px solid #e5e7eb;">Descuento</td>
+                        <td align="right" style="padding:9px 14px;color:#dc2626;font-size:13px;font-weight:600;border-bottom:1px solid #e5e7eb;">-{{formatCOP totales.descuento}}</td>
+                      </tr>
+                      {{/if}}
+                      {{#if totales.iva}}
+                      <tr>
+                        <td style="padding:9px 14px;color:#6b7280;font-size:13px;border-bottom:1px solid #e5e7eb;">IVA ({{totales.iva_pct}}%)</td>
+                        <td align="right" style="padding:9px 14px;color:#374151;font-size:13px;font-weight:600;border-bottom:1px solid #e5e7eb;">{{formatCOP totales.iva}}</td>
+                      </tr>
+                      {{/if}}
+                      <!-- Total grande -->
+                      <tr style="background:#059669;">
+                        <td style="padding:13px 14px;color:#ffffff;font-size:15px;font-weight:800;">TOTAL</td>
+                        <td align="right" style="padding:13px 14px;color:#ffffff;font-size:18px;font-weight:900;letter-spacing:-0.5px;">{{formatCOP totales.total}}</td>
+                      </tr>
+                    </table>
+
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ══════════════════════════════════════════
+               MÉTODO DE PAGO
+          ══════════════════════════════════════════ -->
+          <tr>
+            <td style="padding:16px 36px 0;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#eff6ff;border-radius:8px;padding:12px 16px;">
+                <tr>
+                  <td>
+                    <span style="color:#1d4ed8;font-size:12px;font-weight:700;">💳 MÉTODO DE PAGO</span>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px;">
+                      {{#each pagos}}
+                      <tr>
+                        <td style="color:#374151;font-size:13px;padding:2px 0;">{{metodo}}</td>
+                        <td align="right" style="color:#111827;font-size:13px;font-weight:600;padding:2px 0;">{{formatCOP monto}}</td>
+                      </tr>
+                      {{/each}}
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ══════════════════════════════════════════
+               SEPARADOR
+          ══════════════════════════════════════════ -->
+          <tr>
+            <td style="padding:24px 36px 0;">
+              <div style="border-top:2px dashed #e5e7eb;"></div>
+            </td>
+          </tr>
+
+          <!-- ══════════════════════════════════════════
+               PIE DE PÁGINA — Políticas + Soporte
+          ══════════════════════════════════════════ -->
+          <tr>
+            <td style="padding:20px 36px 28px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td width="49%" style="vertical-align:top;padding-right:12px;">
+                    <p style="margin:0 0 4px;color:#374151;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">📋 Políticas</p>
+                    <p style="margin:0;color:#6b7280;font-size:11px;line-height:18px;">
+                      • Cambios y devoluciones dentro de los <strong>5 días hábiles</strong> siguientes a la compra con factura.<br/>
+                      • Garantía de <strong>30 días</strong> en servicios de software.<br/>
+                      • No se realizan devoluciones en licencias activadas.
+                    </p>
+                  </td>
+                  <td width="2%"></td>
+                  <td width="49%" style="vertical-align:top;padding-left:12px;border-left:1px solid #e5e7eb;">
+                    <p style="margin:0 0 4px;color:#374151;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">🕐 Soporte Técnico</p>
+                    <p style="margin:0;color:#6b7280;font-size:11px;line-height:18px;">
+                      • Horario: <strong>Lun – Sáb 8am – 6pm</strong><br/>
+                      • WhatsApp: <strong>{{empresa.telefono}}</strong><br/>
+                      • Correo: <strong>{{empresa.email_soporte}}</strong><br/>
+                      • Tiempo de respuesta: <strong>24h hábiles</strong>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Línea final -->
+              <div style="margin-top:20px;text-align:center;">
+                <p style="margin:0;color:#d1d5db;font-size:10px;">
+                  Este comprobante es un documento de control interno generado por <strong style="color:#9ca3af;">FERZU POS</strong>.<br/>
+                  Para soporte visita <a href="https://ferzu-pos.vercel.app" style="color:#059669;text-decoration:none;">ferzu-pos.vercel.app</a>
+                </p>
+              </div>
+            </td>
+          </tr>
+
+        </table>
+        <!-- /Tarjeta principal -->
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>

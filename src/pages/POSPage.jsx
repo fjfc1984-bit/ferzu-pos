@@ -1180,6 +1180,11 @@ function PaymentModal({ onClose }) {
   const [tipCustom,         setTipCustom]         = useState('');
   const [frozenTip,         setFrozenTip]         = useState(0);
   const [frozenOrder,       setFrozenOrder]       = useState(null);  // orden guardada para imprimir
+  // Comprobante digital
+  const [showReceiptForm,   setShowReceiptForm]   = useState(false);
+  const [receiptEmail,      setReceiptEmail]       = useState('');
+  const [sendingReceipt,    setSendingReceipt]     = useState(false);
+  const [receiptSent,       setReceiptSent]        = useState(false);
   const [frozenMethod,      setFrozenMethod]      = useState('');    // método de pago para recibo
   // F9-A: Fidelización
   const [loyaltyData,       setLoyaltyData]       = useState(null);   // { balance, value_cop, settings }
@@ -1313,6 +1318,31 @@ function PaymentModal({ onClose }) {
   function handleNewSale() {
     clearOrder();
     onClose();
+  }
+
+  // ── Envío de comprobante digital por email y/o WhatsApp ────────────────────
+  async function handleSendReceipt() {
+    if (!frozenOrder?.id) return toast.error('No hay orden disponible para enviar')
+    const email = receiptEmail.trim()
+    if (!email) return toast.error('Ingresa el correo del cliente')
+
+    setSendingReceipt(true)
+    try {
+      const { api } = await import('../lib/api.js')
+      await api.post('/receipts/send', {
+        order_id: frozenOrder.id,
+        channels: { email: true, whatsapp: false },
+        // El backend obtiene el cliente desde la BD — el email aquí es extra
+        // para sobreescribir si el cliente no tiene email registrado
+        override_email: email,
+      })
+      setReceiptSent(true)
+      toast.success('✅ Comprobante enviado al correo')
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Error al enviar comprobante')
+    } finally {
+      setSendingReceipt(false)
+    }
   }
 
   async function handlePrint() {
@@ -1534,6 +1564,51 @@ function PaymentModal({ onClose }) {
               </svg>
               Enviar recibo por WhatsApp
             </a>
+
+            {/* Comprobante digital — Email profesional con HTML */}
+            {!receiptSent ? (
+              <div className="w-full">
+                {!showReceiptForm ? (
+                  <button
+                    onClick={() => {
+                      setReceiptEmail(frozenOrder?.buyer_email || '')
+                      setShowReceiptForm(true)
+                    }}
+                    className="w-full h-10 border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 font-semibold rounded-xl flex items-center justify-center gap-2 text-sm transition-all">
+                    ✉️ Enviar comprobante digital
+                  </button>
+                ) : (
+                  <div className="border border-blue-200 rounded-xl p-3 bg-blue-50 space-y-2">
+                    <p className="text-xs font-semibold text-blue-700">Correo del cliente</p>
+                    <input
+                      type="email"
+                      value={receiptEmail}
+                      onChange={e => setReceiptEmail(e.target.value)}
+                      placeholder="cliente@correo.com"
+                      className="w-full h-9 rounded-lg border border-blue-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      onKeyDown={e => e.key === 'Enter' && handleSendReceipt()}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSendReceipt}
+                        disabled={sendingReceipt}
+                        className="flex-1 h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg disabled:opacity-50 flex items-center justify-center gap-1">
+                        {sendingReceipt ? '⏳ Enviando...' : '📨 Enviar'}
+                      </button>
+                      <button
+                        onClick={() => setShowReceiptForm(false)}
+                        className="h-8 px-3 text-xs text-gray-500 hover:text-gray-700 rounded-lg border border-gray-200">
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="w-full h-10 bg-green-50 border border-green-300 rounded-xl flex items-center justify-center gap-2 text-sm text-green-700 font-semibold">
+                ✅ Comprobante enviado
+              </div>
+            )}
 
             {/* Imprimir — térmica ESC/POS si conectada, sino window.print() */}
             <button

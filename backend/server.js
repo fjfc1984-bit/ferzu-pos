@@ -51,6 +51,7 @@ import loyaltyRouter       from './routes/loyalty.routes.js';
 import adminRouter         from './routes/admin.routes.js';
 import healthRouter        from './routes/health.routes.js';
 import retentionRouter     from './routes/retention.routes.js';
+import receiptsRouter      from './routes/receipts.routes.js';
 import integrationsRouter, {
   handleRappiWebhook,
   handleUberEatsWebhook,
@@ -131,6 +132,7 @@ app.use('/api/shifts',        shiftsRouter);
 app.use('/api/integrations',  integrationsRouter);
 app.use('/api/loyalty',       loyaltyRouter);
 app.use('/api/admin',         adminRouter);
+app.use('/api/receipts',      receiptsRouter);
 app.use('/api/health',        healthRouter);
 app.use('/api/retention',     retentionRouter);
 
