@@ -371,15 +371,21 @@ export function POSProvider({ children }) {
   // ── PROCESAR PAGO ────────────────────────────────────────────────────────
   // REGLA DE ORO #1: el frontend solo envía ítems crudos; el backend calcula totales.
   // REGLA DE ORO #3: si no hay red, se guarda offline y sincroniza al reconectar.
-  const processPayment = useCallback(async (paymentMethod, cashReceived, tipAmount = 0, loyaltyOpts = {}, invoiceOverrides = {}) => {
+  const processPayment = useCallback(async (paymentMethod, cashReceived, tipAmount = 0, loyaltyOpts = {}, invoiceOverrides = {}, customerContext = {}) => {
     if (!state.cashSession) throw new Error('No hay sesión de caja activa')
     if (state.items.length === 0) throw new Error('El carrito está vacío')
 
     const orderPayload = {
-      branch_id:       state.branchId,
-      cash_session_id: state.cashSession.id,
-      order_type:      'sale',
-      customer_id:     state.customerId || null,
+      branch_id:        state.branchId,
+      cash_session_id:  state.cashSession.id,
+      order_type:       'sale',
+      // customer_id: usar el del modal de identificación si está disponible,
+      // sino el asignado por CustomerSearch en el carrito
+      customer_id:     'customer_id_override' in customerContext
+        ? customerContext.customer_id_override
+        : state.customerId || null,
+      // Flag obligatorio: el cajero pasó por el flujo de identificación
+      customer_identified: customerContext.customer_identified || false,
       items: state.items.map(i => ({
         product_id:             i.product_id,
         variant_id:             i.variant_id || null,
@@ -462,15 +468,18 @@ export function POSProvider({ children }) {
 
   // ── PROCESAR PAGO MIXTO (efectivo + tarjeta) ────────────────────────────
   // Flujo de dos pasos: crea orden sin payment_method → paga cash parcial → paga card resto
-  const processPaymentMixed = useCallback(async (cashAmt, cardAmt, tipAmount = 0) => {
+  const processPaymentMixed = useCallback(async (cashAmt, cardAmt, tipAmount = 0, customerContext = {}) => {
     if (!state.cashSession) throw new Error('No hay sesión de caja activa')
     if (state.items.length === 0) throw new Error('El carrito está vacío')
 
     const orderPayload = {
-      branch_id:       state.branchId,
-      cash_session_id: state.cashSession.id,
-      order_type:      'sale',
-      customer_id:     state.customerId || null,
+      branch_id:        state.branchId,
+      cash_session_id:  state.cashSession.id,
+      order_type:       'sale',
+      customer_id:     'customer_id_override' in customerContext
+        ? customerContext.customer_id_override
+        : state.customerId || null,
+      customer_identified: customerContext.customer_identified || false,
       items: state.items.map(i => ({
         product_id:             i.product_id,
         variant_id:             i.variant_id || null,

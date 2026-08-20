@@ -1277,28 +1277,48 @@ function PaymentModal({ onClose }) {
       setInvoiceNit(customer.id_number || '')
       setInvoiceName(customer.full_name || '')
       setInvoiceEmail(customer.email   || '')
-      setInvoiceDocType('CC') // por defecto cédula; el cajero puede cambiar a NIT
+      setInvoiceDocType('CC')
     } else {
-      // Consumidor Final: limpiar campos de factura
-      setInvoiceRequired(false)
-      setInvoiceNit('')
-      setInvoiceName('')
+      // Consumidor Final: pre-llenar con datos genéricos DIAN
+      setInvoiceRequired(true)
+      setInvoiceNit('222222222222')
+      setInvoiceName('Consumidor Final')
       setInvoiceEmail('')
+      setInvoiceDocType('NIT')
     }
   }
 
   async function handleConfirm() {
+    // ── BLOQUEO OBLIGATORIO: cliente debe estar identificado ─────────────────
+    if (!posCustomer) {
+      setShowIdentModal(true)
+      toast.error('Debes identificar al cliente antes de cobrar', { icon: '⚠️' })
+      return
+    }
+
     const loyaltyOpts = redeemEnabled && loyaltyDiscount > 0
       ? { loyaltyDiscount, loyaltyPoints: redeemPoints }
       : {};
 
-    // DIAN: construir overrides solo si el cajero activó "¿Requiere factura?"
-    const invoiceOverrides = invoiceRequired ? {
-      ...(invoiceNit.trim()   && { invoice_nit:      invoiceNit.trim() }),
-      ...(invoiceEmail.trim() && { invoice_email:    invoiceEmail.trim() }),
-      ...(invoiceName.trim()  && { invoice_name:     invoiceName.trim() }),
-      invoice_doc_type: invoiceDocType === 'NIT' ? '31' : invoiceDocType === 'CE' ? '22' : '13',
-    } : {};
+    // DIAN: siempre enviar los datos del cliente identificado
+    const invoiceOverrides = {
+      // Datos del cliente seleccionado en el modal
+      invoice_nit:      posCustomer.id_number || '',
+      invoice_name:     posCustomer.full_name  || '',
+      invoice_email:    posCustomer.email      || invoiceEmail.trim() || '',
+      invoice_doc_type: posCustomer.id_number === '222222222222'
+        ? '31'  // NIT para Consumidor Final
+        : (invoiceDocType === 'NIT' ? '31' : invoiceDocType === 'CE' ? '22' : '13'),
+      // Overrides manuales del cajero (si llenó los campos manualmente)
+      ...(invoiceNit.trim()   && { invoice_nit:   invoiceNit.trim() }),
+      ...(invoiceName.trim()  && { invoice_name:  invoiceName.trim() }),
+    }
+
+    // customerContext: datos que llegan al orderPayload del backend
+    const customerContext = {
+      customer_id_override: posCustomer.id || null,  // null = Consumidor Final
+      customer_identified:  true,                    // flag obligatorio para el backend
+    }
 
     if (method === 'mixed') {
       if (!mixValid) {
@@ -1308,9 +1328,9 @@ function PaymentModal({ onClose }) {
       try {
         setFrozenTotal(totalFinal);
         setFrozenItems([...items]);
-        setFrozenCustomer(customerName || '');
+        setFrozenCustomer(posCustomer.full_name || customerName || '');
         setFrozenTip(tipAmount);
-        const order = await processPaymentMixed(mixCashAmt, mixCardAmt, tipAmount);
+        const order = await processPaymentMixed(mixCashAmt, mixCardAmt, tipAmount, customerContext);
         setFrozenOrder(order || null);
         setFrozenMethod('mixed');
         setFinalChange(0);
@@ -1328,9 +1348,9 @@ function PaymentModal({ onClose }) {
     try {
       setFrozenTotal(totalFinal);
       setFrozenItems([...items]);
-      setFrozenCustomer(customerName || '');
+      setFrozenCustomer(posCustomer.full_name || customerName || '');
       setFrozenTip(tipAmount);
-      const order = await processPayment(method, method === 'cash' ? cashAmt : totalFinal, tipAmount, loyaltyOpts, invoiceOverrides);
+      const order = await processPayment(method, method === 'cash' ? cashAmt : totalFinal, tipAmount, loyaltyOpts, invoiceOverrides, customerContext);
       setFrozenOrder(order || null);
       setFrozenMethod(method);
       setFinalChange(change);
@@ -1999,11 +2019,19 @@ function PaymentModal({ onClose }) {
 
         {/* Botón confirmar */}
         <button
-          onClick={handleConfirm}
+          onClick={!posCustomer ? () => { setShowIdentModal(true); toast.error('Identifica al cliente antes de cobrar', { icon: '⚠️' }) } : handleConfirm}
           disabled={isProcessing || (method === 'cash' && !cashSufficient && cashAmt > 0) || (method === 'mixed' && !mixValid)}
-          className="w-full h-12 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-brand-600/25">
-          {isProcessing ? <RefreshCw size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-          {isProcessing ? 'Procesando...' : `Confirmar cobro · ${formatCOP(totalFinal)}`}
+          className={`w-full h-12 text-white font-bold rounded-2xl flex items-center justify-center gap-2 transition-all shadow-lg ${
+            !posCustomer
+              ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/25 animate-pulse'
+              : 'bg-brand-600 hover:bg-brand-700 shadow-brand-600/25 disabled:opacity-50'
+          }`}>
+          {isProcessing ? <RefreshCw size={18} className="animate-spin" /> : !posCustomer ? <span>👤</span> : <CheckCircle2 size={18} />}
+          {isProcessing
+            ? 'Procesando...'
+            : !posCustomer
+              ? 'Identificar cliente para cobrar'
+              : `Confirmar cobro · ${formatCOP(totalFinal)}`}
         </button>
       </div>
     </Modal>

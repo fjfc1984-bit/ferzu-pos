@@ -29,7 +29,8 @@ router.post('/', [
   try {
     const {
       branch_id, cash_session_id, order_type = 'sale',
-      customer_id, table_id, appointment_id,
+      customer_id, customer_identified,
+      table_id, appointment_id,
       items, discount_type, discount_value, notes,
       payment_method, cash_received, metadata = {},
       tip_amount: rawTip,
@@ -40,6 +41,16 @@ router.post('/', [
       courtesy_authorized_by: rawCourtesyAuth,
       courtesy_reason:        rawCourtesyReason,
     } = req.body;
+
+    // ── Validación DIAN obligatoria ────────────────────────────────────────────
+    // El cajero DEBE haber pasado por el flujo de identificación del cliente.
+    // Si customer_identified !== true la transacción se rechaza en el backend.
+    if (customer_identified !== true) {
+      return res.status(422).json({
+        error: 'Identificación del cliente requerida. El cajero debe identificar al cliente antes de procesar la venta.',
+        code:  'CUSTOMER_NOT_IDENTIFIED',
+      });
+    }
 
     // Propina: entero >= 0, enviado por el cajero (monto explícito elegido por el cliente)
     const tip_amount = Math.round(Math.max(0, Number(rawTip) || 0));
