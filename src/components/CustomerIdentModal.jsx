@@ -73,7 +73,11 @@ export default function CustomerIdentModal({ organizationId, onSelect, onClose }
         setMode('search')
         setError('Este documento ya está registrado. Selecciónalo.')
       } else {
-        setError(err?.response?.data?.error || 'Error al registrar. Intenta de nuevo.')
+        const errData = err?.response?.data
+        const msg = errData?.error
+          || errData?.errors?.[0]?.msg
+          || 'Error al registrar. Intenta de nuevo.'
+        setError(msg)
       }
     }
   }

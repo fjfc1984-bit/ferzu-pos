@@ -59,7 +59,7 @@ router.get('/search', [
 router.post('/', [
   body('full_name').trim().notEmpty().withMessage('El nombre es obligatorio'),
   body('id_number').optional({ nullable: true }).trim(),
-  body('email').optional({ nullable: true }).isEmail().normalizeEmail(),
+  body('email').optional({ nullable: true }).trim(),  // sin validar formato — el cajero puede escribir "notiene@.com"
   body('phone').optional({ nullable: true }).trim(),
   validate,
 ], async (req, res) => {
