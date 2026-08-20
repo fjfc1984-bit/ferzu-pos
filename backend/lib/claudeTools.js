@@ -1389,6 +1389,8 @@ export async function queryBusinessData(queryInput, context) {
   switch (query_type) {
 
     // ── Ventas diarias (vista v_daily_sales) ─────────────────────────────
+    // SECURITY: v_daily_sales incluye organization_id vía JOIN branches (migración 011).
+    // Si la vista no existe o falla, el fallback filtra por branches de la org.
     case 'daily_sales': {
       let q = supabase.from('v_daily_sales').select('*');
       if (orgId)    q = q.eq('organization_id', orgId);
@@ -1397,14 +1399,22 @@ export async function queryBusinessData(queryInput, context) {
            .order('sale_date', { ascending: false }).limit(lim);
       const { data, error } = await q;
       if (error) {
-        // Fallback: consultar orders directamente si la vista no existe
+        // Fallback: consultar orders directamente filtrando por branches de la org
+        // SECURITY: supabaseAdmin bypasa RLS → filtro explícito por organización
+        const { data: orgBranches } = await supabase
+          .from('branches').select('id').eq('organization_id', orgId);
+        const orgBranchIds = (orgBranches || []).map(b => b.id);
+        if (orgBranchIds.length === 0) return { data: [], count: 0, query_type };
+
         let q2 = supabase
           .from('orders')
           .select('id, total, created_at, status')
-          .eq('status', 'completed')
+          .eq('status', 'paid')                                          // FIX: era 'completed'
           .gte('created_at', `${dateFrom}T00:00:00-05:00`)
           .lte('created_at', `${dateTo}T23:59:59-05:00`);
-        if (branchId) q2 = q2.eq('branch_id', branchId);
+        q2 = branchId
+          ? q2.eq('branch_id', branchId)
+          : q2.in('branch_id', orgBranchIds);                           // SECURITY: solo branches de la org
         const { data: orders, error: e2 } = await q2.order('created_at', { ascending: false }).limit(200);
         if (e2) return { error: e2.message };
         // Agrupar por día
@@ -1423,11 +1433,13 @@ export async function queryBusinessData(queryInput, context) {
     }
 
     // ── Productos más vendidos ────────────────────────────────────────────
+    // SECURITY: supabaseAdmin bypasa RLS → filtrar por products.organization_id
     case 'top_products': {
       let q = supabase
         .from('order_items')
-        .select('product_id, quantity, subtotal, products(name), orders!inner(created_at, status, branch_id)')
-        .eq('orders.status', 'completed')
+        .select('product_id, quantity, subtotal, products!inner(name, organization_id), orders!inner(created_at, status, branch_id)')
+        .eq('products.organization_id', orgId)                          // SECURITY: aislamiento por org
+        .eq('orders.status', 'paid')                                    // FIX: era 'completed'
         .gte('orders.created_at', `${dateFrom}T00:00:00-05:00`)
         .lte('orders.created_at', `${dateTo}T23:59:59-05:00`);
       if (branchId) q = q.eq('orders.branch_id', branchId);
@@ -1489,21 +1501,28 @@ export async function queryBusinessData(queryInput, context) {
     }
 
     // ── Mix de métodos de pago ────────────────────────────────────────────
+    // SECURITY: supabaseAdmin bypasa RLS → pre-fetch branches de la org para filtrar
     case 'payment_methods': {
-      // Intentar con order_payments primero, fallback a orders con metadata
+      // Pre-fetch branches de la org para aislamiento multi-tenant
+      const { data: orgBranchesPm } = await supabase
+        .from('branches').select('id').eq('organization_id', orgId);
+      const orgBranchIdsPm = (orgBranchesPm || []).map(b => b.id);
+      if (orgBranchIdsPm.length === 0) return { data: [], count: 0, query_type };
+      const targetBranchesPm = branchId ? [branchId] : orgBranchIdsPm;
+
       let q = supabase.from('order_payments')
         .select('payment_method, amount, orders!inner(created_at, status, branch_id)')
-        .eq('orders.status', 'completed')
+        .eq('orders.status', 'paid')                                    // FIX: era 'completed'
+        .in('orders.branch_id', targetBranchesPm)                      // SECURITY: solo branches de la org
         .gte('orders.created_at', `${dateFrom}T00:00:00-05:00`)
         .lte('orders.created_at', `${dateTo}T23:59:59-05:00`);
-      if (branchId) q = q.eq('orders.branch_id', branchId);
       const { data, error } = await q;
       if (error) {
         // Fallback: contar órdenes sin desglose de método
-        let q2 = supabase.from('orders').select('id, total').eq('status', 'completed')
+        let q2 = supabase.from('orders').select('id, total').eq('status', 'paid')
+          .in('branch_id', targetBranchesPm)                           // SECURITY
           .gte('created_at', `${dateFrom}T00:00:00-05:00`)
           .lte('created_at', `${dateTo}T23:59:59-05:00`);
-        if (branchId) q2 = q2.eq('branch_id', branchId);
         const { data: orders2 } = await q2;
         const total = (orders2 || []).reduce((s, o) => s + o.total, 0);
         return { data: [{ method: 'varios', count: (orders2 || []).length, total }], query_type, note: 'Sin desglose por método disponible' };
@@ -1547,13 +1566,27 @@ export async function queryBusinessData(queryInput, context) {
     }
 
     // ── Resumen sesión de caja ────────────────────────────────────────────
+    // SECURITY: supabaseAdmin bypasa RLS → filtrar por branches de la org
     case 'cash_session_summary': {
-      let q = supabase.from('cash_sessions').select('*')
+      // cash_sessions.branch_id → branches.organization_id
+      let q = supabase.from('cash_sessions')
+        .select('*, branches!inner(organization_id)')
+        .eq('branches.organization_id', orgId)                          // SECURITY: aislamiento por org
         .order('opened_at', { ascending: false }).limit(5);
       if (branchId) q = q.eq('branch_id', branchId);
       const { data, error } = await q;
-      if (error) return { error: error.message };
-      return { data, count: data?.length, query_type };
+      if (error) {
+        // Fallback: si el JOIN falla (schema mismatch), filtrar por branch explícito
+        if (!branchId) return { data: [], count: 0, query_type, note: 'branch_id requerido' };
+        const { data: d2, error: e2 } = await supabase.from('cash_sessions').select('*')
+          .eq('branch_id', branchId)
+          .order('opened_at', { ascending: false }).limit(5);
+        if (e2) return { error: e2.message };
+        return { data: d2, count: d2?.length, query_type };
+      }
+      // Limpiar el campo branches del resultado (innecesario para la IA)
+      const cleaned = (data || []).map(({ branches: _b, ...rest }) => rest);
+      return { data: cleaned, count: cleaned.length, query_type };
     }
 
     // ── Propuestas IA pendientes ──────────────────────────────────────────
