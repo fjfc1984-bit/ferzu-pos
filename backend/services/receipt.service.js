@@ -146,6 +146,12 @@ export function buildReceiptPayload(order, customer, empresa) {
       order_id:    order.id,
       generado_en: new Date().toISOString(),
       canal:       'ferzu-pos',
+      receipt_url: (() => {
+        const base = process.env.RECEIPT_BASE_URL
+          || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null)
+          || 'https://ferzu-backend-production.up.railway.app'
+        return `${base}/api/receipts/view/${order.id}`
+      })(),
     },
 
     // Datos del emisor (el negocio)
