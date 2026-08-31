@@ -27,6 +27,17 @@ export const aiUserRateLimit = rateLimit({
   message: { error: 'Límite de consultas de IA por usuario alcanzado. Espera un momento.' },
 });
 
+// Login — 15 intentos / 15 min por IP (anti brute-force de contraseñas)
+// Antes solo dependía de generalRateLimit (300/15min), demasiado generoso
+// para un endpoint de credenciales.
+export const loginRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: { error: 'Demasiados intentos de inicio de sesión. Espera 15 minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // PIN — 10 intentos / 15 min por IP (anti brute-force)
 // Con 10.000 combinaciones de 4 dígitos y 10 intentos/15min
 // se necesitarían 250 horas desde una sola IP para brute-forcear.

@@ -332,7 +332,7 @@ router.get('/daily', async (req, res) => {
         order_items(product_id, product_name, quantity, unit_price, subtotal)
       `)
       .eq('branch_id', branch_id)
-      .eq('status', 'completed')
+      .eq('status', 'paid')
       .gte('created_at', dayStart)
       .lt('created_at', dayEnd)
       .order('created_at', { ascending: true });
@@ -409,7 +409,7 @@ router.get('/weekly', async (req, res) => {
         order_items(product_id, product_name, quantity, unit_price, subtotal)
       `)
       .eq('branch_id', branch_id)
-      .eq('status', 'completed')
+      .eq('status', 'paid')
       .gte('created_at', rangeStart)
       .lt('created_at', nextDayEnd.toISOString())
       .order('created_at', { ascending: true });
@@ -504,7 +504,7 @@ router.post('/daily/send-email', async (req, res) => {
     let query = supabaseAdmin
       .from('orders')
       .select('id, total, tax_total, discount_amount, metadata, created_at, payments(payment_method, amount), order_items(product_name, quantity, subtotal)')
-      .eq('status', 'completed')
+      .eq('status', 'paid')
       .gte('created_at', dayStart)
       .lt('created_at', dayEnd);
 
@@ -679,7 +679,7 @@ router.get('/period', async (req, res) => {
         order_items(product_id, product_name, quantity, unit_price, subtotal)
       `)
       .eq('branch_id', branch_id)
-      .eq('status', 'completed')
+      .eq('status', 'paid')
       .gte('created_at', rangeStart)
       .lt('created_at', rangeEnd)
       .order('created_at', { ascending: true });
@@ -795,7 +795,7 @@ router.get('/monthly', async (req, res) => {
       .from('orders')
       .select('total, created_at')
       .eq('branch_id', branch_id)
-      .eq('status', 'completed')
+      .eq('status', 'paid')
       .gte('created_at', rangeStart)
       .lt('created_at', rangeEnd)
       .order('created_at', { ascending: true });

@@ -5,14 +5,14 @@ import express      from 'express';
 import { body }     from 'express-validator';
 import { supabaseAdmin } from '../config/supabase.js';
 import logger            from '../config/logger.js';
-import { pinRateLimit }  from '../config/rateLimits.js';
+import { pinRateLimit, loginRateLimit } from '../config/rateLimits.js';
 import { requireAuth }   from '../middleware/auth.js';
 import { validate }      from '../middleware/validate.js';
 
 const router = express.Router();
 
 // POST /auth/login
-router.post('/login', [
+router.post('/login', loginRateLimit, [
   body('email').isEmail().normalizeEmail(),
   body('password').isLength({ min: 6 }),
   validate,

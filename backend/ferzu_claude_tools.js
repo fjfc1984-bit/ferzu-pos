@@ -114,21 +114,48 @@ export async function executeApprovedProposal(proposalId, userId, context) {
         }
         break;
 
-      case 'discount':
+      case 'discount': {
+        const orderId = proposal.payload.order_id;
+        // SECURITY: orders no tiene organization_id — verificar via su branch.
+        // El endpoint que aprueba la propuesta ya valida que la PROPUESTA sea de
+        // esta org, pero payload.order_id lo puso la IA y puede apuntar a CUALQUIER
+        // orden (p.ej. si el usuario le pidió aplicar descuento a un UUID ajeno,
+        // conocido vía el link público de recibo). Sin esto se descontaría el
+        // pedido de otro negocio.
+        const { data: targetOrder } = await supabase
+          .from('orders')
+          .select('id, branches!inner(organization_id)')
+          .eq('id', orderId)
+          .eq('branches.organization_id', context.organization_id)
+          .maybeSingle();
+        if (!targetOrder) throw new Error('Orden no encontrada o no pertenece a esta organización');
+
         await supabase.from('orders').update({
           discount_type:   proposal.payload.discount_type,
           discount_value:  proposal.payload.discount_value,
-        }).eq('id', proposal.payload.order_id);
-        affectedRecords.push({ table: 'orders', id: proposal.payload.order_id });
+        }).eq('id', orderId);
+        affectedRecords.push({ table: 'orders', id: orderId });
         break;
+      }
 
-      case 'price_update':
+      case 'price_update': {
+        const productId = proposal.payload.product_id;
+        // SECURITY: mismo riesgo que 'discount' — verificar que el producto sea de esta org.
+        const { data: targetProduct } = await supabase
+          .from('products')
+          .select('id')
+          .eq('id', productId)
+          .eq('organization_id', context.organization_id)
+          .maybeSingle();
+        if (!targetProduct) throw new Error('Producto no encontrado o no pertenece a esta organización');
+
         await supabase.from('products').update({
           price: Math.round(proposal.payload.new_price),
           updated_at: new Date().toISOString(),
-        }).eq('id', proposal.payload.product_id);
-        affectedRecords.push({ table: 'products', id: proposal.payload.product_id });
+        }).eq('id', productId);
+        affectedRecords.push({ table: 'products', id: productId });
         break;
+      }
 
       default:
         throw new Error(`proposal_type desconocido: ${proposal.proposal_type}`);

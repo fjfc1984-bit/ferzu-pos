@@ -29,12 +29,18 @@ router.get('/search', [
   try {
     const { q }            = req.query
     const organizationId   = req.organizationId
+    // SECURITY: `,` y `(` `)` son delimitadores de la gramática de filtros de
+    // PostgREST — sin sanear, un valor como "x,organization_id.neq.<uuid>" podría
+    // agregar condiciones no previstas al filtro .or(). Siempre queda combinado
+    // con el .eq('organization_id', ...) vía AND, así que no cruza tenants, pero
+    // igual puede alterar qué filas del propio negocio devuelve la búsqueda.
+    const qSafe = String(q).replace(/[,()]/g, '')
 
     const { data, error } = await supabaseAdmin
       .from('customers')
       .select('id, full_name, id_type, id_number, email, phone')
       .eq('organization_id', organizationId)
-      .or(`id_number.eq.${q},phone.eq.${q}`)
+      .or(`id_number.eq.${qSafe},phone.eq.${qSafe}`)
       .maybeSingle()
 
     if (error) {

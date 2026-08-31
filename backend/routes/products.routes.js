@@ -76,7 +76,8 @@ router.get('/', async (req, res) => {
 
     if (category_id)     query = query.eq('category_id', category_id);
     if (nicheCategories) query = query.in('category_id', nicheCategories.length ? nicheCategories : ['__none__']);
-    if (search)          query = query.or(`name.ilike.%${search}%,sku.ilike.%${search}%,barcode.eq.${search}`);
+    // SECURITY: sanear `,` `(` `)` — delimitadores de la gramática .or() de PostgREST
+    if (search)          query = query.or(`name.ilike.%${search.replace(/[,()]/g, '')}%,sku.ilike.%${search.replace(/[,()]/g, '')}%,barcode.eq.${search.replace(/[,()]/g, '')}`);
     // NOTA: branch_id YA NO se aplica como filtro de join sobre inventory.
     // Se usa client-side al calcular current_stock.
 

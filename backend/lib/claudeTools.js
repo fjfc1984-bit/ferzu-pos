@@ -1913,6 +1913,19 @@ async function voidLastOrder({ dry_run = true, order_id, reason }, context) {
     .maybeSingle();
 
   if (fetchErr || !order) return { error: 'Orden no encontrada o sin acceso.' };
+
+  // SECURITY: la fase dry_run ya scopea por branches de la org, pero la ejecución
+  // real busca por order_id a secas — sin esto, cualquier owner/admin que conociera
+  // el UUID de un pedido de OTRA organización (p.ej. via el link público de recibo)
+  // podría anularlo. Re-verificamos que la branch del pedido sea de esta org.
+  const { data: orderBranch } = await supabaseAdmin
+    .from('branches')
+    .select('id')
+    .eq('id', order.branch_id)
+    .eq('organization_id', orgId)
+    .maybeSingle();
+  if (!orderBranch) return { error: 'Orden no encontrada o sin acceso.' };
+
   if (order.status !== 'paid')             return { error: `La orden ya está en estado "${order.status}" — no se puede anular.` };
   if (new Date(order.created_at) < new Date(since30min)) {
     return { error: 'La orden tiene más de 30 minutos. Para anularla usa el módulo de Cajas.' };

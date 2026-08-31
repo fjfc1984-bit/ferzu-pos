@@ -150,6 +150,17 @@ router.post('/bold', express.raw({ type: 'application/json' }), async (req, res)
   logger.info('[BOLD] Webhook recibido', {
     eventType,
     transactionId: data?.id || data?.transaction_id,
+    // TODO SECURITY: falta validar que el monto realmente pagado corresponda al
+    // plan declarado en metadata.plan_id antes de activarlo (ver auditoría
+    // 2026-08-31). No se implementó a ciegas porque no hay documentación en este
+    // repo del nombre exacto del campo de monto en el payload real de Bold —
+    // loggeamos las keys del payload aquí para capturarlo del próximo webhook real
+    // en los logs de Railway y así completar la validación sin riesgo de romper
+    // pagos legítimos por adivinar mal el nombre del campo.
+    dataKeys: data ? Object.keys(data) : [],
+    amountFieldsSeen: data
+      ? { amount: data.amount, amount_in_cents: data.amount_in_cents, total: data.total }
+      : null,
   });
 
   if (eventType !== 'TRANSACTION_UPDATED') {

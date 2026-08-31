@@ -139,6 +139,17 @@ router.post('/adjustment', requireRole('owner', 'admin'), [
   try {
     const { branch_id, product_id, quantity_delta, reason, variant_id } = req.body;
 
+    // SECURITY: branch_id ya se valida con requireBranchAccess(), pero product_id no —
+    // sin este chequeo se podía crear una fila de inventory referenciando un producto
+    // de otra organización dentro de la propia sucursal.
+    const { data: product } = await supabaseAdmin
+      .from('products')
+      .select('id')
+      .eq('id', product_id)
+      .eq('organization_id', req.organizationId)
+      .maybeSingle();
+    if (!product) return res.status(404).json({ error: 'Producto no encontrado en esta organización' });
+
     const { data: inv } = await supabaseAdmin
       .from('inventory')
       .select('quantity')

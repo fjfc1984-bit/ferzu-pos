@@ -6,7 +6,7 @@ import { body } from 'express-validator';
 import { supabaseAdmin }      from '../config/supabase.js';
 import logger                 from '../config/logger.js';
 import { aiRateLimit, aiUserRateLimit } from '../config/rateLimits.js';
-import { requireAuth, requireRole, requirePlanFeature } from '../middleware/auth.js';
+import { requireAuth, requireRole, requirePlanFeature, assertBranchOwnership } from '../middleware/auth.js';
 import { validate }           from '../middleware/validate.js';
 import { logAudit }           from '../middleware/audit.js';
 import { runFerzuAgent }      from '../ferzu_claude_tools.js';
@@ -27,6 +27,11 @@ router.post('/chat', [
 ], async (req, res) => {
   try {
     const { message, branch_id, conversation_history = [], page_context } = req.body;
+
+    // SECURITY: branch_id viene del body — sin validar, cualquier tool del Co-Piloto
+    // que confíe en context.branch_id (inventario, propuestas de IA, etc.) operaría
+    // sobre la sucursal de OTRA organización.
+    if (branch_id) await assertBranchOwnership(branch_id, req.organizationId);
 
     const { data: org } = await supabaseAdmin
       .from('organizations')
@@ -534,6 +539,10 @@ router.post('/copilot/chat', [
   try {
     const { message, branch_id, conversation_history = [], page_context } = req.body;
     const branchId = branch_id || req.headers['x-branch-id'] || null;
+
+    // SECURITY: branchId puede venir del header x-branch-id además del body —
+    // ninguno de los dos se valida contra la organización del usuario autenticado.
+    if (branchId) await assertBranchOwnership(branchId, req.organizationId);
 
     const { data: org } = await supabaseAdmin
       .from('organizations')
