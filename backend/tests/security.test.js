@@ -382,3 +382,42 @@ describe('BUG-6: POST /onboarding/setup — no unir a organización ajena vía N
     assert.equal(result.action, 'reject')
   })
 })
+
+// ─── TESTS: BUG-7 — Alertas de inventario del Co-Piloto sin filtro de org ───
+// Corregido 2026-08-31 en claudeTools.js (getInventoryAlerts): confirmado en
+// producción — el saludo proactivo del Co-Piloto mostró una alerta de stock
+// ("Tambor Grasa") de OTRA organización. v_inventory_status no tiene
+// organization_id, así que sin resolver primero las branches de la org
+// autenticada, la consulta (con supabaseAdmin, que bypasa RLS) devolvía
+// inventario de TODAS las organizaciones cuando la IA no pasaba branch_id.
+
+function resolveInventoryAlertBranches(orgBranchIds, requestedBranchId) {
+  if (orgBranchIds.length === 0) return []
+  if (requestedBranchId && orgBranchIds.includes(requestedBranchId)) return [requestedBranchId]
+  return orgBranchIds
+}
+
+describe('BUG-7: get_inventory_alerts — nunca consultar sin branches de la org', () => {
+  it('sin branch_id explícito, usa TODAS las branches de la organización (no todas las orgs)', () => {
+    const result = resolveInventoryAlertBranches(['br-1', 'br-2'], undefined)
+    assert.deepEqual(result, ['br-1', 'br-2'])
+  })
+
+  it('un branch_id que pertenece a otra organización se ignora, no se usa a ciegas', () => {
+    const orgBranchIds = ['br-1', 'br-2']
+    const attackerOrForeignBranchId = 'br-de-otra-org'
+    const result = resolveInventoryAlertBranches(orgBranchIds, attackerOrForeignBranchId)
+    assert.deepEqual(result, orgBranchIds)
+    assert.ok(!result.includes(attackerOrForeignBranchId))
+  })
+
+  it('un branch_id que sí pertenece a la organización se respeta', () => {
+    const result = resolveInventoryAlertBranches(['br-1', 'br-2'], 'br-2')
+    assert.deepEqual(result, ['br-2'])
+  })
+
+  it('organización sin sucursales no devuelve ninguna branch (nunca undefined/null)', () => {
+    const result = resolveInventoryAlertBranches([], undefined)
+    assert.deepEqual(result, [])
+  })
+})

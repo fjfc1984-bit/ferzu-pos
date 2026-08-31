@@ -1739,21 +1739,36 @@ async function checkSystemHealth(input, context) {
 async function getInventoryAlerts(input, context) {
   const { supabase } = context;
   const { branch_id, severity_filter = 'all' } = input;
+  const orgId = context.organization_id;
 
   try {
+    // SECURITY: v_inventory_status no tiene organization_id (solo branch_id), y
+    // supabase aquí es supabaseAdmin (service role, bypasa RLS). Sin este filtro,
+    // la consulta devolvía inventario de TODAS las organizaciones cuando la IA no
+    // pasaba branch_id explícito (caso real: alertas proactivas del Co-Piloto).
+    // branch_id del input solo se usa si de verdad pertenece a esta organización.
+    const { data: orgBranches } = await supabase
+      .from('branches').select('id').eq('organization_id', orgId);
+    const orgBranchIds = (orgBranches || []).map(b => b.id);
+    if (orgBranchIds.length === 0) {
+      return { alerts: [], critical_count: 0, warning_count: 0, total_alerts: 0 };
+    }
+    const targetBranchIds = (branch_id && orgBranchIds.includes(branch_id))
+      ? [branch_id]
+      : orgBranchIds;
+
     // Usar la vista v_inventory_status si existe, fallback a join manual
     let query = supabase
       .from('v_inventory_status')
       .select('*')
+      .in('branch_id', targetBranchIds)   // SECURITY: solo branches de esta org
       .in('stock_status', severity_filter === 'out_of_stock_only'
         ? ['out_of_stock']
         : severity_filter === 'critical_only'
           ? ['out_of_stock', 'low_stock']
-          : ['out_of_stock', 'low_stock', 'normal'])
+          : ['out_of_stock', 'low_stock', 'ok'])  // FIX: la vista emite 'ok', no 'normal'
       .order('stock_status', { ascending: true })
       .limit(20);
-
-    if (branch_id) query = query.eq('branch_id', branch_id);
 
     const { data, error } = await query;
 
@@ -1762,8 +1777,8 @@ async function getInventoryAlerts(input, context) {
       let q2 = supabase
         .from('inventory')
         .select('quantity, branch_id, products!inner(id, name, sku, min_stock, is_active)')
-        .eq('products.is_active', true);
-      if (branch_id) q2 = q2.eq('branch_id', branch_id);
+        .eq('products.is_active', true)
+        .in('branch_id', targetBranchIds);  // SECURITY: solo branches de esta org
       const { data: inv } = await q2;
 
       const alerts = (inv || [])
