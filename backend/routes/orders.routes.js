@@ -65,10 +65,14 @@ router.post('/', [
     }
 
     // 1. Cargar productos desde BD (precios oficiales, nunca del cliente)
+    //    SECURITY: filtrado por organization_id — supabaseAdmin usa el service role
+    //    y bypassa RLS, así que sin este filtro un product_id de otra organización
+    //    se cargaría igual (fuga de nombre/costo/precio entre tenants).
     const productIds = [...new Set(items.map(i => i.product_id))];
     const { data: products, error: prodErr } = await supabaseAdmin
       .from('products')
       .select('id, name, sku, price, cost, vat_rate, vat_included, track_inventory')
+      .eq('organization_id', req.organizationId)
       .in('id', productIds);
 
     if (prodErr || products.length !== productIds.length) {

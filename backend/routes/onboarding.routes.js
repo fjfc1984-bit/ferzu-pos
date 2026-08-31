@@ -42,6 +42,10 @@ router.post('/setup', requireJWT, async (req, res) => {
 
   try {
     // 1. Crear organización — si el NIT ya existe, reusar la organización existente
+    //    SOLO cuando el usuario que hace la petición YA pertenece a esa organización
+    //    (p.ej. reintento de onboarding). El NIT es un dato público (RUES, facturas):
+    //    nunca debe usarse para unir a un usuario NUEVO a una organización ajena,
+    //    porque le otorgaría rol 'owner' sobre ese negocio (ver SECURITY fix 2026-08-31).
     let orgData;
     if (nit) {
       const { data: existingOrg } = await supabaseAdmin
@@ -50,13 +54,26 @@ router.post('/setup', requireJWT, async (req, res) => {
         .eq('nit', nit)
         .maybeSingle();
       if (existingOrg) {
-        // Asegurarse de que onboarding_completed esté en true
-        await supabaseAdmin
-          .from('organizations')
-          .update({ onboarding_completed: true })
-          .eq('id', existingOrg.id);
-        orgData = existingOrg;
-        logger.info('[ONBOARDING] Organización existente reutilizada', { orgId: orgData.id, nit });
+        const { data: requestingUser } = await supabaseAdmin
+          .from('users')
+          .select('organization_id')
+          .eq('id', req.userId)
+          .maybeSingle();
+
+        if (requestingUser?.organization_id === existingOrg.id) {
+          // Asegurarse de que onboarding_completed esté en true
+          await supabaseAdmin
+            .from('organizations')
+            .update({ onboarding_completed: true })
+            .eq('id', existingOrg.id);
+          orgData = existingOrg;
+          logger.info('[ONBOARDING] Organización existente reutilizada (mismo usuario)', { orgId: orgData.id, nit });
+        } else {
+          logger.warn('[ONBOARDING] Intento de unirse a organización ajena vía NIT bloqueado', { userId: req.userId, nit, existingOrgId: existingOrg.id });
+          return res.status(409).json({
+            error: 'Ya existe un negocio registrado con este NIT. Si trabajas en ese negocio, pide al dueño que te agregue como usuario en vez de registrar una cuenta nueva con el mismo NIT.',
+          });
+        }
       }
     }
 

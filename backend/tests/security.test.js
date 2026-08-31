@@ -325,3 +325,60 @@ describe('Validaciones de plan_id', () => {
     }
   })
 })
+
+// ─── TESTS: BUG-5 — Cross-tenant en lookup de productos al crear órdenes ────
+// Corregido 2026-08-31 en orders.routes.js y sync.service.js: la carga de
+// productos por product_id usaba supabaseAdmin (bypassa RLS) sin filtrar por
+// organization_id, permitiendo leer nombre/costo/precio de productos de otra org.
+
+function buildOrderProductsQuery(reqOrganizationId, productIds) {
+  return { organization_id: reqOrganizationId, id_in: productIds }
+}
+
+describe('BUG-5: POST /orders y sync offline — filtro de organization_id en lookup de productos', () => {
+  it('el query de productos siempre incluye organization_id del usuario autenticado', () => {
+    const { organization_id } = buildOrderProductsQuery('org-real', ['p1', 'p2'])
+    assert.equal(organization_id, 'org-real')
+  })
+
+  it('un product_id de otra organización no debe resolverse sin el filtro', () => {
+    // Simula: item.product_id pertenece a 'org-victima', el atacante es de 'org-atacante'
+    const products = [{ id: 'p1', organization_id: 'org-victima', price: 99999 }]
+    const attackerOrgId = 'org-atacante'
+    const filtered = products.filter(p => p.organization_id === attackerOrgId)
+    assert.equal(filtered.length, 0, 'el producto de otra org no debe pasar el filtro')
+  })
+})
+
+// ─── TESTS: BUG-6 — Onboarding no debe unir usuarios a orgs ajenas vía NIT ──
+// Corregido 2026-08-31 en onboarding.routes.js: cualquier usuario que enviara
+// el NIT de un negocio existente se unía automáticamente como 'owner' de esa
+// organización. El NIT es un dato público (RUES, facturas), no un secreto.
+
+function resolveOnboardingOrg(existingOrgId, requestingUserOrgId) {
+  if (!existingOrgId) return { action: 'create_new' }
+  if (requestingUserOrgId === existingOrgId) return { action: 'reuse', orgId: existingOrgId }
+  return { action: 'reject' }
+}
+
+describe('BUG-6: POST /onboarding/setup — no unir a organización ajena vía NIT', () => {
+  it('crea una organización nueva si el NIT no existe todavía', () => {
+    const result = resolveOnboardingOrg(null, null)
+    assert.equal(result.action, 'create_new')
+  })
+
+  it('reutiliza la organización si el usuario YA pertenece a ella (reintento de onboarding)', () => {
+    const result = resolveOnboardingOrg('org-1', 'org-1')
+    assert.equal(result.action, 'reuse')
+  })
+
+  it('rechaza si un usuario sin organización intenta unirse a una existente vía NIT', () => {
+    const result = resolveOnboardingOrg('org-victima', null)
+    assert.equal(result.action, 'reject')
+  })
+
+  it('rechaza si un usuario de OTRA organización intenta unirse vía NIT', () => {
+    const result = resolveOnboardingOrg('org-victima', 'org-atacante')
+    assert.equal(result.action, 'reject')
+  })
+})

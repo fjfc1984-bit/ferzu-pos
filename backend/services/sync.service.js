@@ -27,10 +27,13 @@ export async function createOrderFromSync(payload, organizationId, userId) {
   await assertBranchOwnership(branch_id, organizationId);
 
   // 1. Cargar precios oficiales desde BD — nunca del cliente
+  // SECURITY: filtrado por organization_id (mismo fix aplicado en POST /orders) —
+  // supabaseAdmin bypassa RLS, así que sin esto un product_id de otra org se cargaría igual.
   const productIds = [...new Set(items.map(i => i.product_id))];
   const { data: products, error: prodErr } = await supabaseAdmin
     .from('products')
     .select('id, name, sku, price, cost, vat_rate, vat_included, track_inventory')
+    .eq('organization_id', organizationId)
     .in('id', productIds);
 
   if (prodErr || !products || products.length !== productIds.length) {
