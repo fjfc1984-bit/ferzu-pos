@@ -26,6 +26,7 @@ import { supabase } from '../lib/supabase'
 import { formatCOP } from '../lib/math'
 import { FERZU_PLANS, MODULE_META } from '../lib/plansConfig'
 import { startPlanPayment } from '../lib/boldCheckout'
+import { api } from '../lib/api'
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -75,31 +76,11 @@ function useActivatePlan() {
   return useMutation({
     mutationFn: async ({ planId, mode, orgId }) => {
       if (mode === 'trial') {
-        const trialEnd = new Date()
-        trialEnd.setDate(trialEnd.getDate() + 14)
-
-        const plan = FERZU_PLANS[planId]
-        const { error } = await supabase
-          .from('subscriptions')
-          .upsert({
-            organization_id: orgId,
-            plan_id: planId,
-            status: 'trial',
-            trial_ends_at: trialEnd.toISOString(),
-            current_period_start: new Date().toISOString(),
-            current_period_end: trialEnd.toISOString(),
-          }, { onConflict: 'organization_id' })
-
-        if (error) throw error
-
-        // Actualizar modules en la organización
-        const { error: orgError } = await supabase
-          .from('organizations')
-          .update({ enabled_modules: plan.enabled_modules })
-          .eq('id', orgId)
-        if (orgError) throw orgError
-
-        return { success: true, mode: 'trial', trialEnd }
+        // SECURITY: la activación de la prueba se hace en el backend (service role,
+        // valida owner/admin) — el navegador ya no escribe directo a subscriptions/
+        // organizations con la anon key.
+        const { data } = await api.post('/payments/activate-trial', { planId })
+        return { success: true, mode: 'trial', trialEnd: new Date(data.trialEnd) }
       }
 
       // Para pago real: crear orden pendiente
@@ -322,7 +303,7 @@ function PaymentStep({ planId, contactData, onSuccess, onBack }) {
       onSuccess(result)
     } catch (err) {
       console.error('[CheckoutPage]', err)
-      setBoldError(err?.message || 'Error procesando el pago. Intenta de nuevo.')
+      setBoldError(err?.response?.data?.error || err?.message || 'Error procesando el pago. Intenta de nuevo.')
     } finally {
       setLoading(false)
     }

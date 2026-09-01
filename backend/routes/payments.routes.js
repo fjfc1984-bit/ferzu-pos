@@ -12,7 +12,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Resend } from 'resend';
 import { supabaseAdmin } from '../config/supabase.js';
 import logger            from '../config/logger.js';
-import { requireAuth }   from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import { getPlanConfig } from '../config/plans.js';
 
 const router = express.Router();
@@ -87,6 +87,62 @@ router.post('/create-bold-session', requireAuth, async (req, res) => {
     description:   `${PLAN_NAMES[planId] || planId} — ${org.business_name}`,
     customerEmail,
   });
+});
+
+// POST /api/payments/activate-trial
+// SECURITY: antes esta escritura la hacía el frontend directo contra Supabase
+// (CheckoutPage.jsx, con la anon key). organization_id siempre sale de
+// req.organizationId (derivado del JWT en el backend), nunca del body — y solo
+// owner/admin puede activarlo, igual que la política RLS de organizations.
+router.post('/activate-trial', requireAuth, requireRole('owner', 'admin'), async (req, res) => {
+  const { planId } = req.body;
+  const orgId = req.organizationId;
+
+  if (!planId || !PLAN_PRICES_COP[planId]) {
+    return res.status(400).json({ error: `Plan inválido: ${planId}` });
+  }
+
+  try {
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + 14);
+    const planConfig = getPlanConfig(planId);
+
+    const { error: subError } = await supabaseAdmin
+      .from('subscriptions')
+      .upsert({
+        organization_id:      orgId,
+        plan_id:              planId,
+        status:                'trial',
+        trial_ends_at:         trialEnd.toISOString(),
+        current_period_start:  new Date().toISOString(),
+        current_period_end:    trialEnd.toISOString(),
+        enabled_modules:       planConfig.enabled_modules,
+        max_products:          planConfig.max_products,
+        max_users:             planConfig.max_users,
+        max_branches:          planConfig.max_branches,
+        updated_at:            new Date().toISOString(),
+      }, { onConflict: 'organization_id' });
+
+    if (subError) {
+      logger.error('[TRIAL] Error activando suscripción', { error: subError.message, orgId, planId });
+      return res.status(500).json({ error: 'Error activando la prueba' });
+    }
+
+    const { error: orgError } = await supabaseAdmin
+      .from('organizations')
+      .update({ enabled_modules: planConfig.enabled_modules })
+      .eq('id', orgId);
+
+    if (orgError) {
+      logger.warn('[TRIAL] Error actualizando enabled_modules en organizations', { error: orgError.message, orgId });
+    }
+
+    logger.info('[TRIAL] Prueba gratis activada', { orgId, planId, trialEnd });
+    res.json({ success: true, mode: 'trial', trialEnd: trialEnd.toISOString() });
+  } catch (err) {
+    logger.error('[TRIAL] Error inesperado activando prueba', { error: err.message, orgId, planId });
+    res.status(500).json({ error: 'Error interno activando la prueba' });
+  }
 });
 
 // =============================================================================
